@@ -1,7 +1,8 @@
-<script>
+
 
 window.UMP_API = {
-
+const APPS_SCRIPT_URL =
+"https://script.google.com/macros/s/AKfycbzyfWa8agayMB0XLjkbfhfj2MdIRElAiY2Wnd7-eQKd1zlMl099ky6Cif06TWydzr8D/exec";
   // ==========================
   // LOGIN
   // ==========================
@@ -116,4 +117,3 @@ getStudentMentorNotes(studentId) {
   });
 },
 }
-</script>
