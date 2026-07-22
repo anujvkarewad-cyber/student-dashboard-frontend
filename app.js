@@ -1,4 +1,4 @@
-<script>
+
 (function () {
   "use strict";
 let currentStudent = null;
@@ -909,4 +909,3 @@ function renderMentorNotes(notes) {
   tryAutoLogin();
 })();
 
-</script>
