@@ -1,7 +1,5 @@
 
-const APPS_SCRIPT_URL =
-"https://script.google.com/macros/s/AKfycbzyfWa8agayMB0XLjkbfhfj2MdIRElAiY2Wnd7-eQKd1zlMl099ky6Cif06TWydzr8D/exec";
-
+const APPS_SCRIPT_URL = "/api/proxy";
 async function callAPI(action, payload = {}) {
 
   const response = await fetch(APPS_SCRIPT_URL, {
