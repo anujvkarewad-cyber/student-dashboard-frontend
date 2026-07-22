@@ -1,8 +1,6 @@
 export default async function handler(req, res) {
   try {
-    const response = await fetch(
-      "https://script.google.com/macros/s/AKfycbzyfWa8agayMB0XLjkbfhfj2MdIRElAiY2Wnd7-eQKd1zlMl099ky6Cif06TWydzr8D/exec",
-      {
+  await fetch(process.env.APPS_SCRIPT_URL, {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
