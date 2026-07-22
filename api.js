@@ -6,14 +6,28 @@ const APPS_SCRIPT_URL =
   // ==========================
   // LOGIN
   // ==========================
-  validateLogin(studentId, password) {
-    return new Promise((resolve, reject) => {
-      google.script.run
-        .withSuccessHandler(resolve)
-        .withFailureHandler(reject)
-        .validateLogin(studentId, password);
-    });
-  },
+validateLogin(studentId, password) {
+
+  return fetch(APPS_SCRIPT_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      action: "validateLogin",
+      payload: {
+        studentId,
+        password
+      }
+    })
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (data.error) throw new Error(data.error);
+    return data.result;
+  });
+
+},
 
   validateStudent(studentId) {
     return new Promise((resolve, reject) => {
