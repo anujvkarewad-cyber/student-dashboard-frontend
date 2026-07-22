@@ -171,12 +171,14 @@ state.mentorNotes = notes;
 
     $("#topbar-streak").textContent = stats.streak ?? 0;
     // Load mentor feedback
+// Feedback temporarily disabled
+/*
 const feedbacks = await api.getMentorFeedback(student.studentId);
-console.log(feedbacks);
 
 if (Array.isArray(feedbacks) && feedbacks.length > 0) {
-    showMentorFeedback(feedbacks[0]);
+  showMentorFeedback(feedbacks[0]);
 }
+*/
 
     // route
     const initial = (location.hash || "#dashboard").slice(1);
