@@ -1,41 +1,502 @@
+
 <!DOCTYPE html>
 <html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>UMP Dashboard · Ujjwal Pathak Mentorship</title> 
 
-    <title>Ujjwal Pathak Mentorship</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<meta charset="UTF-8">
+<title>UPM PWA</title>
 
-    <!-- PWA -->
-    <link rel="manifest" href="/manifest.json">
-    <meta name="theme-color" content="#2563EB">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<link rel="manifest" href="/manifest.json">
 
-    <!-- Apple -->
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="default">
-    <meta name="apple-mobile-web-app-title" content="UPM">
-    <link rel="apple-touch-icon" href="/icon/icon-192.png">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+<meta name="theme-color" content="#2563EB">
 
-    <!-- Favicon -->
-    <link rel="icon" type="image/png" href="/icon/icon-192.png">
+<link rel="stylesheet" href="style.css">
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
-
 <body>
 
-    <h1>UPM PWA</h1>
+<!-- =================== LOGIN SCREEN =================== -->
+<section id="login-screen" class="login-wrap" data-testid="login-screen">
+  <div class="login-bg-orbs" aria-hidden="true">
+    <span></span><span></span><span></span>
+  </div>
 
-    <script>
-        if ("serviceWorker" in navigator) {
-            window.addEventListener("load", async () => {
-                try {
-                    const registration = await navigator.serviceWorker.register("/service-worker.js");
-                    console.log("✅ Service Worker Registered", registration);
-                } catch (err) {
-                    console.error("❌ Service Worker Registration Failed", err);
-                }
-            });
-        }
-    </script>
+  <div class="login-card" data-testid="login-card">
+    <div class="login-brand">
+      <div class="brand-badge">UP</div>
+      <div>
+        <div class="brand-name">UJJWAL PATHAK</div>
+        <div class="brand-sub">Mentorship Program</div>
+      </div>
+    </div>
+
+    <h1 class="login-title">Welcome back, scholar.</h1>
+    <p class="login-sub">Sign in with your Student ID to continue your CA Inter journey.</p>
+
+    <form id="login-form" data-testid="login-form" autocomplete="off">
+      <label class="field">
+        <span class="field-label">Student ID</span>
+        <div class="field-control">
+          <i class="fa-regular fa-id-card"></i>
+          <input
+            type="text"
+            id="student-id-input"
+            data-testid="student-id-input"
+            placeholder="e.g. UMP0001"
+            required
+            autofocus
+          />
+        </div>
+      </label>
+
+      <label class="field">
+  <span class="field-label">Password</span>
+  <div class="field-control">
+    <i class="fa-solid fa-lock"></i>
+    <input
+      type="password"
+      id="password-input"
+      placeholder="Enter Password"
+      required
+    />
+  </div>
+</label>
+
+      <button type="submit" class="btn-primary" data-testid="login-submit-btn">
+        <span>Enter Dashboard</span>
+        <i class="fa-solid fa-arrow-right"></i>
+      </button>
+
+      <div id="login-error" class="login-error" data-testid="login-error" hidden></div>
+    </form>
+
+    <div class="login-footnote">
+      Try demo IDs: <code>UMP0001</code> · <code>UMP0002</code> · <code>UMP0003</code>
+    </div>
+  </div>
+
+  <aside class="login-hero" aria-hidden="true">
+    <div class="hero-quote">
+      <div class="hero-mark">"</div>
+      <p>Consistency isn't about being perfect. It's about showing up every single day.</p>
+      <div class="hero-cite">— Weekly Mentor Quote</div>
+    </div>
+    <div class="hero-stats">
+      <div><b>500+</b><span>Active students</span></div>
+      <div><b>1.2M+</b><span>Study hours logged</span></div>
+      <div><b>#1</b><span>CA Inter tracker</span></div>
+    </div>
+  </aside>
+</section>
+
+<!-- =================== APP SHELL =================== -->
+<div id="app-shell" class="app-shell" hidden data-testid="app-shell">
+
+  <!-- Sidebar -->
+  <aside class="sidebar" data-testid="sidebar">
+    <div class="sidebar-brand">
+      <div class="brand-badge sm">UP</div>
+      <div>
+        <div class="brand-name sm">UJJWAL PATHAK</div>
+        <div class="brand-sub xs">Mentorship</div>
+      </div>
+    </div>
+
+    <nav class="nav">
+      <a href="#dashboard" class="nav-item active" data-view="dashboard" data-testid="nav-dashboard">
+        <i class="fa-solid fa-house"></i><span>Dashboard</span>
+      </a>
+      <a href="#tracker" class="nav-item" data-view="tracker" data-testid="nav-tracker">
+        <i class="fa-solid fa-book-open"></i><span>Daily Study Tracker</span>
+      </a>
+      <a href="#mcq" class="nav-item" data-view="mcq" data-testid="nav-mcq">
+        <i class="fa-solid fa-list-check"></i><span>MCQ Practice</span>
+      </a>
+      <a href="#performance" class="nav-item" data-view="performance" data-testid="nav-performance">
+        <i class="fa-solid fa-chart-line"></i><span>Performance</span>
+      </a>
+      <a href="#leaderboard" class="nav-item" data-view="leaderboard" data-testid="nav-leaderboard">
+        <i class="fa-solid fa-trophy"></i><span>Leaderboard</span>
+      </a>
+      <a href="#reports" class="nav-item" data-view="reports" data-testid="nav-reports">
+        <i class="fa-solid fa-envelope-open-text"></i><span>Weekly Reports</span>
+      </a>
+      <a href="#profile" class="nav-item" data-view="profile" data-testid="nav-profile">
+        <i class="fa-regular fa-user"></i><span>Profile</span>
+      </a>
+    </nav>
+
+    <button class="nav-item logout" id="logout-btn" data-testid="logout-btn">
+      <i class="fa-solid fa-right-from-bracket"></i><span>Logout</span>
+    </button>
+  </aside>
+
+  <!-- Main -->
+  <main class="main" data-testid="main-content">
+
+    <header class="topbar" data-testid="topbar">
+      <button class="menu-toggle" id="menu-toggle" aria-label="Toggle menu" data-testid="menu-toggle">
+        <i class="fa-solid fa-bars"></i>
+      </button>
+      <div class="topbar-title" id="view-title">Dashboard</div>
+      <div class="topbar-actions">
+        <div class="pill-badge"><i class="fa-solid fa-fire"></i> <span id="topbar-streak">0</span> day streak</div>
+        <div class="user-chip" data-testid="user-chip">
+          <div class="avatar" id="user-avatar">S</div>
+          <div class="user-meta">
+            <b id="user-name">Student</b>
+            <span id="user-id">UMP0000</span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <div class="view-container" id="view-container">
+      <!-- Views injected here -->
+    </div>
+  </main>
+</div>
+
+<!-- =================== TEMPLATES =================== -->
+
+<template id="tpl-dashboard">
+  <div class="view" data-testid="view-dashboard">
+    <div class="welcome-strip">
+      <div>
+        <div class="eyebrow">Good <span data-tod></span>,</div>
+        <h1 class="hello" data-hello></h1>
+        <p class="sub">Here's your snapshot for today. Stay consistent — small daily reps compound.</p>
+      </div>
+      <div class="strip-tag" data-caLevel></div>
+    </div>
+
+    <section class="kpi-grid">
+      <div class="kpi kpi-blue">
+        <div class="kpi-icon"><i class="fa-solid fa-fire"></i></div>
+        <div class="kpi-label">Current Streak</div>
+        <div class="kpi-value" data-k="streak">—</div>
+        <div class="kpi-foot">days in a row</div>
+      </div>
+      <div class="kpi kpi-mint">
+        <div class="kpi-icon"><i class="fa-regular fa-clock"></i></div>
+        <div class="kpi-label">Today</div>
+        <div class="kpi-value" data-k="today">—</div>
+        <div class="kpi-foot">hours studied today</div>
+      </div>
+      <div class="kpi kpi-lilac">
+        <div class="kpi-icon"><i class="fa-solid fa-calendar-week"></i></div>
+        <div class="kpi-label">This Week</div>
+        <div class="kpi-value" data-k="weekly">—</div>
+        <div class="kpi-foot">/ 70 hr target</div>
+      </div>
+      <div class="kpi kpi-peach">
+        <div class="kpi-icon"><i class="fa-solid fa-calendar"></i></div>
+        <div class="kpi-label">This Month</div>
+        <div class="kpi-value" data-k="monthly">—</div>
+        <div class="kpi-foot">hours this month</div>
+      </div>
+    </section>
+    
+    <section class="card">
+
+  <div class="card-head">
+    <h3>📢 Announcements</h3>
+  </div>
+
+  <div class="two-col">
+
+    <!-- Announcements -->
+    <div class="card">
+        <div class="card-head">
+            <h3>📢 Announcements</h3>
+        </div>
+
+        <div class="announcement-container">
+            <div id="announcement-list"></div>
+        </div>
+    </div>
+
+    <!-- Mentor Notes -->
+    <div class="card">
+        <div class="card-head">
+            <h3>📝 Mentor Notes</h3>
+        </div>
+
+        <div class="announcement-container mentor-notes-container">
+            <div id="mentor-notes-list"></div>
+        </div>
+    </div>
+
+</div>
+</section>
+
+    <section class="two-col">
+      <div class="card">
+        <div class="card-head">
+          <h3>Overall Progress</h3>
+          <span class="chip" data-progressPct>—</span>
+        </div>
+        <div class="progress-wrap">
+          <div class="progress-bar"><div class="progress-fill" data-progressBar></div></div>
+          <div class="progress-labels">
+            <span>Total logged: <b data-k="total">—</b> hrs</span>
+            <span>Target: <b>1000 hrs</b></span>
+          </div>
+        </div>
+
+        <div class="mini-stats">
+          <div><span>Avg / day</span><b data-k="avg">—</b></div>
+          <div><span>Study sessions</span><b data-k="sessions">—</b></div>
+          <div><span>Last submission</span><b data-k="last">—</b></div>
+        </div>
+      </div>
+
+      <div class="card rank-card">
+        <div class="card-head">
+          <h3>Leaderboard Rank</h3>
+          <a href="#leaderboard" class="link" data-navigate="leaderboard">View all →</a>
+        </div>
+        <div class="rank-display">
+          <div class="rank-num" data-k="rank">—</div>
+          <div>
+            <div class="rank-label">Weekly Rank</div>
+            <div class="rank-badge" data-rankBadge>—</div>
+          </div>
+        </div>
+        <div class="rank-footer">
+          <span><i class="fa-solid fa-arrow-trend-up"></i> Weekly hrs: <b data-k="weekly2">—</b></span>
+          <span><i class="fa-solid fa-users"></i> Cohort: <b data-cohort>—</b></span>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h3>Last 7 days · Study hours</h3>
+        <span class="muted">Auto-updated from your daily tracker</span>
+      </div>
+      <div class="chart-holder"><canvas id="chart-weekly"></canvas></div>
+    </section>
+  </div>
+</template>
+
+<template id="tpl-tracker">
+  <div class="view" data-testid="view-tracker">
+    <div class="card">
+      <div class="card-head">
+        <h3>Daily Study Tracker</h3>
+        <a class="btn-primary sm" id="open-tracker-form" data-testid="open-tracker-form-btn">
+          <i class="fa-solid fa-plus"></i> Log study hours
+        </a>
+      </div>
+      <p class="muted">Submissions from your Google Form appear here in real-time.</p>
+
+      <div class="tracker-summary">
+        <div><span>Total sessions</span><b data-k="sessions">—</b></div>
+        <div><span>Total hours</span><b data-k="total">—</b></div>
+        <div><span>Average / day</span><b data-k="avg">—</b></div>
+        <div><span>This week</span><b data-k="weekly">—</b></div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="data-table" data-testid="tracker-table">
+          <thead>
+            <tr><th>Date</th><th>Topic</th><th>Hours</th><th>Proof</th></tr>
+          </thead>
+          <tbody id="tracker-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</template>
+
+<template id="tpl-mcq">
+  <div class="view" data-testid="view-mcq">
+    <div class="section-heading">
+      <h2>MCQ Practice</h2>
+      <p class="muted">Choose a subject, then pick a chapter to start a timed quiz.</p>
+    </div>
+
+    <!-- Step 1: Subject -->
+    <section id="mcq-subjects" class="subject-grid" data-testid="mcq-subjects"></section>
+
+    <!-- Step 2: Chapters -->
+    <section id="mcq-chapters" class="chapters-panel" hidden data-testid="mcq-chapters">
+      <button class="back-link" data-mcq-back><i class="fa-solid fa-arrow-left"></i> Back to subjects</button>
+      <h3 id="mcq-subject-title"></h3>
+      <div class="chapter-grid" id="chapter-grid"></div>
+    </section>
+
+    <!-- Step 3: Quiz -->
+    <section id="mcq-quiz" class="quiz-panel" hidden data-testid="mcq-quiz"></section>
+
+    <!-- Step 4: Result -->
+    <section id="mcq-result" class="result-panel" hidden data-testid="mcq-result"></section>
+  </div>
+</template>
+
+<template id="tpl-performance">
+  <div class="view" data-testid="view-performance">
+    <div class="perf-grid">
+      <div class="kpi kpi-blue"><div class="kpi-label">Overall accuracy</div><div class="kpi-value" data-p="overall">—</div></div>
+      <div class="kpi kpi-mint"><div class="kpi-label">Avg score</div><div class="kpi-value" data-p="avg">—</div></div>
+      <div class="kpi kpi-lilac"><div class="kpi-label">Questions solved</div><div class="kpi-value" data-p="solved">—</div></div>
+      <div class="kpi kpi-peach"><div class="kpi-label">Attempts</div><div class="kpi-value" data-p="attempts">—</div></div>
+    </div>
+
+    <section class="two-col">
+      <div class="card">
+        <div class="card-head"><h3>Subject-wise Accuracy</h3></div>
+        <div class="chart-holder"><canvas id="chart-subjects"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h3>Strong vs Weak Chapters</h3></div>
+        <div class="strong-weak">
+          <div>
+            <h4 class="tag good"><i class="fa-solid fa-arrow-up"></i> Strong</h4>
+            <ul id="strong-list" class="chip-list"></ul>
+          </div>
+          <div>
+            <h4 class="tag bad"><i class="fa-solid fa-arrow-down"></i> Needs work</h4>
+            <ul id="weak-list" class="chip-list"></ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h3>Recent Quiz Attempts</h3></div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th>Date</th><th>Subject</th><th>Chapter</th><th>Score</th><th>Accuracy</th><th>Time</th></tr></thead>
+          <tbody id="attempts-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</template>
+
+<template id="tpl-leaderboard">
+  <div class="view" data-testid="view-leaderboard">
+    <div class="rank-tiles">
+      <div class="card rank-tile">
+        <div class="rt-label">Current Rank</div>
+        <div class="rt-value" data-lb="current">—</div>
+      </div>
+      <div class="card rank-tile">
+        <div class="rt-label">Weekly Rank</div>
+        <div class="rt-value" data-lb="weekly">—</div>
+      </div>
+      <div class="card rank-tile">
+        <div class="rt-label">Monthly Rank</div>
+        <div class="rt-value" data-lb="monthly">—</div>
+      </div>
+    </div>
+
+    <section class="card">
+      <div class="card-head">
+        <h3>Top 10 · Weekly Leaderboard</h3>
+        <span class="muted">Sorted by weekly study hours</span>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table lb-table" data-testid="lb-table">
+          <thead><tr><th>Rank</th><th>Student</th><th>Weekly hrs</th><th>Total hrs</th><th>Streak</th><th>Status</th></tr></thead>
+          <tbody id="lb-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</template>
+
+<template id="tpl-reports">
+  <div class="view" data-testid="view-reports">
+    <div class="card">
+      <div class="card-head">
+        <h3>Weekly Performance Reports</h3>
+        <span class="muted">Auto-emailed every Sunday</span>
+      </div>
+      <div id="reports-list" class="reports-list"></div>
+    </div>
+  </div>
+</template>
+
+<template id="tpl-profile">
+  <div class="view" data-testid="view-profile">
+    <div class="card profile-card">
+      <div class="profile-hero">
+        <div class="profile-avatar" id="profile-avatar">S</div>
+        <div>
+          <h2 id="profile-name">—</h2>
+          <div class="profile-id">
+            <span id="profile-id">—</span>
+            <span class="chip" id="profile-caLevel">—</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="profile-grid">
+        <div><span>Email</span><b id="p-email">—</b></div>
+        <div><span>Phone</span><b id="p-phone">—</b></div>
+        <div><span>Join Date</span><b id="p-join">—</b></div>
+        <div><span>Group</span><b id="p-group">—</b></div>
+        <div><span>Attempt</span><b id="p-attempt">—</b></div>
+        <div><span>Batch</span><b id="p-batch">—</b></div>
+        <div><span>Target hours / week</span><b id="p-target">70</b></div>
+        <div><span>Total study hours</span><b id="p-total">—</b></div>
+      </div>
+    </div>
+  </div>
+
+      <div class="card password-card">
+
+  <h3>
+    <i class="fa-solid fa-lock"></i>
+    Change Password
+  </h3>
+
+  <div class="field">
+    <span class="field-label">Current Password</span>
+    <input type="password" id="current-password">
+  </div>
+
+  <div class="field">
+    <span class="field-label">New Password</span>
+    <input type="password" id="new-password">
+  </div>
+
+  <div class="field">
+    <span class="field-label">Confirm Password</span>
+    <input type="password" id="confirm-password">
+  </div>
+
+  <button
+      class="btn-primary"
+      id="change-password-btn">
+      Update Password
+  </button>
+
+  <div id="password-msg"></div>
+
+</div>
+</template>
+<body>
+
+<!-- =================== SCRIPTS =================== -->
+<script src="api.js"></script>
+<script src="app.js"></script>
+UPM PWA
 
 </body>
+</html>
+
+
 </html>
