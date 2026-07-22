@@ -1,18 +1,41 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>UPM PWA</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<link rel="manifest" href="/manifest.json">
+    <title>Ujjwal Pathak Mentorship</title>
 
-<meta name="theme-color" content="#2563EB">
+    <!-- PWA -->
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#2563EB">
 
+    <!-- Apple -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="UPM">
+    <link rel="apple-touch-icon" href="/icons/icon-192.png">
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="/icons/icon-192.png">
 </head>
 
 <body>
 
-UPM PWA
+    <h1>UPM PWA</h1>
+
+    <script>
+        if ("serviceWorker" in navigator) {
+            window.addEventListener("load", async () => {
+                try {
+                    const registration = await navigator.serviceWorker.register("/service-worker.js");
+                    console.log("✅ Service Worker Registered", registration);
+                } catch (err) {
+                    console.error("❌ Service Worker Registration Failed", err);
+                }
+            });
+        }
+    </script>
 
 </body>
 </html>
