@@ -352,7 +352,7 @@ async function updatePassword() {
   // ============ VIEWS ============
   function renderDashboard() {
     
-    const s = state.student, st = state.stats;
+    const s = state.student; const st = state.stats || {};
     $("[data-tod]").textContent = timeOfDay();
     $("[data-hello]").textContent = s.studentName;
     $("[data-caLevel]").textContent = `${s.caLevel} · ${s.group}`;
@@ -452,7 +452,7 @@ if (notesBox) {
   }
 
   function renderTracker() {
-    const st = state.stats;
+    const st = state.stats || {};
     $$("[data-k='sessions']").forEach(el => el.textContent = st.totalEntries ?? 0);
     $$("[data-k='total']").forEach(el => el.textContent = fmt(st.totalHours, 1));
     $$("[data-k='avg']").forEach(el => el.textContent = fmt(st.averageHours, 1));
