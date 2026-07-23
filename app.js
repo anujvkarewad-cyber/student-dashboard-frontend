@@ -804,6 +804,7 @@ if (notesBox) {
     $("#profile-name").textContent = s.studentName;
     $("#profile-id").textContent = s.studentId;
     $("#profile-caLevel").textContent = s.caLevel;
+    console.log("Profile Student Object:", s);
     $("#p-email").textContent = s.email || "—";
     $("#p-phone").textContent = s.phone || "—";
     $("#p-join").textContent = s.joinedOn || "—";
