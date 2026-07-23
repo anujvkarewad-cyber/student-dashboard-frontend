@@ -806,7 +806,7 @@ if (notesBox) {
     $("#profile-caLevel").textContent = s.caLevel;
     $("#p-email").textContent = s.email || "—";
     $("#p-phone").textContent = s.phone || "—";
-    $("#p-join").textContent  = s.joinDate || "—";
+    $("#p-join").textContent = s.joinedOn || "—";
     $("#p-group").textContent = s.group || "—";
     $("#p-attempt").textContent = s.attempt || "—";
     $("#p-batch").textContent = s.batch || "—";
