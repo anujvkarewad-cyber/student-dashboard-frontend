@@ -952,13 +952,70 @@ document.querySelectorAll(".otp-input");
 
 document
 .getElementById("fp-send-otp")
-.addEventListener("click",()=>{
+.addEventListener("click", async () => {
 
-    forgotModal.hidden=true;
+    const studentId = document
+        .getElementById("fp-student-id")
+        .value
+        .trim()
+        .toUpperCase();
 
-    otpModal.hidden=false;
+    const email = document
+        .getElementById("fp-email")
+        .value
+        .trim();
 
-    otpInputs[0].focus();
+    const error = document.getElementById("fp-error");
+
+    error.hidden = true;
+
+    if (!studentId || !email) {
+
+        error.textContent =
+            "Please enter Student ID and registered Email.";
+
+        error.hidden = false;
+
+        return;
+
+    }
+
+    const btn = document.getElementById("fp-send-otp");
+
+    btn.disabled = true;
+
+    btn.innerHTML = `
+        <i class="fa-solid fa-spinner fa-spin"></i>
+        <span>Sending OTP...</span>
+    `;
+
+    try {
+
+        await api.forgotPassword(studentId, email);
+
+        forgotModal.hidden = true;
+
+        otpModal.hidden = false;
+
+        otpInputs.forEach(i => i.value = "");
+
+        otpInputs[0].focus();
+
+    } catch (err) {
+
+        error.textContent =
+            err.message || "Unable to send OTP.";
+
+        error.hidden = false;
+
+    }
+
+    btn.disabled = false;
+
+    btn.innerHTML = `
+        <span>Send OTP</span>
+        <i class="fa-solid fa-paper-plane"></i>
+    `;
 
 });
 
