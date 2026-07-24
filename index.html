@@ -503,52 +503,79 @@
 
 <div id="forgot-modal" class="modal-overlay" hidden>
 
-  <div class="modal-card">
+    <div class="modal-card">
 
-    <h2>Forgot Password</h2>
+        <div class="modal-icon">
+            <i class="fa-solid fa-key"></i>
+        </div>
 
-    <p>
-      Enter your Student ID and registered email address.
-    </p>
+        <h2>Forgot Password?</h2>
 
-    <div class="field">
-      <span class="field-label">Student ID</span>
-      <input
-        type="text"
-        id="fp-student-id"
-        placeholder="UMP0001"
-      >
+        <p>
+            Enter your Student ID and registered email address.
+        </p>
+
+        <div class="field">
+
+            <span class="field-label">Student ID</span>
+
+            <div class="field-control">
+                <i class="fa-regular fa-id-card"></i>
+
+                <input
+                    type="text"
+                    id="fp-student-id"
+                    placeholder="UMP0001"
+                    autocomplete="off">
+            </div>
+
+        </div>
+
+        <div class="field">
+
+            <span class="field-label">Registered Email</span>
+
+            <div class="field-control">
+                <i class="fa-regular fa-envelope"></i>
+
+                <input
+                    type="email"
+                    id="fp-email"
+                    placeholder="student@gmail.com"
+                    autocomplete="off">
+            </div>
+
+        </div>
+
+        <div id="fp-error" class="login-error" hidden></div>
+
+        <div class="modal-actions">
+
+            <button
+                type="button"
+                class="btn-secondary"
+                id="fp-cancel">
+
+                Cancel
+
+            </button>
+
+            <button
+                type="button"
+                class="btn-primary"
+                id="fp-send-otp">
+
+                <span>Send OTP</span>
+
+                <i class="fa-solid fa-paper-plane"></i>
+
+            </button>
+
+        </div>
+
     </div>
-
-    <div class="field">
-      <span class="field-label">Registered Email</span>
-      <input
-        type="email"
-        id="fp-email"
-        placeholder="example@gmail.com"
-      >
-    </div>
-
-    <div class="modal-actions">
-
-      <button
-        class="btn-secondary"
-        id="fp-cancel">
-        Cancel
-      </button>
-
-      <button
-        class="btn-primary"
-        id="fp-send-otp">
-        Send OTP
-      </button>
-
-    </div>
-
-  </div>
 
 </div>
-
 <!-- =================== SCRIPTS =================== -->
 <script src="api.js"></script>
 <script src="app.js"></script>
