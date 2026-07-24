@@ -802,5 +802,55 @@ opacity:1;
 #mentor-notes-list::-webkit-scrollbar-track{
     background:#F8FAFC;
 }
+.forgot-row{
+    display:flex;
+    justify-content:flex-end;
+    margin-top:8px;
+}
 
+.forgot-row a{
+    font-size:14px;
+    text-decoration:none;
+    color:#2563EB;
+    font-weight:600;
+}
+
+.forgot-row a:hover{
+    text-decoration:underline;
+}
+
+.modal-overlay{
+    position:fixed;
+    inset:0;
+    background:rgba(0,0,0,.45);
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    z-index:9999;
+}
+
+.modal-card{
+    width:420px;
+    max-width:92%;
+    background:#fff;
+    border-radius:18px;
+    padding:28px;
+    box-shadow:0 20px 60px rgba(0,0,0,.2);
+}
+
+.modal-card h2{
+    margin-bottom:8px;
+}
+
+.modal-card p{
+    color:#666;
+    margin-bottom:20px;
+}
+
+.modal-actions{
+    display:flex;
+    justify-content:flex-end;
+    gap:10px;
+    margin-top:20px;
+}
 </style>
