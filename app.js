@@ -1080,6 +1080,12 @@ function checkOTPComplete() {
     verifyBtn.disabled = otp.length !== 6;
 
 }
+
+  verifyBtn.addEventListener("click", async () => {
+    ...
+    await api.verifyOTP(studentId, otp);
+    ...
+});
   // ============ BOOT ============
   tryAutoLogin();
 })();
