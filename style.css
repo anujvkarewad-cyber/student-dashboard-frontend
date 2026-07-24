@@ -1032,4 +1032,11 @@ opacity:1;
     transform:none;
 
 }
+#fp-email{
+    text-transform: none !important;
+}
+
+#fp-email::placeholder{
+    text-transform: none;
+}
 </style>
