@@ -1023,4 +1023,13 @@ opacity:1;
     font-size:14px;
 
 }
+#verify-otp-btn:disabled{
+
+    opacity:.55;
+
+    cursor:not-allowed;
+
+    transform:none;
+
+}
 </style>
