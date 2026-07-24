@@ -1083,9 +1083,9 @@ function checkOTPComplete() {
 
 verifyBtn.addEventListener("click", async () => {
 
-    console.log("1. Button clicked");
-
-    const otp = [...otpInputs].map(i => i.value).join("");
+    const otp = [...otpInputs]
+        .map(i => i.value)
+        .join("");
 
     const studentId = document
         .getElementById("fp-student-id")
@@ -1093,23 +1093,27 @@ verifyBtn.addEventListener("click", async () => {
         .trim()
         .toUpperCase();
 
-    console.log("2. Student:", studentId);
-    console.log("3. OTP:", otp);
-
-    console.log("4. api =", api);
-    console.log("5. verifyOTP =", api.verifyOTP);
-
     try {
-
-        console.log("6. Calling API...");
 
         const result = await api.verifyOTP(studentId, otp);
 
-        console.log("7. Result:", result);
+        if (!result.success) {
+            alert(result.message);
+            return;
+        }
+
+        otpModal.hidden = true;
+
+        document.getElementById("reset-modal").hidden = false;
+
+        document.getElementById("reset-password").value = "";
+        document.getElementById("reset-confirm-password").value = "";
+
+        document.getElementById("reset-password").focus();
 
     } catch (err) {
 
-        console.error("8. ERROR:", err);
+        alert(err.message || "OTP verification failed.");
 
     }
 
