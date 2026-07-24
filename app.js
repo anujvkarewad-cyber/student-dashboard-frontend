@@ -1118,6 +1118,74 @@ verifyBtn.addEventListener("click", async () => {
     }
 
 });
+
+  const resetBtn = document.getElementById("reset-password-btn");
+
+resetBtn.addEventListener("click", async () => {
+
+    const studentId = document
+        .getElementById("fp-student-id")
+        .value
+        .trim()
+        .toUpperCase();
+
+    const password = document
+        .getElementById("reset-password")
+        .value
+        .trim();
+
+    const confirmPassword = document
+        .getElementById("reset-confirm-password")
+        .value
+        .trim();
+
+    const error = document.getElementById("reset-error");
+
+    error.hidden = true;
+
+    if (!password || !confirmPassword) {
+        error.hidden = false;
+        error.textContent = "Please fill all fields.";
+        return;
+    }
+
+    if (password.length < 6) {
+        error.hidden = false;
+        error.textContent = "Password must be at least 6 characters.";
+        return;
+    }
+
+    if (password !== confirmPassword) {
+        error.hidden = false;
+        error.textContent = "Passwords do not match.";
+        return;
+    }
+
+    try {
+
+        const result = await api.resetPassword(studentId, password);
+
+        if (!result.success) {
+            error.hidden = false;
+            error.textContent = result.message;
+            return;
+        }
+
+        alert("Password reset successfully!");
+
+        document.getElementById("reset-modal").hidden = true;
+
+        forgotModal.hidden = true;
+        otpModal.hidden = true;
+
+    } catch (err) {
+
+        error.hidden = false;
+        error.textContent = err.message || "Unable to reset password.";
+
+    }
+
+});
   // ============ BOOT ============
   tryAutoLogin();
 })();
