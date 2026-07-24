@@ -944,6 +944,51 @@ forgotModal.addEventListener("click",(e)=>{
     }
 
 });
+
+  const otpModal = document.getElementById("otp-modal");
+
+const otpInputs =
+document.querySelectorAll(".otp-input");
+
+document
+.getElementById("fp-send-otp")
+.addEventListener("click",()=>{
+
+    forgotModal.hidden=true;
+
+    otpModal.hidden=false;
+
+    otpInputs[0].focus();
+
+});
+
+otpInputs.forEach((input,index)=>{
+
+    input.addEventListener("input",()=>{
+
+        input.value=input.value.replace(/\D/g,"");
+
+        if(input.value && index<5){
+
+            otpInputs[index+1].focus();
+
+        }
+
+    });
+
+    input.addEventListener("keydown",(e)=>{
+
+        if(e.key==="Backspace" &&
+           input.value==="" &&
+           index>0){
+
+            otpInputs[index-1].focus();
+
+        }
+
+    });
+
+});
   // ============ BOOT ============
   tryAutoLogin();
 })();
