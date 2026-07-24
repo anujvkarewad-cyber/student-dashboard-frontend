@@ -76,6 +76,11 @@
     />
   </div>
 </label>
+      <div class="forgot-row">
+  <a href="#" id="forgot-password-link">
+    Forgot Password?
+  </a>
+</div>
 
       <button type="submit" class="btn-primary" data-testid="login-submit-btn">
         <span>Enter Dashboard</span>
@@ -494,7 +499,55 @@
 
 </div>
 </template>
+<!-- ================= Forgot Password Modal ================= -->
 
+<div id="forgot-modal" class="modal-overlay" hidden>
+
+  <div class="modal-card">
+
+    <h2>Forgot Password</h2>
+
+    <p>
+      Enter your Student ID and registered email address.
+    </p>
+
+    <div class="field">
+      <span class="field-label">Student ID</span>
+      <input
+        type="text"
+        id="fp-student-id"
+        placeholder="UMP0001"
+      >
+    </div>
+
+    <div class="field">
+      <span class="field-label">Registered Email</span>
+      <input
+        type="email"
+        id="fp-email"
+        placeholder="example@gmail.com"
+      >
+    </div>
+
+    <div class="modal-actions">
+
+      <button
+        class="btn-secondary"
+        id="fp-cancel">
+        Cancel
+      </button>
+
+      <button
+        class="btn-primary"
+        id="fp-send-otp">
+        Send OTP
+      </button>
+
+    </div>
+
+  </div>
+
+</div>
 
 <!-- =================== SCRIPTS =================== -->
 <script src="api.js"></script>
