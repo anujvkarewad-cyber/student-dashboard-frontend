@@ -908,6 +908,26 @@ function renderMentorNotes(notes) {
     </div>
   `).join("");
 }
+
+  const forgotModal = document.getElementById("forgot-modal");
+
+document
+.getElementById("forgot-password-link")
+.addEventListener("click",(e)=>{
+
+    e.preventDefault();
+
+    forgotModal.hidden=false;
+
+});
+
+document
+.getElementById("fp-cancel")
+.addEventListener("click",()=>{
+
+    forgotModal.hidden=true;
+
+});
   // ============ BOOT ============
   tryAutoLogin();
 })();
