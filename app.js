@@ -962,33 +962,67 @@ document
 
 });
 
-otpInputs.forEach((input,index)=>{
+otpInputs.forEach((input, index) => {
 
-    input.addEventListener("input",()=>{
+    input.addEventListener("input", (e) => {
 
-        input.value=input.value.replace(/\D/g,"");
+        input.value = input.value.replace(/\D/g, "");
 
-        if(input.value && index<5){
+        if (input.value && index < otpInputs.length - 1) {
+            otpInputs[index + 1].focus();
+        }
 
-            otpInputs[index+1].focus();
+        checkOTPComplete();
+
+    });
+
+    input.addEventListener("keydown", (e) => {
+
+        if (e.key === "Backspace") {
+
+            if (input.value === "" && index > 0) {
+                otpInputs[index - 1].focus();
+            }
 
         }
 
     });
 
-    input.addEventListener("keydown",(e)=>{
+    input.addEventListener("paste", (e) => {
 
-        if(e.key==="Backspace" &&
-           input.value==="" &&
-           index>0){
+        e.preventDefault();
 
-            otpInputs[index-1].focus();
+        const data = e.clipboardData
+            .getData("text")
+            .replace(/\D/g, "")
+            .slice(0, 6);
 
+        data.split("").forEach((digit, i) => {
+            if (otpInputs[i]) otpInputs[i].value = digit;
+        });
+
+        if (data.length > 0) {
+            otpInputs[Math.min(data.length - 1, 5)].focus();
         }
+
+        checkOTPComplete();
 
     });
 
 });
+  const verifyBtn = document.getElementById("verify-otp-btn");
+
+verifyBtn.disabled = true;
+
+function checkOTPComplete() {
+
+    const otp = [...otpInputs]
+        .map(i => i.value)
+        .join("");
+
+    verifyBtn.disabled = otp.length !== 6;
+
+}
   // ============ BOOT ============
   tryAutoLogin();
 })();
