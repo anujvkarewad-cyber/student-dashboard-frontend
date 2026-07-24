@@ -76,7 +76,7 @@ window.UMP_API = {
 
   getStudentMentorNotes(studentId) {
     return callAPI("getStudentMentorNotes", { studentId });
-  }
+  },
 
 
 verifyOTP(studentId, otp) {
