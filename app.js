@@ -911,21 +911,37 @@ function renderMentorNotes(notes) {
 
   const forgotModal = document.getElementById("forgot-modal");
 
-document
-.getElementById("forgot-password-link")
-.addEventListener("click",(e)=>{
+function openForgotPasswordModal(e){
 
     e.preventDefault();
 
-    forgotModal.hidden=false;
+    forgotModal.hidden = false;
 
-});
+    document.getElementById("fp-student-id").focus();
+
+}
+
+function closeForgotPasswordModal(){
+
+    forgotModal.hidden = true;
+
+}
+
+document
+.getElementById("forgot-password-link")
+.addEventListener("click",openForgotPasswordModal);
 
 document
 .getElementById("fp-cancel")
-.addEventListener("click",()=>{
+.addEventListener("click",closeForgotPasswordModal);
 
-    forgotModal.hidden=true;
+forgotModal.addEventListener("click",(e)=>{
+
+    if(e.target===forgotModal){
+
+        closeForgotPasswordModal();
+
+    }
 
 });
   // ============ BOOT ============
