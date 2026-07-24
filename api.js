@@ -38,6 +38,13 @@ window.UMP_API = {
       newPassword
     });
   },
+  
+  forgotPassword(studentId, email) {
+  return callAPI("forgotPassword", {
+    studentId,
+    email
+  });
+},
 
   getStats(studentId) {
     return callAPI("getStats", { studentId });
