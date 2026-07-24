@@ -1081,10 +1081,37 @@ function checkOTPComplete() {
 
 }
 
-  verifyBtn.addEventListener("click", async () => {
-    ...
-    await api.verifyOTP(studentId, otp);
-    ...
+verifyBtn.addEventListener("click", async () => {
+
+    const otp = [...otpInputs]
+        .map(i => i.value)
+        .join("");
+
+    const studentId = document
+        .getElementById("fp-student-id")
+        .value
+        .trim()
+        .toUpperCase();
+
+    try {
+
+        const result = await api.verifyOTP(studentId, otp);
+
+        if (!result.success) {
+            alert(result.message);
+            return;
+        }
+
+        alert("OTP Verified Successfully!");
+
+        otpModal.hidden = true;
+
+    } catch (err) {
+
+        alert(err.message || "OTP verification failed.");
+
+    }
+
 });
   // ============ BOOT ============
   tryAutoLogin();
