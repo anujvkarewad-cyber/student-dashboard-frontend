@@ -576,6 +576,53 @@
     </div>
 
 </div>
+<!-- ================= OTP Modal ================= -->
+
+<div id="otp-modal" class="modal-overlay" hidden>
+
+    <div class="modal-card">
+
+        <div class="modal-icon">
+            <i class="fa-solid fa-shield-halved"></i>
+        </div>
+
+        <h2>Verify OTP</h2>
+
+        <p id="otp-email-text">
+            We've sent a verification code to your email.
+        </p>
+
+        <div class="otp-boxes">
+
+            <input class="otp-input" maxlength="1">
+            <input class="otp-input" maxlength="1">
+            <input class="otp-input" maxlength="1">
+            <input class="otp-input" maxlength="1">
+            <input class="otp-input" maxlength="1">
+            <input class="otp-input" maxlength="1">
+
+        </div>
+
+        <div class="otp-timer">
+
+            Resend OTP in
+            <span id="otp-countdown">60</span>s
+
+        </div>
+
+        <button
+            id="verify-otp-btn"
+            class="btn-primary"
+            style="width:100%;margin-top:20px;">
+
+            Verify OTP
+
+        </button>
+
+    </div>
+
+</div>
+  
 <!-- =================== SCRIPTS =================== -->
 <script src="api.js"></script>
 <script src="app.js"></script>
