@@ -78,10 +78,11 @@ window.UMP_API = {
     return callAPI("getStudentMentorNotes", { studentId });
   }
 
-};
+
 verifyOTP(studentId, otp) {
     return callAPI("verifyOTP", {
         studentId,
         otp
     });
 },
+};
