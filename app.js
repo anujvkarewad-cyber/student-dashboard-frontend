@@ -1069,7 +1069,7 @@ otpInputs.forEach((input, index) => {
 });
   const verifyBtn = document.getElementById("verify-otp-btn");
 
-verifyBtn.disabled = true;
+verifyBtn.disabled = false;
 
 function checkOTPComplete() {
 
