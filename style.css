@@ -975,4 +975,52 @@ opacity:1;
     }
 
 }
+.otp-boxes{
+
+    display:flex;
+    justify-content:center;
+    gap:10px;
+
+    margin:25px 0;
+
+}
+
+.otp-input{
+
+    width:52px;
+    height:58px;
+
+    border:2px solid #E2E8F0;
+
+    border-radius:14px;
+
+    font-size:24px;
+
+    font-weight:700;
+
+    text-align:center;
+
+    transition:.2s;
+
+}
+
+.otp-input:focus{
+
+    outline:none;
+
+    border-color:#2563EB;
+
+    box-shadow:0 0 0 4px rgba(37,99,235,.12);
+
+}
+
+.otp-timer{
+
+    text-align:center;
+
+    color:#64748B;
+
+    font-size:14px;
+
+}
 </style>
