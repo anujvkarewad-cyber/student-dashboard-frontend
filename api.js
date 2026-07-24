@@ -85,4 +85,11 @@ verifyOTP(studentId, otp) {
         otp
     });
 },
+  resetPassword(studentId, password) {
+  return callAPI("resetPassword", {
+    studentId,
+    password
+  });
+},
+  
 };
