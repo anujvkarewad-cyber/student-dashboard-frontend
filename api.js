@@ -79,3 +79,9 @@ window.UMP_API = {
   }
 
 };
+verifyOTP(studentId, otp) {
+    return callAPI("verifyOTP", {
+        studentId,
+        otp
+    });
+},
