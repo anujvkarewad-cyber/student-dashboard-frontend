@@ -676,24 +676,53 @@
 <script>
 if ("serviceWorker" in navigator) {
 
-  window.addEventListener("load", async () => {
+    let newWorker = null;
 
-    const reg = await navigator.serviceWorker.register("/service-worker.js");
+    window.addEventListener("load", async () => {
 
-    console.log("Service Worker Registered");
+        const reg = await navigator.serviceWorker.register("/service-worker.js");
 
-    // Check for updates immediately
-    reg.update();
+        reg.update();
 
-    // Check every minute
-    setInterval(() => reg.update(), 60000);
+        reg.addEventListener("updatefound", () => {
 
-    // Reload when a new SW takes control
-    navigator.serviceWorker.addEventListener("controllerchange", () => {
-      window.location.reload();
+            newWorker = reg.installing;
+
+            newWorker.addEventListener("statechange", () => {
+
+                if (
+                    newWorker.state === "installed" &&
+                    navigator.serviceWorker.controller
+                ) {
+
+                    document.getElementById("update-banner").hidden = false;
+
+                }
+
+            });
+
+        });
+
+        document
+            .getElementById("update-btn")
+            .addEventListener("click", () => {
+
+                if (newWorker) {
+
+                    newWorker.postMessage({
+                        type:"SKIP_WAITING"
+                    });
+
+                }
+
+            });
+
     });
 
-  });
+    navigator.serviceWorker.addEventListener(
+        "controllerchange",
+        () => location.reload()
+    );
 
 }
 </script>
