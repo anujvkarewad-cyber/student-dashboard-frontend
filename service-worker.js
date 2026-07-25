@@ -1,55 +1,63 @@
-const CACHE_NAME = "upm-v3";
+const CACHE_NAME = "upm-static-v1";
 
-const FILES_TO_CACHE = [
+const STATIC_ASSETS = [
+  "/",
   "/style.css",
   "/manifest.json",
   "/icon/icon-192.png",
   "/icon/icon-512.png"
 ];
 
+// Install
 self.addEventListener("install", event => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => cache.addAll(FILES_TO_CACHE))
-  );
   self.skipWaiting();
-});
 
-self.addEventListener("activate", event => {
   event.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(
-        keys.map(key => {
-          if (key !== CACHE_NAME) {
-            return caches.delete(key);
-          }
-        })
-      )
-    )
+    caches.open(CACHE_NAME).then(cache => cache.addAll(STATIC_ASSETS))
   );
-  self.clients.claim();
 });
 
+// Activate
+self.addEventListener("activate", event => {
+
+  event.waitUntil(
+
+    (async () => {
+
+      const keys = await caches.keys();
+
+      await Promise.all(
+        keys
+          .filter(key => key !== CACHE_NAME)
+          .map(key => caches.delete(key))
+      );
+
+      await self.clients.claim();
+
+    })()
+
+  );
+
+});
+
+// Fetch
 self.addEventListener("fetch", event => {
 
   if (event.request.method !== "GET") return;
 
-  // Always fetch HTML from network
-  if (event.request.mode === "navigate") {
+  const url = new URL(event.request.url);
+
+  // Always fetch latest HTML
+  if (
+    event.request.mode === "navigate" ||
+    url.pathname === "/" ||
+    url.pathname.endsWith(".html")
+  ) {
 
     event.respondWith(
 
       fetch(event.request)
-        .then(response => {
-
-          const copy = response.clone();
-
-          caches.open(CACHE_NAME).then(cache => {
-            cache.put(event.request, copy);
-          });
-
-          return response;
-
-        })
+        .then(response => response)
         .catch(() => caches.match("/index.html"))
 
     );
@@ -58,26 +66,70 @@ self.addEventListener("fetch", event => {
 
   }
 
-  // Stale-While-Revalidate for CSS, JS, Images, etc.
+  // Always fetch latest JS
+  if (
+    url.pathname.endsWith(".js")
+  ) {
+
+    event.respondWith(
+
+      fetch(event.request)
+        .then(response => response)
+        .catch(() => caches.match(event.request))
+
+    );
+
+    return;
+
+  }
+
+  // CSS: stale while revalidate
+  if (
+    url.pathname.endsWith(".css")
+  ) {
+
+    event.respondWith(
+
+      caches.match(event.request).then(cached => {
+
+        const network = fetch(event.request).then(response => {
+
+          caches.open(CACHE_NAME).then(cache => {
+            cache.put(event.request, response.clone());
+          });
+
+          return response;
+
+        });
+
+        return cached || network;
+
+      })
+
+    );
+
+    return;
+
+  }
+
+  // Images
   event.respondWith(
 
     caches.match(event.request).then(cached => {
 
-      const networkFetch = fetch(event.request)
-        .then(response => {
-
-          const copy = response.clone();
+      return (
+        cached ||
+        fetch(event.request).then(response => {
 
           caches.open(CACHE_NAME).then(cache => {
-            cache.put(event.request, copy);
+            cache.put(event.request, response.clone());
           });
 
           return response;
 
         })
-        .catch(() => cached);
 
-      return cached || networkFetch;
+      );
 
     })
 
