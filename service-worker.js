@@ -1,11 +1,7 @@
-const CACHE_NAME = "upm-v2";
+const CACHE_NAME = "upm-v3";
 
 const FILES_TO_CACHE = [
-  "/",
-  "/index.html",
   "/style.css",
-  "/app.js",
-  "/api.js",
   "/manifest.json",
   "/icon/icon-192.png",
   "/icon/icon-512.png"
