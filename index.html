@@ -720,9 +720,21 @@ if ("serviceWorker" in navigator) {
 <script>
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/service-worker.js")
-      .then(() => console.log("Service Worker Registered"))
-      .catch(console.error);
+   navigator.serviceWorker.register("/service-worker.js")
+.then(async reg => {
+
+    console.log("Service Worker Registered");
+
+    // Check for updates immediately
+    reg.update();
+
+    // Check for updates every 30 seconds
+    setInterval(() => {
+        reg.update();
+    }, 30000);
+
+})
+.catch(console.error);
   });
 }
 </script>
