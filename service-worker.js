@@ -34,14 +34,57 @@ self.addEventListener("activate", event => {
 });
 
 self.addEventListener("fetch", event => {
+
   if (event.request.method !== "GET") return;
 
+  // Always fetch HTML from network
+  if (event.request.mode === "navigate") {
+
+    event.respondWith(
+
+      fetch(event.request)
+        .then(response => {
+
+          const copy = response.clone();
+
+          caches.open(CACHE_NAME).then(cache => {
+            cache.put(event.request, copy);
+          });
+
+          return response;
+
+        })
+        .catch(() => caches.match("/index.html"))
+
+    );
+
+    return;
+
+  }
+
+  // Stale-While-Revalidate for CSS, JS, Images, etc.
   event.respondWith(
+
     caches.match(event.request).then(cached => {
-      return (
-        cached ||
-        fetch(event.request).catch(() => caches.match("/index.html"))
-      );
+
+      const networkFetch = fetch(event.request)
+        .then(response => {
+
+          const copy = response.clone();
+
+          caches.open(CACHE_NAME).then(cache => {
+            cache.put(event.request, copy);
+          });
+
+          return response;
+
+        })
+        .catch(() => cached);
+
+      return cached || networkFetch;
+
     })
+
   );
+
 });
