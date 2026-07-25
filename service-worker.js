@@ -1,6 +1,6 @@
 const CACHE_NAME = "upm-static-v1";
 
-const STATIC_ASSETS = [
+const STATIC_FILES = [
   "/",
   "/style.css",
   "/manifest.json",
@@ -10,11 +10,13 @@ const STATIC_ASSETS = [
 
 // Install
 self.addEventListener("install", event => {
+
   self.skipWaiting();
 
   event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => cache.addAll(STATIC_ASSETS))
+    caches.open(CACHE_NAME).then(cache => cache.addAll(STATIC_FILES))
   );
+
 });
 
 // Activate
@@ -22,19 +24,17 @@ self.addEventListener("activate", event => {
 
   event.waitUntil(
 
-    (async () => {
+    caches.keys().then(keys =>
 
-      const keys = await caches.keys();
+      Promise.all(
 
-      await Promise.all(
         keys
           .filter(key => key !== CACHE_NAME)
           .map(key => caches.delete(key))
-      );
 
-      await self.clients.claim();
+      )
 
-    })()
+    ).then(() => self.clients.claim())
 
   );
 
@@ -47,7 +47,7 @@ self.addEventListener("fetch", event => {
 
   const url = new URL(event.request.url);
 
-  // Always fetch latest HTML
+  // HTML → Always Network First
   if (
     event.request.mode === "navigate" ||
     url.pathname === "/" ||
@@ -57,8 +57,7 @@ self.addEventListener("fetch", event => {
     event.respondWith(
 
       fetch(event.request)
-        .then(response => response)
-        .catch(() => caches.match("/index.html"))
+        .catch(() => caches.match("/"))
 
     );
 
@@ -66,60 +65,13 @@ self.addEventListener("fetch", event => {
 
   }
 
-  // Always fetch latest JS
-  if (
-    url.pathname.endsWith(".js")
-  ) {
+  // JS → Network First
+  if (url.pathname.endsWith(".js")) {
 
     event.respondWith(
 
       fetch(event.request)
-        .then(response => response)
-        .catch(() => caches.match(event.request))
-
-    );
-
-    return;
-
-  }
-
-  // CSS: stale while revalidate
-  if (
-    url.pathname.endsWith(".css")
-  ) {
-
-    event.respondWith(
-
-      caches.match(event.request).then(cached => {
-
-        const network = fetch(event.request).then(response => {
-
-          caches.open(CACHE_NAME).then(cache => {
-            cache.put(event.request, response.clone());
-          });
-
-          return response;
-
-        });
-
-        return cached || network;
-
-      })
-
-    );
-
-    return;
-
-  }
-
-  // Images
-  event.respondWith(
-
-    caches.match(event.request).then(cached => {
-
-      return (
-        cached ||
-        fetch(event.request).then(response => {
+        .then(response => {
 
           caches.open(CACHE_NAME).then(cache => {
             cache.put(event.request, response.clone());
@@ -128,21 +80,42 @@ self.addEventListener("fetch", event => {
           return response;
 
         })
+        .catch(() => caches.match(event.request))
 
-      );
+    );
+
+    return;
+
+  }
+
+  // Everything else → Cache First
+  event.respondWith(
+
+    caches.match(event.request).then(cached => {
+
+      if (cached) return cached;
+
+      return fetch(event.request).then(response => {
+
+        caches.open(CACHE_NAME).then(cache => {
+          cache.put(event.request, response.clone());
+        });
+
+        return response;
+
+      });
 
     })
-    
 
   );
 
 });
+
+// Receive Update Message
 self.addEventListener("message", event => {
 
-    if (event.data?.type === "SKIP_WAITING") {
-
-        self.skipWaiting();
-
-    }
+  if (event.data && event.data.type === "SKIP_WAITING") {
+    self.skipWaiting();
+  }
 
 });
