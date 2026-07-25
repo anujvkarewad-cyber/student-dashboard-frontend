@@ -1,4 +1,4 @@
-const CACHE_NAME = "upm-v1";
+const CACHE_NAME = "upm-v2";
 
 const FILES_TO_CACHE = [
   "/",
