@@ -675,23 +675,26 @@
 <script src="app.js"></script>
 <script>
 if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-   navigator.serviceWorker.register("/service-worker.js")
-.then(async reg => {
+
+  window.addEventListener("load", async () => {
+
+    const reg = await navigator.serviceWorker.register("/service-worker.js");
 
     console.log("Service Worker Registered");
 
     // Check for updates immediately
     reg.update();
 
-    // Check for updates every 30 seconds
-    setInterval(() => {
-        reg.update();
-    }, 30000);
+    // Check every minute
+    setInterval(() => reg.update(), 60000);
 
-})
-.catch(console.error);
+    // Reload when a new SW takes control
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      window.location.reload();
+    });
+
   });
+
 }
 </script>
 
