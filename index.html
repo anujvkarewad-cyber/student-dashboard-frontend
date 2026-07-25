@@ -681,6 +681,7 @@
 <script src="api.js"></script>
 <script src="app.js"></script>
 <script>
+
 if ("serviceWorker" in navigator) {
 
     let newWorker = null;
@@ -689,7 +690,15 @@ if ("serviceWorker" in navigator) {
 
         const reg = await navigator.serviceWorker.register("/service-worker.js");
 
+        console.log("Service Worker Registered");
+
+        // Check immediately
         reg.update();
+
+        // Check every minute
+        setInterval(() => {
+            reg.update();
+        }, 60000);
 
         reg.addEventListener("updatefound", () => {
 
@@ -717,7 +726,7 @@ if ("serviceWorker" in navigator) {
                 if (newWorker) {
 
                     newWorker.postMessage({
-                        type:"SKIP_WAITING"
+                        type: "SKIP_WAITING"
                     });
 
                 }
@@ -726,12 +735,14 @@ if ("serviceWorker" in navigator) {
 
     });
 
-    navigator.serviceWorker.addEventListener(
-        "controllerchange",
-        () => location.reload()
-    );
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+
+        window.location.reload();
+
+    });
 
 }
+
 </script>
 
 
