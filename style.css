@@ -1039,4 +1039,43 @@ opacity:1;
 #fp-email::placeholder{
     text-transform: none;
 }
+#update-banner{
+    position:fixed;
+    bottom:20px;
+    left:50%;
+    transform:translateX(-50%);
+
+    background:#1E3A8A;
+    color:white;
+
+    padding:14px 20px;
+
+    border-radius:14px;
+
+    display:flex;
+    align-items:center;
+    gap:18px;
+
+    box-shadow:0 10px 30px rgba(0,0,0,.2);
+
+    z-index:99999;
+}
+
+#update-banner button{
+
+    border:none;
+
+    background:white;
+
+    color:#1E3A8A;
+
+    padding:8px 16px;
+
+    border-radius:8px;
+
+    font-weight:700;
+
+    cursor:pointer;
+
+}
 </style>
