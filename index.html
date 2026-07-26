@@ -30,91 +30,109 @@
 </head>
 <body>
 
-<!-- =================== LOGIN SCREEN =================== -->
-<section id="login-screen" class="login-wrap" data-testid="login-screen">
+<!-- ================= LOGIN CARD ================= -->
+<div class="login-card" data-testid="login-card">
 
-    <!-- Background -->
-    <div class="login-bg-orbs" aria-hidden="true">
-        <span></span>
-        <span></span>
-        <span></span>
+    <!-- Brand -->
+    <div class="login-brand">
+        <div class="brand-badge">UP</div>
+
+        <div>
+            <div class="brand-name">UJJWAL PATHAK</div>
+            <div class="brand-sub">MENTORSHIP PROGRAM</div>
+        </div>
     </div>
 
-    <!-- ================= LOGIN CARD ================= -->
-    <div class="login-card" data-testid="login-card">
+    <!-- Heading -->
+    <h1 class="login-title">Welcome Back</h1>
 
-        <div class="login-brand">
-            <div class="brand-badge">UP</div>
-            <div>
-                <div class="brand-name">UJJWAL PATHAK</div>
-                <div class="brand-sub">Mentorship Program</div>
+    <p class="login-sub">
+        Sign in with your Student ID to continue your CA Inter journey.
+    </p>
+
+    <!-- Login Form -->
+    <form id="login-form" class="login-form" autocomplete="off">
+
+        <!-- Student ID -->
+        <div class="field">
+
+            <label class="field-label" for="student-id">
+                Student ID
+            </label>
+
+            <div class="field-control">
+
+                <i class="fas fa-user"></i>
+
+                <input
+                    id="student-id"
+                    type="text"
+                    placeholder="Enter Student ID"
+                    autocomplete="username"
+                    required>
+
             </div>
+
         </div>
 
-        <h1 class="login-title">Welcome Back</h1>
+        <!-- Password -->
+        <div class="field">
 
-        <p class="login-sub">
-            Sign in with your Student ID to continue your CA Inter journey.
-        </p>
+            <label class="field-label" for="password">
+                Password
+            </label>
 
-        <div class="login-form">
+            <div class="field-control">
 
-    <div class="field">
-        <label for="student-id">Student ID</label>
+                <i class="fas fa-lock"></i>
 
-        <div class="field-control">
-            <i class="fas fa-user"></i>
+                <input
+                    id="password"
+                    type="password"
+                    placeholder="Enter Password"
+                    autocomplete="current-password"
+                    required>
 
-            <input
-                type="text"
-                id="student-id"
-                placeholder="Enter Student ID"
-                autocomplete="username"
-                required>
+            </div>
+
         </div>
-    </div>
 
-    <div class="field">
-        <label for="password">Password</label>
+        <!-- Forgot Password -->
+        <div class="forgot-row">
 
-        <div class="field-control">
-            <i class="fas fa-lock"></i>
+            <a
+                href="#"
+                id="forgot-password-link">
 
-            <input
-                type="password"
-                id="password"
-                placeholder="Enter Password"
-                autocomplete="current-password"
-                required>
+                Forgot Password?
+
+            </a>
+
         </div>
-    </div>
 
-    <div class="login-options">
-        <a href="#" id="forgot-password-link">
-            Forgot Password?
-        </a>
-    </div>
+        <!-- Login Button -->
+        <button
+            id="login-btn"
+            class="btn-login"
+            type="submit">
 
-    <button
-        type="submit"
-        class="btn-login"
-        id="login-btn">
+            <i class="fas fa-arrow-right-to-bracket"></i>
 
-        Login
+            <span>Login</span>
 
-    </button>
+        </button>
 
-    <div
-        id="login-error"
-        class="login-error"
-        style="display:none;">
-    </div>
+        <!-- Error Message -->
+        <div
+            id="login-error"
+            class="login-error"
+            style="display:none;">
+        </div>
+
+    </form>
 
 </div>
-
-    </div>
-    <!-- ===== END LOGIN CARD ===== -->
-
+<!-- ===== END LOGIN CARD ===== -->
 
     <!-- ================= HERO SECTION ================= -->
     <aside class="login-hero" aria-hidden="true">
