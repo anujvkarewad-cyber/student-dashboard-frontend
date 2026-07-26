@@ -77,8 +77,8 @@ async function tryAutoLogin() {
 
   e.preventDefault();
 
-  const id = $("#student-id-input").value.trim().toUpperCase();
-  const password = $("#password-input").value;
+ const id = $("#student-id").value.trim().toUpperCase();
+const password = $("#password").value;
 
   const err = $("#login-error");
   const btn = e.target.querySelector("button[type=submit]");
@@ -97,8 +97,8 @@ async function tryAutoLogin() {
 
   btn.disabled = false;
 
-  btn.innerHTML =
-    '<span>Enter Dashboard</span><i class="fa-solid fa-arrow-right"></i>';
+ btn.innerHTML =
+  '<i class="fa-solid fa-arrow-right-to-bracket"></i><span>Login</span>';
 
   if (!result.success) {
 
