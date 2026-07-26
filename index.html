@@ -135,7 +135,7 @@
 <!-- ===== END LOGIN CARD ===== -->
 
     <!-- ================= HERO SECTION ================= -->
-   <section id="login-screen" class="login-wrap">
+  <section id="login-screen" class="login-wrap">
 
     <!-- Background -->
     <div class="login-bg-orbs" aria-hidden="true">
@@ -145,8 +145,82 @@
     </div>
 
     <!-- Login Card -->
-    <div class="login-card">
-        ...
+    <div class="login-card" data-testid="login-card">
+
+        <!-- Brand -->
+        <div class="login-brand">
+            <div class="brand-badge">UP</div>
+
+            <div>
+                <div class="brand-name">UJJWAL PATHAK</div>
+                <div class="brand-sub">MENTORSHIP PROGRAM</div>
+            </div>
+        </div>
+
+        <!-- Heading -->
+        <h1 class="login-title">Welcome Back</h1>
+
+        <p class="login-sub">
+            Sign in with your Student ID to continue your CA Inter journey.
+        </p>
+
+        <!-- Login Form -->
+        <form id="login-form" class="login-form" autocomplete="off">
+
+            <div class="field">
+                <label class="field-label" for="student-id">Student ID</label>
+
+                <div class="field-control">
+                    <i class="fas fa-user"></i>
+
+                    <input
+                        id="student-id"
+                        type="text"
+                        placeholder="Enter Student ID"
+                        autocomplete="username"
+                        required>
+                </div>
+            </div>
+
+            <div class="field">
+                <label class="field-label" for="password">Password</label>
+
+                <div class="field-control">
+                    <i class="fas fa-lock"></i>
+
+                    <input
+                        id="password"
+                        type="password"
+                        placeholder="Enter Password"
+                        autocomplete="current-password"
+                        required>
+                </div>
+            </div>
+
+            <div class="forgot-row">
+                <a href="#" id="forgot-password-link">
+                    Forgot Password?
+                </a>
+            </div>
+
+            <button
+                id="login-btn"
+                class="btn-login"
+                type="submit">
+
+                <i class="fas fa-arrow-right-to-bracket"></i>
+                <span>Login</span>
+
+            </button>
+
+            <div
+                id="login-error"
+                class="login-error"
+                style="display:none;">
+            </div>
+
+        </form>
+
     </div>
 
     <!-- Hero -->
@@ -185,9 +259,6 @@
         </div>
 
     </aside>
-
-</section>
-  <!-- ===== END HERO ===== -->
 
 </section>
 <!-- =================== APP SHELL =================== -->
