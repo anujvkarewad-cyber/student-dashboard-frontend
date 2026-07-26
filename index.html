@@ -57,19 +57,60 @@
             Sign in with your Student ID to continue your CA Inter journey.
         </p>
 
-        <form id="login-form" autocomplete="off">
+        <div class="login-form">
 
-            <!-- Student ID -->
+    <div class="field">
+        <label for="student-id">Student ID</label>
 
-            <!-- Password -->
+        <div class="field-control">
+            <i class="fas fa-user"></i>
 
-            <!-- Forgot Password -->
+            <input
+                type="text"
+                id="student-id"
+                placeholder="Enter Student ID"
+                autocomplete="username"
+                required>
+        </div>
+    </div>
 
-            <!-- Login Button -->
+    <div class="field">
+        <label for="password">Password</label>
 
-            <!-- Error Message -->
+        <div class="field-control">
+            <i class="fas fa-lock"></i>
 
-        </form>
+            <input
+                type="password"
+                id="password"
+                placeholder="Enter Password"
+                autocomplete="current-password"
+                required>
+        </div>
+    </div>
+
+    <div class="login-options">
+        <a href="#" id="forgot-password-link">
+            Forgot Password?
+        </a>
+    </div>
+
+    <button
+        type="submit"
+        class="btn-login"
+        id="login-btn">
+
+        Login
+
+    </button>
+
+    <div
+        id="login-error"
+        class="login-error"
+        style="display:none;">
+    </div>
+
+</div>
 
     </div>
     <!-- ===== END LOGIN CARD ===== -->
