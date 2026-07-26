@@ -32,109 +32,94 @@
 
 <!-- =================== LOGIN SCREEN =================== -->
 <section id="login-screen" class="login-wrap" data-testid="login-screen">
-  <div class="login-bg-orbs" aria-hidden="true">
-    <span></span><span></span><span></span>
-  </div>
 
-  <div class="login-card" data-testid="login-card">
-    <div class="login-brand">
-      <div class="brand-badge">UP</div>
-      <div>
-        <div class="brand-name">UJJWAL PATHAK</div>
-        <div class="brand-sub">Mentorship Program</div>
-      </div>
+    <!-- Background -->
+    <div class="login-bg-orbs" aria-hidden="true">
+        <span></span>
+        <span></span>
+        <span></span>
     </div>
 
-    <h1 class="login-title">Welcome Back</h1>
-    <p class="login-sub">Sign in with your Student ID to continue your CA Inter journey.</p>
+    <!-- ================= LOGIN CARD ================= -->
+    <div class="login-card" data-testid="login-card">
 
-    <form id="login-form" data-testid="login-form" autocomplete="off">
-      <label class="field">
-        <span class="field-label">Student ID</span>
-        <div class="field-control">
-          <i class="fa-regular fa-id-card"></i>
-          <input
-            type="text"
-            id="student-id-input"
-            data-testid="student-id-input"
-            placeholder="e.g. UMP0001"
-            required
-            autofocus
-          />
+        <div class="login-brand">
+            <div class="brand-badge">UP</div>
+            <div>
+                <div class="brand-name">UJJWAL PATHAK</div>
+                <div class="brand-sub">Mentorship Program</div>
+            </div>
         </div>
-      </label>
 
-      <label class="field">
-  <span class="field-label">Password</span>
-  <div class="field-control">
-    <i class="fa-solid fa-lock"></i>
-    <input
-      type="password"
-      id="password-input"
-      placeholder="Enter Password"
-      required
-    />
-  </div>
-</label>
-      <div class="forgot-row">
-  <a href="#" id="forgot-password-link">
-    Forgot Password?
-  </a>
-</div>
+        <h1 class="login-title">Welcome Back</h1>
 
-      <button type="submit" class="btn-primary" data-testid="login-submit-btn">
-        <span>Enter Dashboard</span>
-        <i class="fa-solid fa-arrow-right"></i>
-      </button>
-
-      <div id="login-error" class="login-error" data-testid="login-error" hidden></div>
-    </form>
-
-
-
-<aside class="login-hero" aria-hidden="true">
-
-    <div class="hero-gradient"></div>
-
-    <div class="floating-circle c1"></div>
-    <div class="floating-circle c2"></div>
-    <div class="floating-circle c3"></div>
-
-    <svg class="hero-network" viewBox="0 0 600 600">
-
-        <line x1="180" y1="170" x2="310" y2="120"/>
-        <line x1="310" y1="120" x2="430" y2="230"/>
-        <line x1="180" y1="170" x2="250" y2="360"/>
-        <line x1="250" y1="360" x2="430" y2="230"/>
-
-        <circle cx="180" cy="170" r="8"/>
-        <circle cx="310" cy="120" r="8"/>
-        <circle cx="430" cy="230" r="8"/>
-        <circle cx="250" cy="360" r="8"/>
-
-    </svg>
-
-    <div class="hero-content">
-
-        <span class="hero-tag">
-            UJJWAL PATHAK MENTORSHIP
-        </span>
-
-        <h1>
-            START YOUR
-            <br>
-            SUCCESS STORY
-        </h1>
-
-        <p>
-            Every disciplined study session brings you one step closer to becoming a Chartered Accountant.
+        <p class="login-sub">
+            Sign in with your Student ID to continue your CA Inter journey.
         </p>
 
+        <form id="login-form" autocomplete="off">
+
+            <!-- Student ID -->
+
+            <!-- Password -->
+
+            <!-- Forgot Password -->
+
+            <!-- Login Button -->
+
+            <!-- Error Message -->
+
+        </form>
+
     </div>
+    <!-- ===== END LOGIN CARD ===== -->
 
-</aside>
+
+    <!-- ================= HERO SECTION ================= -->
+    <aside class="login-hero" aria-hidden="true">
+
+        <div class="hero-gradient"></div>
+
+        <div class="floating-circle c1"></div>
+        <div class="floating-circle c2"></div>
+        <div class="floating-circle c3"></div>
+
+        <svg class="hero-network" viewBox="0 0 600 600">
+
+            <line x1="180" y1="170" x2="310" y2="120"/>
+            <line x1="310" y1="120" x2="430" y2="230"/>
+            <line x1="180" y1="170" x2="250" y2="360"/>
+            <line x1="250" y1="360" x2="430" y2="230"/>
+
+            <circle cx="180" cy="170" r="8"/>
+            <circle cx="310" cy="120" r="8"/>
+            <circle cx="430" cy="230" r="8"/>
+            <circle cx="250" cy="360" r="8"/>
+
+        </svg>
+
+        <div class="hero-content">
+
+            <span class="hero-tag">
+                UJJWAL PATHAK MENTORSHIP
+            </span>
+
+            <h1>
+                START YOUR
+                <br>
+                SUCCESS STORY
+            </h1>
+
+            <p>
+                Every disciplined study session brings you one step closer to becoming a Chartered Accountant.
+            </p>
+
+        </div>
+
+    </aside>
+    <!-- ===== END HERO ===== -->
+
 </section>
-
 <!-- =================== APP SHELL =================== -->
 <div id="app-shell" class="app-shell" hidden data-testid="app-shell">
 
