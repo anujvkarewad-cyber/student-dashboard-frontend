@@ -175,6 +175,103 @@ scale(1.12);
 }
 
 }
+.btn-login{
+
+display:flex;
+align-items:center;
+justify-content:center;
+gap:10px;
+
+width:100%;
+height:56px;
+
+margin-top:12px;
+
+border:none;
+outline:none;
+
+border-radius:16px;
+
+background:linear-gradient(
+135deg,
+#2563EB,
+#1D4ED8
+);
+
+color:#fff;
+
+font-size:16px;
+font-weight:700;
+
+cursor:pointer;
+
+box-shadow:
+0 16px 35px rgba(37,99,235,.30);
+
+transition:
+transform .25s,
+box-shadow .25s;
+
+position:relative;
+
+overflow:hidden;
+
+}
+
+.btn-login:hover{
+
+transform:translateY(-2px);
+
+box-shadow:
+0 22px 45px rgba(37,99,235,.38);
+
+}
+
+.btn-login::before{
+
+content:"";
+
+position:absolute;
+
+top:0;
+left:-120%;
+
+width:60%;
+height:100%;
+
+background:
+linear-gradient(
+90deg,
+transparent,
+rgba(255,255,255,.45),
+transparent
+);
+
+transition:.8s;
+
+}
+
+.btn-login:hover::before{
+
+left:150%;
+
+}
+
+.btn-login span{
+
+position:relative;
+z-index:2;
+
+}
+
+.btn-login i{
+
+position:relative;
+z-index:2;
+
+font-size:15px;
+
+}
 
 /* ==========================================================
    HERO SECTION
