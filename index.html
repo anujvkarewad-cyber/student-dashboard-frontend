@@ -163,64 +163,122 @@
 <div id="app-shell" class="app-shell" hidden data-testid="app-shell">
 
   <!-- Sidebar -->
-  <aside class="sidebar" data-testid="sidebar">
-    <div class="sidebar-brand">
-      <div class="brand-badge sm">UP</div>
-      <div>
-        <div class="brand-name sm">UJJWAL PATHAK</div>
-        <div class="brand-sub xs">Mentorship</div>
-      </div>
+<aside class="sidebar" data-testid="sidebar">
+
+    <div class="sidebar-top">
+
+        <div class="sidebar-brand">
+
+            <div class="brand-badge">
+                UP
+            </div>
+
+            <div class="brand-info">
+                <h3>Ujjwal Pathak</h3>
+                <span>Student Dashboard</span>
+            </div>
+
+        </div>
+
+        <div class="sidebar-divider"></div>
+
+        <nav class="nav">
+
+            <a href="#dashboard" class="nav-item active" data-view="dashboard" data-testid="nav-dashboard">
+                <i class="fa-solid fa-house"></i>
+                <span>Dashboard</span>
+            </a>
+
+            <a href="#tracker" class="nav-item" data-view="tracker" data-testid="nav-tracker">
+                <i class="fa-solid fa-book-open"></i>
+                <span>Daily Study Tracker</span>
+            </a>
+
+            <a href="#mcq" class="nav-item" data-view="mcq" data-testid="nav-mcq">
+                <i class="fa-solid fa-list-check"></i>
+                <span>MCQ Practice</span>
+            </a>
+
+            <a href="#performance" class="nav-item" data-view="performance" data-testid="nav-performance">
+                <i class="fa-solid fa-chart-line"></i>
+                <span>Performance</span>
+            </a>
+
+            <a href="#leaderboard" class="nav-item" data-view="leaderboard" data-testid="nav-leaderboard">
+                <i class="fa-solid fa-trophy"></i>
+                <span>Leaderboard</span>
+            </a>
+
+            <a href="#reports" class="nav-item" data-view="reports" data-testid="nav-reports">
+                <i class="fa-solid fa-envelope-open-text"></i>
+                <span>Weekly Reports</span>
+            </a>
+
+            <a href="#profile" class="nav-item" data-view="profile" data-testid="nav-profile">
+                <i class="fa-regular fa-user"></i>
+                <span>Profile</span>
+            </a>
+
+        </nav>
+
     </div>
 
-    <nav class="nav">
-      <a href="#dashboard" class="nav-item active" data-view="dashboard" data-testid="nav-dashboard">
-        <i class="fa-solid fa-house"></i><span>Dashboard</span>
-      </a>
-      <a href="#tracker" class="nav-item" data-view="tracker" data-testid="nav-tracker">
-        <i class="fa-solid fa-book-open"></i><span>Daily Study Tracker</span>
-      </a>
-      <a href="#mcq" class="nav-item" data-view="mcq" data-testid="nav-mcq">
-        <i class="fa-solid fa-list-check"></i><span>MCQ Practice</span>
-      </a>
-      <a href="#performance" class="nav-item" data-view="performance" data-testid="nav-performance">
-        <i class="fa-solid fa-chart-line"></i><span>Performance</span>
-      </a>
-      <a href="#leaderboard" class="nav-item" data-view="leaderboard" data-testid="nav-leaderboard">
-        <i class="fa-solid fa-trophy"></i><span>Leaderboard</span>
-      </a>
-      <a href="#reports" class="nav-item" data-view="reports" data-testid="nav-reports">
-        <i class="fa-solid fa-envelope-open-text"></i><span>Weekly Reports</span>
-      </a>
-      <a href="#profile" class="nav-item" data-view="profile" data-testid="nav-profile">
-        <i class="fa-regular fa-user"></i><span>Profile</span>
-      </a>
-    </nav>
-
     <button class="nav-item logout" id="logout-btn" data-testid="logout-btn">
-      <i class="fa-solid fa-right-from-bracket"></i><span>Logout</span>
+        <i class="fa-solid fa-right-from-bracket"></i>
+        <span>Logout</span>
     </button>
-  </aside>
+
+</aside>
 
   <!-- Main -->
   <main class="main" data-testid="main-content">
 
     <header class="topbar" data-testid="topbar">
-      <button class="menu-toggle" id="menu-toggle" aria-label="Toggle menu" data-testid="menu-toggle">
-        <i class="fa-solid fa-bars"></i>
-      </button>
-      <div class="topbar-title" id="view-title">Dashboard</div>
-      <div class="topbar-actions">
-        <div class="pill-badge"><i class="fa-solid fa-fire"></i> <span id="topbar-streak">0</span> day streak</div>
-        <div class="user-chip" data-testid="user-chip">
-          <div class="avatar" id="user-avatar">S</div>
-          <div class="user-meta">
-            <b id="user-name">Student</b>
-            <span id="user-id">UMP0000</span>
-          </div>
-        </div>
-      </div>
-    </header>
+  <button class="menu-toggle" id="menu-toggle" aria-label="Toggle menu" data-testid="menu-toggle">
+    <i class="fa-solid fa-bars"></i>
+  </button>
 
+  <div class="topbar-center">
+    <h2 id="view-title">Dashboard</h2>
+    <p class="topbar-subtitle">
+      Welcome back! Keep pushing towards your CA dream.
+    </p>
+  </div>
+
+  <div class="topbar-actions">
+
+    <div class="topbar-card streak-card">
+      <div class="card-icon">
+    <dotlottie-player
+        src="assets/fire.lottie"
+        background="transparent"
+        speed="1"
+        autoplay
+        loop
+        style="width:42px;height:42px;">
+    </dotlottie-player>
+</div>
+      <div class="card-content">
+        <span class="card-label">Current Streak</span>
+        <strong>
+          <span id="topbar-streak">0</span> Days
+        </strong>
+      </div>
+    </div>
+
+    <div class="user-chip" data-testid="user-chip">
+      <div class="avatar" id="user-avatar">S</div>
+
+      <div class="user-meta">
+        <b id="user-name">Student</b>
+        <span id="user-id">UMP0000</span>
+      </div>
+
+      <i class="fa-solid fa-chevron-down profile-arrow"></i>
+    </div>
+
+  </div>
+</header>
     <div class="view-container" id="view-container">
       <!-- Views injected here -->
     </div>
@@ -230,19 +288,73 @@
 <!-- =================== TEMPLATES =================== -->
 
 <template id="tpl-dashboard">
-  <div class="view" data-testid="view-dashboard">
-    <div class="welcome-strip">
-      <div>
-        <div class="eyebrow">Good <span data-tod></span>,</div>
-        <h1 class="hello" data-hello></h1>
-        <p class="sub">Here's your snapshot for today. Stay consistent — small daily reps compound.</p>
-      </div>
-      <div class="strip-tag" data-caLevel></div>
+
+<div class="welcome-strip">
+
+    <div class="hero-overlay"></div>
+
+    <!-- 3D Clouds -->
+    <img src="assets/cloud-large.png" class="hero-cloud cloud-one" alt="">
+    <img src="assets/cloud-medium.png" class="hero-cloud cloud-two" alt="">
+    <img src="assets/cloud-small.png" class="hero-cloud cloud-three" alt="">
+
+    <div class="hero-sun"></div>
+
+    <div class="hero-content">
+
+        <div class="eyebrow">
+            Good <span data-tod></span>
+        </div>
+
+       <h1 class="hello">
+    <span data-hello></span>
+
+    <dotlottie-player
+    id="waveHand"
+    src="assets/waving-hand.lottie"
+    background="transparent"
+    speed="1"
+    autoplay
+    style="
+        width:72px;
+        height:72px;
+        display:inline-block;
+        vertical-align:middle;
+        margin-left:10px;
+        transform:rotate(-18deg) translateY(-4px);
+    ">
+</dotlottie-player>
+
+</h1>
+
+        <p class="sub">
+            Stay consistent today.
+            Every hour you study brings you one step closer to becoming a Chartered Accountant.
+        </p>
+
     </div>
 
+    <div class="hero-right">
+
+
+        <div class="hero-badge" data-caLevel></div>
+
+    </div>
+
+</div>
     <section class="kpi-grid">
       <div class="kpi kpi-blue">
-        <div class="kpi-icon"><i class="fa-solid fa-fire"></i></div>
+        <div class="card-icon">
+    <dotlottie-player
+        id="dashboardStreakFire"
+        src="assets/fire.lottie"
+        background="transparent"
+        speed="1"
+        autoplay
+        loop
+        style="width:46px;height:46px;">
+    </dotlottie-player>
+</div>
         <div class="kpi-label">Current Streak</div>
         <div class="kpi-value" data-k="streak">—</div>
         <div class="kpi-foot">days in a row</div>
@@ -269,35 +381,36 @@
     
     <section class="card">
 
-  <div class="card-head">
-    <h3>📢 Announcements</h3>
-  </div>
-
-  <div class="two-col">
-
-    <!-- Announcements -->
-    <div class="card">
-        <div class="card-head">
-            <h3>📢 Announcements</h3>
-        </div>
-
-        <div class="announcement-container">
-            <div id="announcement-list"></div>
-        </div>
+    <div class="card-head">
+        <h3>📢 Updates</h3>
     </div>
 
-    <!-- Mentor Notes -->
-    <div class="card">
-        <div class="card-head">
-            <h3>📝 Mentor Notes</h3>
+    <div class="two-col">
+
+        <!-- Announcements -->
+        <div class="announcement-card">
+            <div class="card-head">
+                <h3>📢 Announcements</h3>
+            </div>
+
+            <div class="announcement-container">
+                <div id="announcement-list"></div>
+            </div>
         </div>
 
-        <div class="announcement-container mentor-notes-container">
-            <div id="mentor-notes-list"></div>
+        <!-- Mentor Notes -->
+        <div class="announcement-card">
+            <div class="card-head">
+                <h3>📝 Mentor Notes</h3>
+            </div>
+
+            <div class="announcement-container mentor-notes-container">
+                <div id="mentor-notes-list"></div>
+            </div>
         </div>
+
     </div>
 
-</div>
 </section>
 
     <section class="two-col">
@@ -333,6 +446,19 @@
             <div class="rank-badge" data-rankBadge>—</div>
           </div>
         </div>
+        <div class="rank-progress">
+
+    <div class="rank-progress-bar">
+
+        <div class="rank-progress-fill" style="width:84%"></div>
+
+    </div>
+
+    <div class="rank-progress-text">
+        58 / 70 Hours
+    </div>
+
+</div>
         <div class="rank-footer">
           <span><i class="fa-solid fa-arrow-trend-up"></i> Weekly hrs: <b data-k="weekly2">—</b></span>
           <span><i class="fa-solid fa-users"></i> Cohort: <b data-cohort>—</b></span>
@@ -722,7 +848,7 @@
   </div>
 
 </div>
-    <div id="update-banner" hidden>
+    <div id="update-banner" hidden style="display:none !important;"></div>
     <span>🚀 New version available</span>
 
     <button id="update-btn">
@@ -797,7 +923,24 @@ if ("serviceWorker" in navigator) {
 }
 
 </script>
+<!-- Developer Theme Panel -->
+<div class="dev-toggle" id="devToggle">🛠</div>
 
+<div class="dev-panel" id="devPanel">
 
+    <h3>Developer Mode</h3>
+
+    <button data-theme="auto">🔄 Auto</button>
+
+    <button data-theme="morning">🌅 Morning</button>
+
+    <button data-theme="afternoon">☀ Afternoon</button>
+
+    <button data-theme="evening">🌇 Evening</button>
+
+    <button data-theme="night">🌙 Night</button>
+
+</div>
+<script type="module" src="https://unpkg.com/@dotlottie/player-component@2.7.12/dist/dotlottie-player.mjs"></script>
 </body>
 </html>

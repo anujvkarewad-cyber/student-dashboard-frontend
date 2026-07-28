@@ -1,4 +1,4 @@
-
+console.log("APP VERSION 12345");
 (function () {
   "use strict";
 let currentStudent = null;
@@ -331,9 +331,23 @@ async function updatePassword() {
   // ============ HELPERS ============
   const fmt = (n, d = 1) => (n == null || isNaN(n) ? "—" : Number(n).toFixed(d).replace(/\.0$/, ""));
   const timeOfDay = () => {
+
     const h = new Date().getHours();
-    return h < 12 ? "morning" : h < 17 ? "afternoon" : "evening";
-  };
+
+    if (h >= 5 && h < 10) {
+        return "morning";
+    }
+
+    if (h >= 10 && h < 17) {
+        return "afternoon";
+    }
+
+    if (h >= 17 && h < 19) {
+        return "evening";
+    }
+
+    return "night";
+};
   const dayShort = (iso) => {
     if (!iso) return "";
     const d = new Date(iso);
@@ -353,7 +367,35 @@ async function updatePassword() {
   function renderDashboard() {
     
     const s = state.student; const st = state.stats || {};
-    $("[data-tod]").textContent = timeOfDay();
+    const tod = timeOfDay();
+
+$("[data-tod]").textContent = tod;
+
+const hero = document.querySelector(".welcome-strip");
+
+hero.classList.remove(
+  "hero-morning",
+  "hero-afternoon",
+  "hero-evening",
+  "hero-night"
+);
+
+switch (tod.toLowerCase()) {
+  case "morning":
+    hero.classList.add("hero-morning");
+    break;
+
+  case "afternoon":
+    hero.classList.add("hero-afternoon");
+    break;
+
+  case "evening":
+    hero.classList.add("hero-evening");
+    break;
+
+  default:
+    hero.classList.add("hero-night");
+}
     $("[data-hello]").textContent = s.studentName;
     $("[data-caLevel]").textContent = `${s.caLevel} · ${s.group}`;
     $("[data-k='streak']").textContent = st.streak ?? 0;
@@ -378,28 +420,118 @@ async function updatePassword() {
     const labels = lastNDates(7);
     const data = st.last7 || Array(7).fill(0);
     state.charts.weekly = new Chart(ctx, {
-      type: "bar",
+      type: "line",
       data: {
         labels,
         datasets: [{
-          label: "Hours",
-          data,
-          backgroundColor: (ctx) => {
-            const g = ctx.chart.ctx.createLinearGradient(0,0,0,240);
-            g.addColorStop(0, "#2563EB"); g.addColorStop(1, "#8B5CF6");
-            return g;
-          },
-          borderRadius: 10, borderSkipped: false, barThickness: 26
-        }]
+  label: "Study Hours",
+  data,
+
+  borderColor: "#2563EB",
+
+  backgroundColor: (ctx) => {
+
+    const chart = ctx.chart;
+    const {ctx:c, chartArea} = chart;
+
+    if (!chartArea) return null;
+
+    const gradient = c.createLinearGradient(
+      0,
+      chartArea.top,
+      0,
+      chartArea.bottom
+    );
+
+    gradient.addColorStop(0, "rgba(37,99,235,.30)");
+    gradient.addColorStop(.6, "rgba(139,92,246,.12)");
+    gradient.addColorStop(1, "rgba(255,255,255,0)");
+
+    return gradient;
+
+  },
+
+  fill:true,
+
+  tension:.45,
+
+  borderWidth:4,
+
+  pointRadius:5,
+
+  pointHoverRadius:8,
+
+  pointBackgroundColor:"#FFFFFF",
+
+  pointBorderColor:"#2563EB",
+
+  pointBorderWidth:3,
+
+}]
       },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: false }, tooltip: { padding: 10 } },
-        scales: {
-          x: { grid: { display: false }, ticks: { color: "#64748B", font: { family: "Plus Jakarta Sans", weight: "600" } } },
-          y: { grid: { color: "#EEF0F4" }, beginAtZero: true, ticks: { color: "#64748B" } }
+      options:{
+
+  responsive:true,
+
+  maintainAspectRatio:false,
+
+  interaction:{
+    intersect:false,
+    mode:"index"
+  },
+
+  plugins:{
+
+    legend:{
+      display:false
+    },
+
+    tooltip:{
+      padding:12,
+      displayColors:false,
+      backgroundColor:"#0F172A",
+      titleColor:"#fff",
+      bodyColor:"#fff"
+    }
+
+  },
+
+  scales:{
+
+    x:{
+
+      grid:{
+        display:false
+      },
+
+      ticks:{
+        color:"#64748B",
+        font:{
+          family:"Plus Jakarta Sans",
+          weight:"600"
         }
       }
+
+    },
+
+    y:{
+
+      beginAtZero:true,
+
+      grid:{
+        color:"#EEF2F7"
+      },
+
+      ticks:{
+        color:"#64748B",
+        stepSize:2
+      }
+
+    }
+
+  }
+
+}
     });
     const box = document.getElementById("announcement-list");
 
@@ -414,23 +546,27 @@ if (box) {
 
     box.innerHTML = state.announcements.map(a => `
 
-      <div class="card" style="margin-bottom:12px">
+<div class="announcement-item">
 
-        <div style="font-weight:700;font-size:16px">
-          📢 ${a.title}
+    <div class="announcement-dot"></div>
+
+    <div class="announcement-content">
+
+        <div class="announcement-top">
+
+            <h4>${a.title}</h4>
+
+            <span>${a.date}</span>
+
         </div>
 
-        <div style="font-size:12px;color:#64748B;margin:6px 0">
-          ${a.date}
-        </div>
+        <p>${a.message}</p>
 
-        <div>
-          ${a.message}
-        </div>
+    </div>
 
-      </div>
+</div>
 
-    `).join("");
+`).join("");
 
   }
   const notesBox = document.getElementById("mentor-notes-list");
@@ -889,26 +1025,60 @@ function showMentorFeedback(feedback) {
   });
 }
 function renderMentorNotes(notes) {
+
   const container = document.getElementById("mentor-notes-list");
 
   if (!notes || notes.length === 0) {
-    container.innerHTML = `<div class="muted">No mentor notes yet.</div>`;
+
+    container.innerHTML = `
+      <div class="mentor-empty">
+
+        <div class="mentor-empty-icon">💡</div>
+
+        <h3>No Mentor Notes Yet</h3>
+
+        <p>
+          Your mentor will share guidance, motivation and important updates here.
+        </p>
+
+      </div>
+    `;
+
     return;
+
   }
 
   container.innerHTML = notes.map(n => `
+
     <div class="mentor-note-card">
-      <div class="mentor-note-date">
-        📅 ${n.date}
+
+      <div class="mentor-note-header">
+
+        <div class="mentor-avatar">UP</div>
+
+        <div>
+
+          <div class="mentor-name">Ujjwal Pathak</div>
+
+          <div class="mentor-note-date">📅 ${n.date}</div>
+
+        </div>
+
       </div>
+
+      <div class="mentor-quote">❝</div>
 
       <div class="mentor-note-text">
-        ${n.note}
-      </div>
-    </div>
-  `).join("");
-}
 
+        ${n.note}
+
+      </div>
+
+    </div>
+
+  `).join("");
+
+}
   const forgotModal = document.getElementById("forgot-modal");
 
 function openForgotPasswordModal(e){
@@ -1190,3 +1360,32 @@ resetBtn.addEventListener("click", async () => {
   tryAutoLogin();
 })();
 
+/* ===========================
+   Developer Theme Panel
+=========================== */
+
+const devToggle = document.getElementById("devToggle");
+const devPanel = document.getElementById("devPanel");
+
+if (devToggle && devPanel) {
+
+    devToggle.addEventListener("click", () => {
+
+        console.log("Button Clicked");
+
+        devPanel.classList.toggle("show");
+
+    });
+
+    document.addEventListener("click", (e) => {
+
+        if (
+            !devPanel.contains(e.target) &&
+            !devToggle.contains(e.target)
+        ) {
+            devPanel.classList.remove("show");
+        }
+
+    });
+
+}
