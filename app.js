@@ -148,17 +148,25 @@ console.log("After enterApp");
     $("#user-id").textContent = student.studentId;
 
     // load core data in parallel
-    const stats = await api.getStats(student.studentId);
+const [
+  stats,
+  log,
+  lb,
+  reports,
+  announcements,
+  notes
+] = await Promise.all([
+  api.getStats(student.studentId),
+  api.getStudyLog(student.studentId),
+  api.getLeaderboard(),
+  api.getWeeklyReports(student.studentId),
+  api.getAnnouncements(),
+  api.getStudentMentorNotes(student.studentId)
+]);    
     
   
 console.log("Student:", student);
 console.log("Stats:", stats);
-
-const log = await api.getStudyLog(student.studentId);
-const lb = await api.getLeaderboard();
-const reports = await api.getWeeklyReports(student.studentId);
-const announcements = await api.getAnnouncements();
-const notes = await api.getStudentMentorNotes(student.studentId);
 console.log("Mentor Notes:", notes);
 console.log("Student ID:", student.studentId);
 
