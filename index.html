@@ -868,11 +868,17 @@ if ("serviceWorker" in navigator) {
     window.addEventListener("load", async () => {
 
         const reg = await navigator.serviceWorker.register("/service-worker.js");
+        if (reg.waiting) {
 
+    newWorker = reg.waiting;
+
+    document.getElementById("update-banner").hidden = false;
+
+}
         console.log("Service Worker Registered");
 
         // Check immediately
-        reg.update();
+      await reg.update();
 
         // Check every minute
         setInterval(() => {
@@ -897,20 +903,25 @@ if ("serviceWorker" in navigator) {
             });
 
         });
+document
+    .getElementById("update-btn")
+    .addEventListener("click", () => {
 
-        document
-            .getElementById("update-btn")
-            .addEventListener("click", () => {
+        const btn = document.getElementById("update-btn");
 
-                if (newWorker) {
+        btn.disabled = true;
 
-                    newWorker.postMessage({
-                        type: "SKIP_WAITING"
-                    });
+        btn.textContent = "Updating...";
 
-                }
+        if (newWorker) {
 
+            newWorker.postMessage({
+                type: "SKIP_WAITING"
             });
+
+        }
+
+    });
 
     });
 
