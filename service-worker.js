@@ -1,4 +1,5 @@
-const CACHE_NAME = "upm-static-v1";
+const CACHE_VERSION = "1.0.0";
+const CACHE_NAME = `upm-static-${CACHE_VERSION}`;
 
 const STATIC_FILES = [
   "/",
