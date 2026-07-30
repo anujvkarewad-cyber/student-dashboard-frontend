@@ -142,6 +142,11 @@ console.log("After enterApp");
     state.student = student;
     $("#login-screen").hidden = true;
     $("#app-shell").hidden = false;
+    const version = document.getElementById("app-version");
+
+if (version) {
+    version.textContent = `Version ${APP_VERSION}`;
+}
 
     // header identity
     const initials = (student.studentName || "S").split(" ").map(w => w[0]).slice(0,2).join("").toUpperCase();
