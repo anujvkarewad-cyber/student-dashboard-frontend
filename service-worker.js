@@ -128,6 +128,8 @@ event.respondWith(
     })()
 
 );
+  });
+  
 // Receive Update Message
 self.addEventListener("message", event => {
 
