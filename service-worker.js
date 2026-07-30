@@ -1,4 +1,4 @@
-const CACHE_VERSION = "1.0.0";
+const CACHE_VERSION = "1.0.1";
 const CACHE_NAME = `upm-static-${CACHE_VERSION}`;
 
 const STATIC_FILES = [
@@ -70,7 +70,7 @@ if (url.pathname === "/service-worker.js") {
 
   }
 
-  // JS → Network First
+ // JS → Network First
 if (
     url.pathname.endsWith(".js") &&
     url.pathname !== "/service-worker.js"
@@ -78,47 +78,56 @@ if (
 
     event.respondWith(
 
-      fetch(event.request)
-        .then(response => {
+        (async () => {
 
-          caches.open(CACHE_NAME).then(cache => {
-            cache.put(event.request, response.clone());
-          });
+            try {
 
-          return response;
+                const response = await fetch(event.request);
 
-        })
-        .catch(() => caches.match(event.request))
+                const responseClone = response.clone();
+
+                const cache = await caches.open(CACHE_NAME);
+
+                await cache.put(event.request, responseClone);
+
+                return response;
+
+            } catch {
+
+                return caches.match(event.request);
+
+            }
+
+        })()
 
     );
 
     return;
 
-  }
+}
 
   // Everything else → Cache First
-  event.respondWith(
+event.respondWith(
 
-    caches.match(event.request).then(cached => {
+    (async () => {
 
-      if (cached) return cached;
+        const cached = await caches.match(event.request);
 
-      return fetch(event.request).then(response => {
+        if (cached) return cached;
 
-        caches.open(CACHE_NAME).then(cache => {
-          cache.put(event.request, response.clone());
-        });
+        const response = await fetch(event.request);
+
+        const responseClone = response.clone();
+
+        const cache = await caches.open(CACHE_NAME);
+
+        await cache.put(event.request, responseClone);
 
         return response;
 
-      });
+    })()
 
-    })
-
-  );
-
-});
-
+);
 // Receive Update Message
 self.addEventListener("message", event => {
 
