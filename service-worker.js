@@ -47,6 +47,10 @@ self.addEventListener("fetch", event => {
   if (event.request.method !== "GET") return;
 
   const url = new URL(event.request.url);
+  // Never cache the service worker itself
+if (url.pathname === "/service-worker.js") {
+    return;
+}
 
   // HTML → Always Network First
   if (
@@ -67,7 +71,10 @@ self.addEventListener("fetch", event => {
   }
 
   // JS → Network First
-  if (url.pathname.endsWith(".js")) {
+if (
+    url.pathname.endsWith(".js") &&
+    url.pathname !== "/service-worker.js"
+) {
 
     event.respondWith(
 
