@@ -39,20 +39,7 @@ self.addEventListener("activate", event => {
   );
 
 });
-navigator.serviceWorker.register("/service-worker.js").then((reg) => {
-  reg.addEventListener("updatefound", () => {
-    const newWorker = reg.installing;
 
-    newWorker.addEventListener("statechange", () => {
-      if (
-        newWorker.state === "installed" &&
-        navigator.serviceWorker.controller
-      ) {
-        window.location.reload();
-      }
-    });
-  });
-});
 // Fetch
 self.addEventListener("fetch", event => {
 
