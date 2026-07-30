@@ -1,4 +1,6 @@
-console.log("APP VERSION 12345");
+const APP_VERSION = "1.0.1";
+
+console.log("APP VERSION", APP_VERSION);
 (function () {
   "use strict";
 let currentStudent = null;
