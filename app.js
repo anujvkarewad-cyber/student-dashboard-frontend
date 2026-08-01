@@ -306,7 +306,7 @@ function navigate(view) {
         if (!VIEW_TITLES[view]) view = "dashboard";
         console.log("2");
 
-        location.hash = view;
+        history.replaceState(null, "", "#" + view);
         console.log("3");
 
         $$(".nav-item[data-view]").forEach(el =>
@@ -381,18 +381,12 @@ if (!tpl) {
 
   
   // Mobile toggle
-const overlay = document.getElementById("sidebar-overlay");
+
 
 $("#menu-toggle").addEventListener("click", () => {
 
     $(".sidebar").classList.toggle("open");
-    overlay.classList.toggle("show");
-
-});
-overlay.addEventListener("click", () => {
-
-    $(".sidebar").classList.remove("open");
-    overlay.classList.remove("show");
+    
 
 });
   // ============ HELPERS ============
