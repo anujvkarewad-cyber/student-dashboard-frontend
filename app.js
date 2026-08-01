@@ -180,6 +180,8 @@ console.log("Student ID:", student.studentId);
     state.stats = stats;
 state.log = log;
 state.leaderboard = lb;
+console.log("Leaderboard:", lb);
+console.log("Leaderboard Array:", Array.isArray(lb));
 state.reports = reports;
 state.announcements = announcements;
 state.mentorNotes = notes;
@@ -910,13 +912,21 @@ if (notesBox) {
 
   // ---------- Leaderboard ----------
   function renderLeaderboard() {
-    const me = state.leaderboard.find(x => x.studentId === state.student.studentId);
+     const leaderboard = state.leaderboard || [];
+
+    const me = leaderboard.find(
+        x => x.studentId === state.student.studentId
+    );
+
     const st = state.stats;
     $("[data-lb='current']").textContent = "#" + (me ? me.rank : st.rank || "-");
     $("[data-lb='weekly']").textContent  = "#" + (st.weeklyRank || (me && me.rank) || "-");
     $("[data-lb='monthly']").textContent = "#" + (st.monthlyRank || "-");
 
-    const rows = state.leaderboard.slice(0, 10).map(r => `
+    const rows = leaderboard
+    .filter(r => r)
+    .slice(0,10)
+    .map(r => `
       <tr class="${r.studentId === state.student.studentId ? "me-row" : ""}" data-testid="lb-row-${r.rank}">
         <td><span class="rank-cell ${r.rank <= 3 ? "r" + r.rank : ""}">${r.rank}</span></td>
         <td><b>${escapeHtml(r.studentName)}</b><br><span class="muted mono">${r.studentId}</span></td>
