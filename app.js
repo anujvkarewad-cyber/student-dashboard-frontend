@@ -1,4 +1,4 @@
-const APP_VERSION = "1.0.1";
+const APP_VERSION = "1.0.2";
 
 console.log("APP VERSION", APP_VERSION);
 (function () {
@@ -298,40 +298,77 @@ async function updatePassword() {
 
 }
   // ============ ROUTER ============
-  function navigate(view) {
-    if (!VIEW_TITLES[view]) view = "dashboard";
-    location.hash = view;
+function navigate(view) {
 
-    $$(".nav-item[data-view]").forEach(el => el.classList.toggle("active", el.dataset.view === view));
-    $("#view-title").textContent = VIEW_TITLES[view];
-    $(".sidebar").classList.remove("open");
+    console.log("1");
 
-    // destroy charts to avoid Chart.js "canvas is already in use"
-    Object.values(state.charts).forEach(c => c && c.destroy());
-    state.charts = {};
+    try {
+        if (!VIEW_TITLES[view]) view = "dashboard";
+        console.log("2");
+
+        location.hash = view;
+        console.log("3");
+
+        $$(".nav-item[data-view]").forEach(el =>
+            el.classList.toggle("active", el.dataset.view === view)
+        );
+        console.log("4");
+
+        $("#view-title").textContent = VIEW_TITLES[view];
+        console.log("5");
+
+        $(".sidebar").classList.remove("open");
+        console.log("6");
+
+        Object.values(state.charts).forEach(c => c && c.destroy());
+        console.log("7");
+
+        state.charts = {};
+        console.log("8");
+
+    } catch(e) {
+        console.error(e);
+        return;
+    }
+
+    console.log("9");
 
     const tpl = document.getElementById("tpl-" + view);
-    if (!tpl) return;
+
+if (!tpl) {
+    console.error("Template not found:", view);
+    return;
+}
+    console.log("10");
+
     const node = tpl.content.cloneNode(true);
+    console.log("11");
+
     const container = $("#view-container");
+    console.log("12");
+
     container.innerHTML = "";
     container.appendChild(node);
 
-    // hook up in-page navigation links
-    $$("[data-navigate]", container).forEach(el =>
-      el.addEventListener("click", (e) => { e.preventDefault(); navigate(el.dataset.navigate); })
-    );
+    console.log("13");
+    console.log("Container HTML:", container.innerHTML.substring(0, 500));
 
+    try {
     ({
       dashboard: renderDashboard,
-      tracker:   renderTracker,
-      mcq:       renderMCQ,
+      tracker: renderTracker,
+      mcq: renderMCQ,
       performance: renderPerformance,
       leaderboard: renderLeaderboard,
-      reports:   renderReports,
-      profile:   renderProfile,
+      reports: renderReports,
+      profile: renderProfile,
     })[view]();
-  }
+
+    console.log("14");
+} catch (e) {
+    console.error("RENDER ERROR:", e);
+}
+}
 
   // Nav clicks
   $$(".nav-item[data-view]").forEach(el =>
@@ -1384,6 +1421,7 @@ resetBtn.addEventListener("click", async () => {
   // ============ BOOT ============
   tryAutoLogin();
 })();
+
 
 /* ===========================
    Developer Theme Panel
