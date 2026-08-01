@@ -2811,20 +2811,20 @@ filter:drop-shadow(0 6px 16px rgba(0,0,0,.08));
       grid-template-columns:1fr;
   }
 
-  .sidebar{
+.sidebar{
       position:fixed;
-      left:0;
+      left:-280px;
       top:0;
       width:280px;
       height:100vh;
 
-      transform:translate3d(-100%,0,0);
-      transition:.3s ease;
+      transition: left .3s ease;
       z-index:1001;
+      background-color:#F8FAFC;
   }
 
   .sidebar.open{
-      transform:translate3d(0,0,0);
+      left:0;
   }
 
 
