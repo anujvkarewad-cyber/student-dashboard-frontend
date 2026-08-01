@@ -379,9 +379,22 @@ if (!tpl) {
     if (state.student) navigate(v);
   });
 
+  
   // Mobile toggle
-  $("#menu-toggle").addEventListener("click", () => $(".sidebar").classList.toggle("open"));
+const overlay = document.getElementById("sidebar-overlay");
 
+$("#menu-toggle").addEventListener("click", () => {
+
+    $(".sidebar").classList.toggle("open");
+    overlay.classList.toggle("show");
+
+});
+overlay.addEventListener("click", () => {
+
+    $(".sidebar").classList.remove("open");
+    overlay.classList.remove("show");
+
+});
   // ============ HELPERS ============
   const fmt = (n, d = 1) => (n == null || isNaN(n) ? "—" : Number(n).toFixed(d).replace(/\.0$/, ""));
   const timeOfDay = () => {

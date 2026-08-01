@@ -2808,24 +2808,41 @@ filter:drop-shadow(0 6px 16px rgba(0,0,0,.08));
 
   .sidebar{
       position:fixed;
-      top:0;
       left:0;
+      top:0;
       width:280px;
       height:100vh;
-      z-index:1000;
-      transform:translateX(-100%);
-      transition:transform .3s ease;
-    background:#F8FAFC;
 
+      transform:translateX(-100%);
+      transition:.3s ease;
+      z-index:1001;
   }
 
   .sidebar.open{
       transform:translateX(0);
   }
 
+  .sidebar-overlay{
+    position:fixed;
+    inset:0;
+    background:rgba(0,0,0,.45);
+
+    opacity:0;
+    visibility:hidden;
+
+    transition:.3s;
+    z-index:1000;
+}
+
+.sidebar-overlay.show{
+    opacity:1;
+    visibility:visible;
+}
+
   .menu-toggle{
       display:flex;
   }
+} 
 
   .main{
     margin-left:0;
@@ -2917,7 +2934,7 @@ filter:drop-shadow(0 6px 16px rgba(0,0,0,.08));
     min-height:290px;
     padding:22px;
 }
-}
+
 
 @media (max-width: 480px) {
   .kpi-grid, .perf-grid { grid-template-columns: 1fr; }
