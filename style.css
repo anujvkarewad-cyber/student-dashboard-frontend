@@ -2815,6 +2815,8 @@ filter:drop-shadow(0 6px 16px rgba(0,0,0,.08));
       z-index:1000;
       transform:translateX(-100%);
       transition:transform .3s ease;
+    background:#F8FAFC;
+
   }
 
   .sidebar.open{
@@ -2826,8 +2828,8 @@ filter:drop-shadow(0 6px 16px rgba(0,0,0,.08));
   }
 
   .main{
-    margin-left:300px;
-    width:calc(100vw - 300px);
+    margin-left:0;
+    width:100%;
 }
 
   .view-container{
