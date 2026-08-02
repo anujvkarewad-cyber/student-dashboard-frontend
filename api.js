@@ -91,5 +91,8 @@ verifyOTP(studentId, otp) {
     password
   });
 },
+markMentorFeedbackRead(id) {
+  return callAPI("feedback.read", { id });
+},
   
 };
