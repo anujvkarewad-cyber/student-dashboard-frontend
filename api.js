@@ -58,9 +58,9 @@ window.UMP_API = {
     return callAPI("getLeaderboard");
   },
 
-  async getWeeklyReports(studentId) {
-    return [];
-  },
+  getWeeklyReports(studentId) {
+    return callAPI("getWeeklyReports", { studentId });
+},
 
   testConnection() {
     return Promise.resolve(true);
