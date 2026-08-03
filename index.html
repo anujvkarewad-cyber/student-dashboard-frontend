@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -32,8 +31,13 @@
 
 
 
+    <!-- ================= BOOT LOADER (shown while we check for a saved session) ================= -->
+    <div id="boot-loader" class="boot-loader">
+        <div class="boot-spinner"></div>
+    </div>
+
     <!-- ================= HERO SECTION ================= -->
-  <section id="login-screen" class="login-wrap">
+  <section id="login-screen" class="login-wrap" hidden>
 
     <!-- Background -->
     <div class="login-bg-orbs" aria-hidden="true">
@@ -483,9 +487,14 @@
     <div class="card">
       <div class="card-head">
         <h3>Daily Study Tracker</h3>
-        <a class="btn-primary sm" id="open-tracker-form" data-testid="open-tracker-form-btn">
-          <i class="fa-solid fa-plus"></i> Log study hours
-        </a>
+        <div style="display:flex; gap:8px;">
+          <button type="button" class="btn-primary sm" id="refresh-tracker-btn" data-testid="refresh-tracker-btn" style="background:transparent;border:1px solid var(--muted, #888);">
+            <i class="fa-solid fa-rotate"></i>
+          </button>
+          <a class="btn-primary sm" id="open-tracker-form" data-testid="open-tracker-form-btn">
+            <i class="fa-solid fa-plus"></i> Log study hours
+          </a>
+        </div>
       </div>
       <p class="muted">Submissions from your Google Form appear here in real-time.</p>
 

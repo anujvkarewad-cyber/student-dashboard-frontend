@@ -3,7 +3,8 @@ const APP_VERSION = "1.0.2";
 console.log("APP VERSION", APP_VERSION);
 (function () {
   "use strict";
-let currentStudent = null;
+  let currentStudent = null;
+  let forcedTheme = localStorage.getItem("ump_dev_theme") || null; // dev-panel theme override
   const api = window.UMP_API;
   async function loadMentorFeedback(studentId) {
   return await api.apiCall("feedback.get", {
@@ -53,27 +54,42 @@ async function markMentorFeedbackRead(id) {
   // ============ AUTH ============
   const savedStudent = JSON.parse(localStorage.getItem("ump_student"));
 
-async function tryAutoLogin() {
+async function boot() {
+  const loader = $("#boot-loader");
+  const loginScreen = $("#login-screen");
 
-  if (!savedStudent) return;
+  if (!savedStudent) {
+    // no saved session at all -> straight to login, no API call needed
+    if (loader) loader.hidden = true;
+    loginScreen.hidden = false;
+    return;
+  }
 
-  const s = await api.validateLogin(
-    savedStudent.studentId,
-    savedStudent.password
-  );
+  try {
+    const s = await api.validateLogin(
+      savedStudent.studentId,
+      savedStudent.password
+    );
 
- if (s.success) {
-
-    if (s.forcePasswordChange) {
+    if (s.success) {
+      if (s.forcePasswordChange) {
         showChangePasswordScreen(s);
-        return;
+      } else {
+        await enterApp(s);
+      }
+    } else {
+      // saved session is no longer valid (e.g. password changed elsewhere)
+      localStorage.removeItem("ump_student");
+      loginScreen.hidden = false;
     }
-
-    enterApp(s);
-
-} else {
-    localStorage.removeItem("ump_student");
-}
+  } catch (err) {
+    // network/API hiccup - don't strand the student on a blank loader,
+    // let them log in manually instead of silently failing
+    console.error("Auto-login failed:", err);
+    loginScreen.hidden = false;
+  } finally {
+    if (loader) loader.hidden = true;
+  }
 }
   $("#login-form").addEventListener("submit", async (e) => {
 
@@ -392,6 +408,8 @@ $("#menu-toggle").addEventListener("click", () => {
   const fmt = (n, d = 1) => (n == null || isNaN(n) ? "—" : Number(n).toFixed(d).replace(/\.0$/, ""));
   const timeOfDay = () => {
 
+    if (forcedTheme && forcedTheme !== "auto") return forcedTheme;
+
     const h = new Date().getHours();
 
     if (h >= 5 && h < 10) {
@@ -669,6 +687,30 @@ if (notesBox) {
       const link = `https://docs.google.com/forms/d/e/1FAIpQLSdPItk3vvQtv0tuMKgLWh5Q456uHLAEXDqlz-PvgXGlMfB5Kg/viewform?usp=pp_url&entry.391235704=${encodeURIComponent(state.student.studentId)}`;
       trackerBtn.href = link;
       trackerBtn.target = "_blank";
+    }
+
+    const refreshBtn = $("#refresh-tracker-btn");
+    if (refreshBtn) {
+      refreshBtn.addEventListener("click", async () => {
+        const icon = refreshBtn.querySelector("i");
+        icon.classList.add("fa-spin");
+        refreshBtn.disabled = true;
+        try {
+          const [stats, log] = await Promise.all([
+            api.getStats(state.student.studentId),
+            api.getStudyLog(state.student.studentId)
+          ]);
+          state.stats = stats;
+          state.log = log;
+          $("#topbar-streak").textContent = stats.streak ?? 0;
+          renderTracker();
+        } catch (err) {
+          console.error("Manual tracker refresh failed:", err);
+        } finally {
+          icon.classList.remove("fa-spin");
+          refreshBtn.disabled = false;
+        }
+      });
     }
   }
 
@@ -1425,36 +1467,72 @@ resetBtn.addEventListener("click", async () => {
 
 });
   // ============ BOOT ============
-  tryAutoLogin();
-})();
+  boot();
 
+  // ---------- Refetch tracker data when the student comes back to this tab ----------
+  // (fixes: student opens the Google Form in a new tab, submits, switches back,
+  // and previously had to hit refresh to see it reflected)
+  document.addEventListener("visibilitychange", async () => {
+    if (document.visibilityState !== "visible") return;
+    if (!state.student) return; // not logged in yet
 
-/* ===========================
-   Developer Theme Panel
-=========================== */
+    try {
+      const [stats, log] = await Promise.all([
+        api.getStats(state.student.studentId),
+        api.getStudyLog(state.student.studentId)
+      ]);
+      state.stats = stats;
+      state.log = log;
+      $("#topbar-streak").textContent = stats.streak ?? 0;
 
-const devToggle = document.getElementById("devToggle");
-const devPanel = document.getElementById("devPanel");
+      // only re-render if the student is currently looking at the tracker view
+      const activeView = (location.hash || "#dashboard").slice(1);
+      if (activeView === "tracker") renderTracker();
+    } catch (err) {
+      console.error("Background refresh failed:", err);
+    }
+  });
+  // ---------- Developer Theme Panel ----------
+  const devToggle = $("#devToggle");
+  const devPanel = $("#devPanel");
 
-if (devToggle && devPanel) {
-
+  if (devToggle && devPanel) {
     devToggle.addEventListener("click", () => {
-
-        console.log("Button Clicked");
-
-        devPanel.classList.toggle("show");
-
+      devPanel.classList.toggle("show");
     });
 
     document.addEventListener("click", (e) => {
-
-        if (
-            !devPanel.contains(e.target) &&
-            !devToggle.contains(e.target)
-        ) {
-            devPanel.classList.remove("show");
-        }
-
+      if (!devPanel.contains(e.target) && !devToggle.contains(e.target)) {
+        devPanel.classList.remove("show");
+      }
     });
 
-}
+    $$("button[data-theme]", devPanel).forEach((btn) => {
+      if (btn.dataset.theme === forcedTheme) btn.classList.add("active-theme");
+
+      btn.addEventListener("click", () => {
+        const chosen = btn.dataset.theme;
+        forcedTheme = chosen === "auto" ? null : chosen;
+
+        if (forcedTheme) {
+          localStorage.setItem("ump_dev_theme", forcedTheme);
+        } else {
+          localStorage.removeItem("ump_dev_theme");
+        }
+
+        $$("button[data-theme]", devPanel).forEach((b) =>
+          b.classList.toggle("active-theme", b === btn)
+        );
+
+        // re-apply immediately if the student is looking at the dashboard
+        const activeView = (location.hash || "#dashboard").slice(1);
+        if (activeView === "dashboard" && state.student) renderDashboard();
+      });
+    });
+  }
+
+})();
+
+
+/* Developer Theme Panel logic now lives inside the main app IIFE above,
+   so it has access to $, $$, state, and renderDashboard(). */
