@@ -684,9 +684,7 @@ if (notesBox) {
 
     const trackerBtn = $("#open-tracker-form");
     if (trackerBtn) {
-      const link = `https://docs.google.com/forms/d/e/1FAIpQLSdPItk3vvQtv0tuMKgLWh5Q456uHLAEXDqlz-PvgXGlMfB5Kg/viewform?usp=pp_url&entry.391235704=${encodeURIComponent(state.student.studentId)}`;
-      trackerBtn.href = link;
-      trackerBtn.target = "_blank";
+      trackerBtn.addEventListener("click", openTrackerModal);
     }
 
     const refreshBtn = $("#refresh-tracker-btn");
@@ -1225,6 +1223,261 @@ forgotModal.addEventListener("click",(e)=>{
 
 });
 
+  // ---------- Log Study Hours modal (in-app, replaces external Google Form) ----------
+  const trackerModal = document.getElementById("tracker-modal");
+  const tlDate = document.getElementById("tl-date");
+  const tlHours = document.getElementById("tl-hours");
+  const tlTomorrow = document.getElementById("tl-tomorrow");
+  const tlMentorSupport = document.getElementById("tl-mentor-support");
+  const tlProofFile = document.getElementById("tl-proof-file");
+  const tlError = document.getElementById("tl-error");
+  const tlSubmitBtn = document.getElementById("tl-submit");
+
+  const tlNoSection = document.getElementById("tl-no-section");
+  const tlYesSection = document.getElementById("tl-yes-section");
+  const tlReasonOther = document.getElementById("tl-reason-other");
+
+  const MAX_PROOF_BYTES = 3 * 1024 * 1024; // 3 MB raw -> ~4 MB as base64, safely under Vercel's ~4.5 MB serverless body limit
+
+  // ---- chip helpers (radio/checkbox groups styled as pills) ----
+  function wireChipGroup(groupEl) {
+    groupEl.querySelectorAll(".choice-chip").forEach((chip) => {
+      const input = chip.querySelector("input");
+      input.addEventListener("change", () => {
+        if (input.type === "radio") {
+          // clear "active" from sibling chips in this radio group
+          groupEl.querySelectorAll(".choice-chip").forEach((c) => c.classList.remove("active"));
+        }
+        chip.classList.toggle("active", input.checked);
+      });
+    });
+  }
+
+  function resetChipGroup(groupEl) {
+    groupEl.querySelectorAll(".choice-chip").forEach((chip) => {
+      const input = chip.querySelector("input");
+      input.checked = false;
+      chip.classList.remove("active");
+    });
+  }
+
+  function getRadioValue(name) {
+    const el = document.querySelector(`input[name="${name}"]:checked`);
+    return el ? el.value : "";
+  }
+
+  function getCheckboxValues(groupEl) {
+    return Array.from(groupEl.querySelectorAll("input[type='checkbox']:checked")).map((c) => c.value);
+  }
+
+  const tlPlannedGroup = document.getElementById("tl-planned-group");
+  const tlReasonGroup = document.getElementById("tl-reason-group");
+  const tlSubjectsGroup = document.getElementById("tl-subjects-group");
+  const tlTargetGroup = document.getElementById("tl-target-group");
+
+  [tlPlannedGroup, tlReasonGroup, tlSubjectsGroup, tlTargetGroup].forEach(wireChipGroup);
+
+  // "Other" reason -> reveal a free-text box
+  tlReasonGroup.addEventListener("change", () => {
+    tlReasonOther.hidden = getRadioValue("tl-reason") !== "Other";
+    if (tlReasonOther.hidden) tlReasonOther.value = "";
+  });
+
+  // Planned = No -> show only reason + mentor support. Yes/Maybe -> show subjects/target/proof/tomorrow.
+  tlPlannedGroup.addEventListener("change", () => {
+    const planned = getRadioValue("tl-planned");
+    tlNoSection.hidden = planned !== "No";
+    tlYesSection.hidden = !(planned === "Yes" || planned === "Maybe");
+
+    if (planned !== "No") {
+      resetChipGroup(tlReasonGroup);
+      tlReasonOther.hidden = true;
+      tlReasonOther.value = "";
+    }
+    if (!(planned === "Yes" || planned === "Maybe")) {
+      resetChipGroup(tlSubjectsGroup);
+      resetChipGroup(tlTargetGroup);
+      tlProofFile.value = "";
+      tlTomorrow.value = "";
+    }
+  });
+
+  function openTrackerModal() {
+    if (!state.student) return;
+
+    document.getElementById("tracker-modal-student-name").textContent =
+      state.student.name || "";
+    document.getElementById("tracker-modal-student-id").textContent =
+      state.student.studentId || "";
+
+    const today = new Date();
+    tlDate.value = today.toISOString().slice(0, 10);
+    tlHours.value = "";
+    resetChipGroup(tlPlannedGroup);
+    resetChipGroup(tlReasonGroup);
+    resetChipGroup(tlSubjectsGroup);
+    resetChipGroup(tlTargetGroup);
+    tlReasonOther.hidden = true;
+    tlReasonOther.value = "";
+    tlNoSection.hidden = true;
+    tlYesSection.hidden = true;
+    tlTomorrow.value = "";
+    tlMentorSupport.value = "";
+    tlProofFile.value = "";
+    tlError.hidden = true;
+
+    trackerModal.hidden = false;
+  }
+
+  function closeTrackerModal() {
+    trackerModal.hidden = true;
+  }
+
+  document.getElementById("tl-cancel").addEventListener("click", closeTrackerModal);
+
+  trackerModal.addEventListener("click", (e) => {
+    if (e.target === trackerModal) closeTrackerModal();
+  });
+
+  // Reads the chosen proof file as a base64 string, or resolves to null if none chosen.
+  function readProofFile() {
+    return new Promise((resolve, reject) => {
+      const file = tlProofFile.files && tlProofFile.files[0];
+      if (!file) return resolve(null);
+
+      if (file.size > MAX_PROOF_BYTES) {
+        return reject(new Error("That file is too large — please attach something under 3 MB."));
+      }
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        // reader.result is "data:<mime>;base64,<data>" - split off just the base64 part
+        const base64 = String(reader.result).split(",")[1] || "";
+        resolve({
+          fileName: file.name,
+          mimeType: file.type || "application/octet-stream",
+          base64
+        });
+      };
+      reader.onerror = () => reject(new Error("Couldn't read that file — please try again."));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  tlSubmitBtn.addEventListener("click", async () => {
+    const date = tlDate.value;
+    const hours = parseFloat(tlHours.value);
+    const planned = getRadioValue("tl-planned");
+    const mentorSupport = tlMentorSupport.value;
+
+    if (!date || !hours || hours <= 0 || !planned) {
+      tlError.textContent = "Please fill in date, hours, and whether you studied as planned.";
+      tlError.hidden = false;
+      return;
+    }
+
+    let reason = "";
+    let subjects = "";
+    let targetDone = "";
+    let tomorrowTarget = "";
+    let proofFile = null;
+
+    if (planned === "No") {
+      const reasonChoice = getRadioValue("tl-reason");
+      if (!reasonChoice) {
+        tlError.textContent = "Please select the main reason you couldn't study today.";
+        tlError.hidden = false;
+        return;
+      }
+      if (reasonChoice === "Other" && !tlReasonOther.value.trim()) {
+        tlError.textContent = "Please specify your reason.";
+        tlError.hidden = false;
+        return;
+      }
+      reason = reasonChoice === "Other" ? tlReasonOther.value.trim() : reasonChoice;
+
+    } else {
+      const subjectList = getCheckboxValues(tlSubjectsGroup);
+      targetDone = getRadioValue("tl-target");
+
+      if (!subjectList.length) {
+        tlError.textContent = "Please select at least one subject you studied today.";
+        tlError.hidden = false;
+        return;
+      }
+      if (!targetDone) {
+        tlError.textContent = "Please select whether you completed today's target.";
+        tlError.hidden = false;
+        return;
+      }
+      if (!tlProofFile.files.length) {
+        tlError.textContent = "Please attach today's study proof.";
+        tlError.hidden = false;
+        return;
+      }
+
+      subjects = subjectList.join(", ");
+      tomorrowTarget = tlTomorrow.value.trim();
+    }
+
+    tlSubmitBtn.disabled = true;
+    const originalLabel = tlSubmitBtn.innerHTML;
+    tlSubmitBtn.innerHTML = "<span>Submitting...</span>";
+    tlError.hidden = true;
+
+    // studentId comes straight from the logged-in session - never typed by the
+    // student, so it can never be entered wrong.
+    const studentId = state.student.studentId;
+
+    try {
+      proofFile = await readProofFile();
+
+      await api.addStudyLog(studentId, {
+        date,
+        hours,
+        studiedAsPlanned: planned,
+        reason,
+        subjects,
+        targetCompleted: targetDone,
+        tomorrowTarget,
+        mentorSupport,
+        proofFile
+      });
+
+      // Optimistic update: show it instantly without waiting for a refetch
+      state.log = [{ date, topic: subjects || reason, hours, proof: proofFile ? "#" : "" }, ...(state.log || [])];
+      state.stats = state.stats || {};
+      state.stats.totalEntries = (state.stats.totalEntries || 0) + 1;
+      state.stats.totalHours = (state.stats.totalHours || 0) + hours;
+      state.stats.averageHours = state.stats.totalHours / state.stats.totalEntries;
+
+      closeTrackerModal();
+      renderTracker();
+
+      // reconcile with the server shortly after, to pick up the real proof link etc.
+      setTimeout(async () => {
+        try {
+          const [stats, log] = await Promise.all([
+            api.getStats(studentId),
+            api.getStudyLog(studentId)
+          ]);
+          state.stats = stats;
+          state.log = log;
+          const activeView = (location.hash || "#dashboard").slice(1);
+          if (activeView === "tracker") renderTracker();
+        } catch (err) {
+          console.error("Post-submit reconcile failed:", err);
+        }
+      }, 1500);
+    } catch (err) {
+      tlError.textContent = err.message || "Something went wrong. Please try again.";
+      tlError.hidden = false;
+    } finally {
+      tlSubmitBtn.disabled = false;
+      tlSubmitBtn.innerHTML = originalLabel;
+    }
+  });
+
   const otpModal = document.getElementById("otp-modal");
 
 const otpInputs =
@@ -1493,10 +1746,15 @@ resetBtn.addEventListener("click", async () => {
     }
   });
   // ---------- Developer Theme Panel ----------
-  const devToggle = $("#devToggle");
-  const devPanel = $("#devPanel");
+  // NOTE: these elements are defined further down in index.html, AFTER this
+  // <script> tag, so we must wait for DOMContentLoaded before looking them up
+  // — otherwise document.getElementById returns null and nothing wires up.
+  document.addEventListener("DOMContentLoaded", () => {
+    const devToggle = document.getElementById("devToggle");
+    const devPanel = document.getElementById("devPanel");
 
-  if (devToggle && devPanel) {
+    if (!devToggle || !devPanel) return;
+
     devToggle.addEventListener("click", () => {
       devPanel.classList.toggle("show");
     });
@@ -1507,7 +1765,7 @@ resetBtn.addEventListener("click", async () => {
       }
     });
 
-    $$("button[data-theme]", devPanel).forEach((btn) => {
+    Array.from(devPanel.querySelectorAll("button[data-theme]")).forEach((btn) => {
       if (btn.dataset.theme === forcedTheme) btn.classList.add("active-theme");
 
       btn.addEventListener("click", () => {
@@ -1520,16 +1778,15 @@ resetBtn.addEventListener("click", async () => {
           localStorage.removeItem("ump_dev_theme");
         }
 
-        $$("button[data-theme]", devPanel).forEach((b) =>
+        devPanel.querySelectorAll("button[data-theme]").forEach((b) =>
           b.classList.toggle("active-theme", b === btn)
         );
 
-        // re-apply immediately if the student is looking at the dashboard
         const activeView = (location.hash || "#dashboard").slice(1);
         if (activeView === "dashboard" && state.student) renderDashboard();
       });
     });
-  }
+  });
 
 })();
 

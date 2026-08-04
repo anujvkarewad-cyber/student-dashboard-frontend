@@ -491,9 +491,9 @@
           <button type="button" class="btn-primary sm" id="refresh-tracker-btn" data-testid="refresh-tracker-btn" style="background:transparent;border:1px solid var(--muted, #888);">
             <i class="fa-solid fa-rotate"></i>
           </button>
-          <a class="btn-primary sm" id="open-tracker-form" data-testid="open-tracker-form-btn">
+          <button type="button" class="btn-primary sm" id="open-tracker-form" data-testid="open-tracker-form-btn">
             <i class="fa-solid fa-plus"></i> Log study hours
-          </a>
+          </button>
         </div>
       </div>
       <p class="muted">Submissions from your Google Form appear here in real-time.</p>
@@ -866,6 +866,151 @@
     </button>
 </div>
   
+<!-- ================= Log Study Hours Modal ================= -->
+
+<div id="tracker-modal" class="modal-overlay" hidden>
+
+    <div class="modal-card" style="max-height:88vh; overflow-y:auto;">
+
+        <div class="modal-icon">
+            <i class="fa-solid fa-book"></i>
+        </div>
+
+        <h2>Daily Study Progress Tracker</h2>
+
+        <p>Logging for: <b id="tracker-modal-student-name">—</b> (<span id="tracker-modal-student-id">—</span>)</p>
+
+        <div class="field">
+            <span class="field-label">Study Date</span>
+            <div class="field-control">
+                <i class="fa-regular fa-calendar"></i>
+                <input type="date" id="tl-date" autocomplete="off">
+            </div>
+        </div>
+
+        <div class="field">
+            <span class="field-label">Total Study Hours</span>
+            <div class="field-control">
+                <i class="fa-regular fa-clock"></i>
+                <input type="number" id="tl-hours" placeholder="e.g. 2.5" step="0.5" min="0" max="24" autocomplete="off">
+            </div>
+        </div>
+
+        <!-- ---------- Were you able to study today as planned? (Yes / No / Maybe) ---------- -->
+        <div class="field">
+            <span class="field-label">Were you able to study today as planned? *</span>
+            <div class="choice-group segmented" id="tl-planned-group" data-name="planned">
+                <label class="choice-chip"><input type="radio" name="tl-planned" value="Yes"><span>Yes</span></label>
+                <label class="choice-chip"><input type="radio" name="tl-planned" value="No"><span>No</span></label>
+                <label class="choice-chip"><input type="radio" name="tl-planned" value="Maybe"><span>Maybe</span></label>
+            </div>
+        </div>
+
+        <!-- ================= Shown only when planned = No ================= -->
+        <div id="tl-no-section" hidden>
+
+            <div class="field">
+                <span class="field-label">What was the main reason you couldn't study today? *</span>
+                <div class="choice-group" id="tl-reason-group" data-name="reason">
+                    <label class="choice-chip"><input type="radio" name="tl-reason" value="Health Issue"><span class="chip-icon"><i class="fa-solid fa-heart-pulse"></i></span><span>Health Issue</span></label>
+                    <label class="choice-chip"><input type="radio" name="tl-reason" value="Family Function"><span class="chip-icon"><i class="fa-solid fa-gift"></i></span><span>Family Function</span></label>
+                    <label class="choice-chip"><input type="radio" name="tl-reason" value="Office / Job"><span class="chip-icon"><i class="fa-solid fa-briefcase"></i></span><span>Office / Job</span></label>
+                    <label class="choice-chip"><input type="radio" name="tl-reason" value="College"><span class="chip-icon"><i class="fa-solid fa-graduation-cap"></i></span><span>College</span></label>
+                    <label class="choice-chip"><input type="radio" name="tl-reason" value="Travelling"><span class="chip-icon"><i class="fa-solid fa-plane"></i></span><span>Travelling</span></label>
+                    <label class="choice-chip"><input type="radio" name="tl-reason" value="Power / Internet Issue"><span class="chip-icon"><i class="fa-solid fa-wifi"></i></span><span>Power / Internet Issue</span></label>
+                    <label class="choice-chip"><input type="radio" name="tl-reason" value="Personal Work"><span class="chip-icon"><i class="fa-solid fa-user"></i></span><span>Personal Work</span></label>
+                    <label class="choice-chip"><input type="radio" name="tl-reason" value="Low Motivation"><span class="chip-icon"><i class="fa-regular fa-face-frown"></i></span><span>Low Motivation</span></label>
+                    <label class="choice-chip"><input type="radio" name="tl-reason" value="Other"><span class="chip-icon"><i class="fa-solid fa-ellipsis"></i></span><span>Other</span></label>
+                </div>
+                <input type="text" id="tl-reason-other" class="choice-other-input" placeholder="Please specify" hidden autocomplete="off">
+            </div>
+
+        </div>
+
+        <!-- ================= Shown only when planned = Yes / Maybe ================= -->
+        <div id="tl-yes-section" hidden>
+
+            <div class="field">
+                <span class="field-label">Which subjects did you study today? *</span>
+                <div class="choice-group" id="tl-subjects-group" data-name="subjects">
+                    <label class="choice-chip"><input type="checkbox" value="Accounts"><span class="chip-icon"><i class="fa-solid fa-calculator"></i></span><span>Accounts</span></label>
+                    <label class="choice-chip"><input type="checkbox" value="Law"><span class="chip-icon"><i class="fa-solid fa-scale-balanced"></i></span><span>Law</span></label>
+                    <label class="choice-chip"><input type="checkbox" value="Taxation"><span class="chip-icon"><i class="fa-solid fa-file-invoice-dollar"></i></span><span>Taxation</span></label>
+                    <label class="choice-chip"><input type="checkbox" value="Costing"><span class="chip-icon"><i class="fa-solid fa-coins"></i></span><span>Costing</span></label>
+                    <label class="choice-chip"><input type="checkbox" value="Audit"><span class="chip-icon"><i class="fa-solid fa-magnifying-glass-chart"></i></span><span>Audit</span></label>
+                    <label class="choice-chip"><input type="checkbox" value="FM"><span class="chip-icon"><i class="fa-solid fa-chart-line"></i></span><span>FM</span></label>
+                    <label class="choice-chip"><input type="checkbox" value="SM"><span class="chip-icon"><i class="fa-solid fa-chess"></i></span><span>SM</span></label>
+                    <label class="choice-chip"><input type="checkbox" value="Revision"><span class="chip-icon"><i class="fa-solid fa-rotate"></i></span><span>Revision</span></label>
+                    <label class="choice-chip"><input type="checkbox" value="Mock Test"><span class="chip-icon"><i class="fa-solid fa-clipboard-check"></i></span><span>Mock Test</span></label>
+                    <label class="choice-chip"><input type="checkbox" value="Question Bank Practice"><span class="chip-icon"><i class="fa-solid fa-book-open"></i></span><span>Question Bank Practice</span></label>
+                </div>
+            </div>
+
+            <div class="field">
+                <span class="field-label">Did you complete today's target? *</span>
+                <div class="choice-group segmented" id="tl-target-group" data-name="targetDone">
+                    <label class="choice-chip"><input type="radio" name="tl-target" value="Yes"><span>Yes</span></label>
+                    <label class="choice-chip"><input type="radio" name="tl-target" value="No"><span>No</span></label>
+                    <label class="choice-chip"><input type="radio" name="tl-target" value="Maybe"><span>Maybe</span></label>
+                </div>
+            </div>
+
+            <div class="field">
+                <span class="field-label">Upload today's study proof *</span>
+                <div class="field-control">
+                    <i class="fa-solid fa-paperclip"></i>
+                    <input type="file" id="tl-proof-file" accept="image/*,.pdf" autocomplete="off">
+                </div>
+                <small class="muted" style="display:block;margin-top:4px;">Photo or PDF, max 3 MB (1 file).</small>
+            </div>
+
+            <div class="field">
+                <span class="field-label">What is your target for tomorrow?</span>
+                <div class="field-control">
+                    <i class="fa-solid fa-flag"></i>
+                    <input type="text" id="tl-tomorrow" placeholder="e.g. Finish Chapter 4" autocomplete="off">
+                </div>
+            </div>
+
+        </div>
+
+        <!-- ---------- Always shown ---------- -->
+        <div class="field">
+            <span class="field-label">Do you need mentor support?</span>
+            <div class="field-control select-control">
+                <i class="fa-solid fa-hand"></i>
+                <select id="tl-mentor-support">
+                    <option value="">Select...</option>
+                    <option value="No">No</option>
+                    <option value="Subject Doubt">Subject Doubt</option>
+                    <option value="Time Management">Time Management</option>
+                    <option value="Motivation">Motivation</option>
+                    <option value="Study Planning">Study Planning</option>
+                    <option value="Personal Discussion">Personal Discussion</option>
+                </select>
+                <i class="fa-solid fa-chevron-down select-caret"></i>
+            </div>
+        </div>
+
+        <div id="tl-error" class="login-error" hidden></div>
+
+        <div class="modal-actions">
+
+            <button type="button" class="btn-secondary" id="tl-cancel">
+                Cancel
+            </button>
+
+            <button type="button" class="btn-primary" id="tl-submit">
+                <span>Submit</span>
+                <i class="fa-solid fa-paper-plane"></i>
+            </button>
+
+        </div>
+
+    </div>
+
+</div>
+
 <!-- =================== SCRIPTS =================== -->
 <script src="api.js"></script>
 <script src="app.js"></script>

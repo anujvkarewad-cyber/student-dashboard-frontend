@@ -1,4 +1,3 @@
-
 const APPS_SCRIPT_URL = "/api/proxy";
 async function callAPI(action, payload = {}) {
 
@@ -52,6 +51,10 @@ window.UMP_API = {
 
   getStudyLog(studentId) {
     return callAPI("getStudyLog", { studentId });
+  },
+
+  addStudyLog(studentId, entry) {
+    return callAPI("addStudyLog", { studentId, ...entry });
   },
 
   getLeaderboard() {

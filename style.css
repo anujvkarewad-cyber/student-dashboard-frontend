@@ -856,6 +856,203 @@ font-size:15px;
 
 }
 
+.field-control select{
+
+    flex:1;
+
+    border:none;
+    outline:none;
+
+    background:transparent;
+
+    color:#0F172A;
+
+    font:inherit;
+
+    font-size:15px;
+
+    font-weight:500;
+
+}
+
+.field-control input[type="file"]{
+
+    flex:1;
+
+    border:none;
+    outline:none;
+
+    background:transparent;
+
+    color:#0F172A;
+
+    font:inherit;
+
+    font-size:13px;
+
+    font-weight:500;
+
+}
+
+/* ===== Choice groups — card style ===== */
+.choice-group{
+    display:grid;
+    grid-template-columns:repeat(2, 1fr);
+    gap:10px;
+    margin-top:8px;
+}
+
+.choice-chip{
+    position:relative;
+    display:flex;
+    align-items:center;
+    gap:12px;
+    padding:14px 16px;
+    border:1.5px solid var(--line);
+    border-radius:14px;
+    cursor:pointer;
+    font-size:14.5px;
+    font-weight:600;
+    color:var(--ink-2);
+    background:var(--white);
+    transition:all .2s ease;
+    user-select:none;
+    box-shadow:0 1px 2px rgba(15,23,42,.04);
+}
+
+.choice-chip input{
+    position:absolute;
+    opacity:0;
+    width:0;
+    height:0;
+}
+
+.choice-chip .chip-icon{
+    width:34px;
+    height:34px;
+    min-width:34px;
+    border-radius:10px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background:var(--blue-50);
+    color:var(--blue);
+    font-size:14px;
+    transition:all .2s ease;
+}
+
+.choice-chip:hover{
+    border-color:var(--blue);
+    background:var(--blue-50);
+    transform:translateY(-2px);
+    box-shadow:0 8px 20px rgba(37,99,235,.10);
+}
+
+.choice-chip:has(input:checked),
+.choice-chip.active{
+    border-color:var(--blue);
+    background:linear-gradient(135deg,#2563EB,#1D4ED8);
+    color:var(--white);
+    box-shadow:0 10px 24px rgba(37,99,235,.28);
+    transform:translateY(-1px);
+}
+
+.choice-chip:has(input:checked) .chip-icon,
+.choice-chip.active .chip-icon{
+    background:rgba(255,255,255,.20);
+    color:var(--white);
+}
+
+.choice-other-input{
+    grid-column:1 / -1;
+    margin-top:8px;
+    width:100%;
+    padding:12px 16px;
+    border:1.5px solid var(--line);
+    border-radius:12px;
+    font:inherit;
+    font-size:14px;
+    outline:none;
+    box-sizing:border-box;
+}
+
+.choice-other-input:focus{
+    border-color:var(--blue);
+}
+
+/* Segmented style for Yes / No / Maybe (no icons, 3-in-a-row pill) */
+.choice-group.segmented{
+    grid-template-columns:repeat(3, 1fr);
+    background:#F1F5F9;
+    padding:5px;
+    border-radius:999px;
+    gap:4px;
+    margin-top:8px;
+}
+
+.choice-group.segmented .choice-chip{
+    justify-content:center;
+    padding:11px;
+    border:none;
+    border-radius:999px;
+    box-shadow:none;
+    background:transparent;
+}
+
+.choice-group.segmented .choice-chip:hover{
+    transform:none;
+    background:rgba(37,99,235,.08);
+}
+
+.choice-group.segmented .choice-chip:has(input:checked),
+.choice-group.segmented .choice-chip.active{
+    box-shadow:0 6px 16px rgba(37,99,235,.25);
+}
+
+@media (max-width:480px){
+    .choice-group:not(.segmented){ grid-template-columns:1fr; }
+}
+
+/* ===== Custom-styled dropdown (replaces raw browser <select> look) ===== */
+.field-control.select-control{
+    position:relative;
+}
+
+.field-control.select-control select{
+
+    flex:1;
+
+    border:none;
+    outline:none;
+
+    background:transparent;
+
+    color:#0F172A;
+
+    font:inherit;
+
+    font-size:15px;
+
+    font-weight:500;
+
+    appearance:none;
+    -webkit-appearance:none;
+    -moz-appearance:none;
+
+    padding-right:22px;
+    cursor:pointer;
+}
+
+.select-caret{
+    position:absolute;
+    right:16px;
+    top:50%;
+    transform:translateY(-50%);
+    font-size:12px;
+    color:var(--muted);
+    pointer-events:none;
+}
+
 /* ==========================================================
    FORGOT PASSWORD
 ========================================================== */
