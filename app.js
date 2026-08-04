@@ -1,4 +1,4 @@
-const APP_VERSION = "1.0.2";
+const APP_VERSION = "1.0.3";
 
 console.log("APP VERSION", APP_VERSION);
 (function () {
