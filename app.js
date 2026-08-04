@@ -1432,7 +1432,7 @@ forgotModal.addEventListener("click",(e)=>{
     try {
       proofFile = await readProofFile();
 
-      await api.addStudyLog(studentId, {
+      const result = await api.addStudyLog(studentId, {
         date,
         hours,
         studiedAsPlanned: planned,
@@ -1444,9 +1444,15 @@ forgotModal.addEventListener("click",(e)=>{
         proofFile
       });
 
+      if (!result || !result.success) {
+        tlError.textContent = (result && result.message) || "Server didn't save the entry — please try again.";
+        tlError.hidden = false;
+        return;
+      }
+
       // Optimistic update: show it instantly without waiting for a refetch
-      state.log = [{ date, topic: subjects || reason, hours, proof: proofFile ? "#" : "" }, ...(state.log || [])];
-      state.stats = state.stats || {};
+      state.log = [{ date, topic: subjects || reason, hours, proof: result.proofUrl ? "#" : "" }, ...(state.log || [])];
+    state.stats = state.stats || {};
       state.stats.totalEntries = (state.stats.totalEntries || 0) + 1;
       state.stats.totalHours = (state.stats.totalHours || 0) + hours;
       state.stats.averageHours = state.stats.totalHours / state.stats.totalEntries;
