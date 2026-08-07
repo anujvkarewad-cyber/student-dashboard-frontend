@@ -77,6 +77,10 @@ window.UMP_API = {
     return callAPI("getAnnouncements");
   },
 
+  getNotes() {
+    return callAPI("notes.list");
+  },
+
   getStudentMentorNotes(studentId) {
     return callAPI("getStudentMentorNotes", { studentId });
   },

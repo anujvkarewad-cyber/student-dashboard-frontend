@@ -221,6 +221,11 @@
                 <span>Weekly Reports</span>
             </a>
 
+            <a href="#notes" class="nav-item" data-view="notes" data-testid="nav-notes">
+                <i class="fa-solid fa-file-pdf"></i>
+                <span>Notes</span>
+            </a>
+
             <a href="#profile" class="nav-item" data-view="profile" data-testid="nav-profile">
                 <i class="fa-regular fa-user"></i>
                 <span>Profile</span>
@@ -623,6 +628,18 @@
         <span class="muted">Auto-emailed every Sunday</span>
       </div>
       <div id="reports-list" class="reports-list"></div>
+    </div>
+  </div>
+</template>
+
+<template id="tpl-notes">
+  <div class="view" data-testid="view-notes">
+    <div class="card">
+      <div class="card-head">
+        <h3>Notes &amp; Study Material</h3>
+        <span class="muted">Uploaded by your mentor · PDF</span>
+      </div>
+      <div id="notes-list" class="notes-list"></div>
     </div>
   </div>
 </template>

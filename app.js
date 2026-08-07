@@ -48,6 +48,7 @@ async function markMentorFeedbackRead(id) {
     performance: "Performance",
     leaderboard: "Leaderboard",
     reports: "Weekly Reports",
+    notes: "Notes & Study Material",
     profile: "Profile",
   };
 
@@ -177,14 +178,16 @@ const [
   lb,
   reports,
   announcements,
-  notes
+  notes,
+  studyNotes
 ] = await Promise.all([
   api.getStats(student.studentId),
   api.getStudyLog(student.studentId),
   api.getLeaderboard(),
   api.getWeeklyReports(student.studentId),
   api.getAnnouncements(),
-  api.getStudentMentorNotes(student.studentId)
+  api.getStudentMentorNotes(student.studentId),
+  api.getNotes()
 ]);    
     
   
@@ -201,6 +204,7 @@ console.log("Leaderboard Array:", Array.isArray(lb));
 state.reports = reports;
 state.announcements = announcements;
 state.mentorNotes = notes;
+state.studyNotes = studyNotes || [];
 
     $("#topbar-streak").textContent = stats.streak ?? 0;
     // Load mentor feedback
@@ -376,6 +380,7 @@ if (!tpl) {
       performance: renderPerformance,
       leaderboard: renderLeaderboard,
       reports: renderReports,
+      notes: renderNotes,
       profile: renderProfile,
     })[view]();
 
@@ -1038,6 +1043,44 @@ if (notesBox) {
         </div>
       </div>
     `).join("") : `<div class="muted" style="text-align:center;padding:30px">Weekly reports will appear here every Sunday.</div>`;
+  }
+
+  // ---------- Notes ----------
+  function renderNotes() {
+    const box = document.getElementById("notes-list");
+    if (!box) return;
+
+    const render = (list) => {
+      if (!list || list.length === 0) {
+        box.innerHTML =
+          "<div class='muted' style='text-align:center;padding:30px'>No notes uploaded yet. Your mentor's notes will appear here.</div>";
+        return;
+      }
+      box.innerHTML = list.map(n => `
+        <div class="report-item note-item" data-testid="note-${n.id}">
+          <div style="display:flex;align-items:flex-start;gap:14px;min-width:0">
+            <div class="note-icon"><i class="fa-solid fa-file-pdf"></i></div>
+            <div style="min-width:0">
+              <div class="ri-title">${escapeHtml(n.title)}</div>
+              ${n.description ? `<div class="ri-meta" style="margin:4px 0">${escapeHtml(n.description)}</div>` : ""}
+              <div class="ri-meta">
+                ${n.subject ? escapeHtml(n.subject) + " · " : ""}${escapeHtml(n.date || "")}
+              </div>
+            </div>
+          </div>
+          <a class="btn btn-secondary" href="${n.fileUrl}" target="_blank" rel="noreferrer" data-testid="download-${n.id}">
+            <i class="fa-solid fa-download"></i> Open
+          </a>
+        </div>
+      `).join("");
+    };
+
+    // Show whatever we already have immediately, then refresh in the
+    // background so newly uploaded notes show up without a full reload.
+    render(state.studyNotes);
+    api.getNotes()
+      .then(list => { state.studyNotes = list || []; render(state.studyNotes); })
+      .catch(err => console.error("Failed to refresh notes:", err));
   }
 
   // ---------- Profile ----------
