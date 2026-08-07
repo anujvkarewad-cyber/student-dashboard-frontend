@@ -187,7 +187,7 @@ const [
   api.getWeeklyReports(student.studentId),
   api.getAnnouncements(),
   api.getStudentMentorNotes(student.studentId),
-  api.getNotes()
+  api.getNotes(student.studentId)
 ]);    
     
   
@@ -1078,9 +1078,9 @@ if (notesBox) {
     // Show whatever we already have immediately, then refresh in the
     // background so newly uploaded notes show up without a full reload.
     render(state.studyNotes);
-    api.getNotes()
-      .then(list => { state.studyNotes = list || []; render(state.studyNotes); })
-      .catch(err => console.error("Failed to refresh notes:", err));
+    api.getNotes(state.student.studentId)
+  .then(list => { state.studyNotes = list || []; render(state.studyNotes); })
+  .catch(err => console.error("Failed to refresh notes:", err));
   }
 
   // ---------- Profile ----------
