@@ -3912,6 +3912,38 @@ opacity:1;
     width: calc(100% - 300px) !important;
   }
 }
+.note-viewer-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: #0f172a;
+  display: none;
+  flex-direction: column;
+}
+.note-viewer-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px;
+  background: #1e293b;
+  color: #fff;
+  flex-shrink: 0;
+}
+.note-viewer-title {
+  font-weight: 600; font-size: 14px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 70%;
+}
+.note-viewer-actions { display: flex; gap: 8px; }
+.note-viewer-btn {
+  width: 36px; height: 36px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,0.1);
+  color: #fff; border: none; cursor: pointer;
+  text-decoration: none;
+}
+.note-viewer-btn:hover { background: rgba(255,255,255,0.2); }
+.note-viewer-frame {
+  flex: 1; width: 100%; border: none; background: #fff;
+}
 /* ===== Boot loader (shown briefly while checking saved session) ===== */
 .boot-loader {
   position: fixed;
@@ -4053,34 +4085,4 @@ opacity:1;
   .sidebar.open {
     box-shadow: 4px 0 24px rgba(15, 23, 42, 0.18);
   }
-
-  .note-viewer-overlay {
-  position: fixed; inset: 0; z-index: 2000;
-  background: #0f172a;
-  flex-direction: column;
-}
-.note-viewer-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 12px 16px;
-  background: #1e293b;
-  color: #fff;
-  flex-shrink: 0;
-}
-.note-viewer-title {
-  font-weight: 600; font-size: 14px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  max-width: 70%;
-}
-.note-viewer-actions { display: flex; gap: 8px; }
-.note-viewer-btn {
-  width: 36px; height: 36px; border-radius: 10px;
-  display: flex; align-items: center; justify-content: center;
-  background: rgba(255,255,255,0.1);
-  color: #fff; border: none; cursor: pointer;
-  text-decoration: none;
-}
-.note-viewer-btn:hover { background: rgba(255,255,255,0.2); }
-.note-viewer-frame {
-  flex: 1; width: 100%; border: none; background: #fff;
-}
 }
