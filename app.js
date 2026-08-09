@@ -958,12 +958,14 @@ const APP_VERSION = "1.1.3";
   }
 
   // single close handler for the note viewer (removed the earlier duplicate)
-  document.getElementById("note-viewer-close")?.addEventListener("click", () => {
+  document.addEventListener("click", (e) => {
+  if (e.target.closest("#note-viewer-close")) {
     const overlay = document.getElementById("note-viewer-overlay");
     const frame = document.getElementById("note-viewer-frame");
     overlay.style.display = "none";
-    frame.src = ""; // stop loading/playing when closed
-  });
+    frame.src = "";
+  }
+});
 
   // ---------- Profile ----------
   function renderProfile() {
