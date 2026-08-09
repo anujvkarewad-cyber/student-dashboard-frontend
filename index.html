@@ -294,6 +294,30 @@
       <!-- Views injected here -->
     </div>
   </main>
+
+  <!-- Mobile bottom tab bar (hidden on desktop) -->
+  <nav class="bottom-nav" data-testid="bottom-nav">
+    <a href="#dashboard" class="nav-item bn-item active" data-view="dashboard" data-testid="bn-dashboard">
+      <i class="fa-solid fa-house"></i>
+      <span>Home</span>
+    </a>
+    <a href="#tracker" class="nav-item bn-item" data-view="tracker" data-testid="bn-tracker">
+      <i class="fa-solid fa-book-open"></i>
+      <span>Tracker</span>
+    </a>
+    <a href="#leaderboard" class="nav-item bn-item" data-view="leaderboard" data-testid="bn-leaderboard">
+      <i class="fa-solid fa-trophy"></i>
+      <span>Rank</span>
+    </a>
+    <a href="#notes" class="nav-item bn-item" data-view="notes" data-testid="bn-notes">
+      <i class="fa-solid fa-file-pdf"></i>
+      <span>Notes</span>
+    </a>
+    <button class="nav-item bn-item bn-more" id="bn-more-btn" data-testid="bn-more">
+      <i class="fa-solid fa-bars"></i>
+      <span>More</span>
+    </button>
+  </nav>
 </div>
 
 <!-- =================== TEMPLATES =================== -->
@@ -1124,6 +1148,24 @@ document
     <button data-theme="night">🌙 Night</button>
 
 </div>
+
+<div id="note-viewer-overlay" class="note-viewer-overlay" style="display:none;">
+  <div class="note-viewer-header">
+    <span id="note-viewer-title" class="note-viewer-title"></span>
+    <div class="note-viewer-actions">
+      <a id="note-viewer-newtab" href="#" target="_blank" rel="noreferrer" class="note-viewer-btn" title="Open in new tab">
+        <i class="fa-solid fa-up-right-from-square"></i>
+      </a>
+      <button id="note-viewer-close" class="note-viewer-btn" title="Close">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+    </div>
+  </div>
+  <iframe id="note-viewer-frame" class="note-viewer-frame" src="" title="Note preview"></iframe>
+</div>
+
 <script type="module" src="https://unpkg.com/@dotlottie/player-component@2.7.12/dist/dotlottie-player.mjs"></script>
+
+
 </body>
 </html>

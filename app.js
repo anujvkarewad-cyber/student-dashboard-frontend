@@ -187,7 +187,7 @@ const [
   api.getWeeklyReports(student.studentId),
   api.getAnnouncements(),
   api.getStudentMentorNotes(student.studentId),
-  api.getNotes(student.studentId)
+  api.getNotes()
 ]);    
     
   
@@ -409,6 +409,14 @@ $("#menu-toggle").addEventListener("click", () => {
     
 
 });
+
+// Mobile bottom-nav "More" button opens the same slide-in sidebar
+const bnMoreBtn = $("#bn-more-btn");
+if (bnMoreBtn) {
+  bnMoreBtn.addEventListener("click", () => {
+    $(".sidebar").classList.toggle("open");
+  });
+}
   // ============ HELPERS ============
   const fmt = (n, d = 1) => (n == null || isNaN(n) ? "—" : Number(n).toFixed(d).replace(/\.0$/, ""));
   const timeOfDay = () => {
@@ -1068,9 +1076,9 @@ if (notesBox) {
               </div>
             </div>
           </div>
-          <a class="btn btn-secondary" href="${n.fileUrl}" target="_blank" rel="noreferrer" data-testid="download-${n.id}">
-            <i class="fa-solid fa-download"></i> Open
-          </a>
+          <button class="btn btn-secondary" data-open-note="${n.id}" data-testid="download-${n.id}">
+  <i class="fa-solid fa-eye"></i> Open
+</button>
         </div>
       `).join("");
     };
@@ -1078,10 +1086,52 @@ if (notesBox) {
     // Show whatever we already have immediately, then refresh in the
     // background so newly uploaded notes show up without a full reload.
     render(state.studyNotes);
-    api.getNotes(state.student.studentId)
-  .then(list => { state.studyNotes = list || []; render(state.studyNotes); })
-  .catch(err => console.error("Failed to refresh notes:", err));
+    api.getNotes()
+      .then(list => { state.studyNotes = list || []; render(state.studyNotes); })
+      .catch(err => console.error("Failed to refresh notes:", err));
+
+    render(state.studyNotes);
+
+$$("[data-open-note]", box).forEach(btn =>
+  btn.addEventListener("click", () => {
+    const note = state.studyNotes.find(n => n.id === btn.dataset.openNote);
+    if (note) openNoteViewer(note);
+  })
+);
+
+api.getNotes(state.student.studentId)
+  .then(list => {
+    state.studyNotes = list || [];
+    render(state.studyNotes);
+    $$("[data-open-note]", box).forEach(btn =>
+      btn.addEventListener("click", () => {
+        const note = state.studyNotes.find(n => n.id === btn.dataset.openNote);
+        if (note) openNoteViewer(note);
+      })
+    );
+  })
+  .catch(err => console.error("Failed to refresh notes:", err)); 
   }
+
+  function openNoteViewer(note) {
+  const overlay = document.getElementById("note-viewer-overlay");
+  const frame = document.getElementById("note-viewer-frame");
+  const title = document.getElementById("note-viewer-title");
+  const newTabLink = document.getElementById("note-viewer-newtab");
+
+  const previewUrl = `https://drive.google.com/file/d/${note.fileId}/preview`;
+  frame.src = previewUrl;
+  title.textContent = note.title;
+  newTabLink.href = `https://drive.google.com/file/d/${note.fileId}/view`;
+  overlay.style.display = "flex";
+}
+
+document.getElementById("note-viewer-close")?.addEventListener("click", () => {
+  const overlay = document.getElementById("note-viewer-overlay");
+  const frame = document.getElementById("note-viewer-frame");
+  overlay.style.display = "none";
+  frame.src = ""; // stop loading/playing when closed
+});
 
   // ---------- Profile ----------
   function renderProfile() {
