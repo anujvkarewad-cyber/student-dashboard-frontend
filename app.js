@@ -1054,9 +1054,19 @@ if (notesBox) {
   }
 
   // ---------- Notes ----------
+  // ---------- Notes ----------
   function renderNotes() {
     const box = document.getElementById("notes-list");
     if (!box) return;
+
+    const bindOpenButtons = () => {
+      $$("[data-open-note]", box).forEach(btn =>
+        btn.addEventListener("click", () => {
+          const note = state.studyNotes.find(n => n.id === btn.dataset.openNote);
+          if (note) openNoteViewer(note);
+        })
+      );
+    };
 
     const render = (list) => {
       if (!list || list.length === 0) {
@@ -1077,11 +1087,21 @@ if (notesBox) {
             </div>
           </div>
           <button class="btn btn-secondary" data-open-note="${n.id}" data-testid="download-${n.id}">
-  <i class="fa-solid fa-eye"></i> Open
-</button>
+            <i class="fa-solid fa-eye"></i> Open
+          </button>
         </div>
       `).join("");
+      bindOpenButtons();
     };
+
+    // Show whatever we already have immediately, then refresh in the
+    // background so newly uploaded notes show up without a full reload.
+    render(state.studyNotes);
+
+    api.getNotes(state.student.studentId)
+      .then(list => { state.studyNotes = list || []; render(state.studyNotes); })
+      .catch(err => console.error("Failed to refresh notes:", err));
+  }
 
     // Show whatever we already have immediately, then refresh in the
     // background so newly uploaded notes show up without a full reload.
