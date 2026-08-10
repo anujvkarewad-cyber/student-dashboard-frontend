@@ -318,6 +318,20 @@ const APP_VERSION = "1.1.4";
     if (state.student) navigate(v);
   });
 
+// Mobile sidebar toggle
+const menuToggleBtn = $("#menu-toggle-btn");
+const sidebarEl = $(".sidebar");
+if (menuToggleBtn && sidebarEl) {
+  menuToggleBtn.addEventListener("click", () => {
+    sidebarEl.classList.toggle("open");
+  });
+
+  // auto-close sidebar after picking a page on mobile
+  $$(".nav-item[data-view]").forEach(el =>
+    el.addEventListener("click", () => sidebarEl.classList.remove("open"))
+  );
+}
+
   // ============ HELPERS ============
   const fmt = (n, d = 1) => (n == null || isNaN(n) ? "—" : Number(n).toFixed(d).replace(/\.0$/, ""));
 
