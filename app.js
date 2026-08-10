@@ -1,4 +1,4 @@
-const APP_VERSION = "2.1.5";
+const APP_VERSION = "2.1.6";
 
 (function () {
   "use strict";
@@ -938,23 +938,46 @@ if (menuToggleBtn && sidebarEl) {
       const modal = document.getElementById("notes-subject-modal");
       const title = document.getElementById("notes-subject-modal-title");
       const list = document.getElementById("notes-subject-modal-list");
+      const searchInput = document.getElementById("notes-subject-modal-search");
       if (!modal || !title || !list) return;
 
       title.textContent = subject;
-      list.innerHTML = notesForSubject.map(noteRowHtml).join("");
 
-      $$("[data-open-note]", list).forEach(btn =>
-        btn.addEventListener("click", () => {
-          const note = notesForSubject.find(n => n.id === btn.dataset.openNote);
-          if (note) openNoteViewer(note);
-        })
-      );
+      const renderFiltered = (query) => {
+        const q = (query || "").trim().toLowerCase();
+        const filtered = q
+          ? notesForSubject.filter(n => (n.title || "").toLowerCase().includes(q))
+          : notesForSubject;
+
+        list.innerHTML = filtered.length
+          ? filtered.map(noteRowHtml).join("")
+          : "<div class='muted' style='text-align:center;padding:20px'>No notes match your search.</div>";
+
+        $$("[data-open-note]", list).forEach(btn =>
+          btn.addEventListener("click", () => {
+            const note = notesForSubject.find(n => n.id === btn.dataset.openNote);
+            if (note) openNoteViewer(note);
+          })
+        );
+      };
+
+      renderFiltered("");
+
+      if (searchInput) {
+        searchInput.value = "";
+        // avoid stacking multiple listeners across repeated opens
+        const freshInput = searchInput.cloneNode(true);
+        searchInput.parentNode.replaceChild(freshInput, searchInput);
+        freshInput.addEventListener("input", () => renderFiltered(freshInput.value));
+      }
 
       modal.hidden = false;
     };
 
     const closeSubjectModal = () => {
       const modal = document.getElementById("notes-subject-modal");
+      const searchInput = document.getElementById("notes-subject-modal-search");
+      if (searchInput) searchInput.value = "";
       if (modal) modal.hidden = true;
     };
 
