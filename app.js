@@ -1,4 +1,4 @@
-const APP_VERSION = "1.1.3";
+const APP_VERSION = "1.1.4";
 
 (function () {
   "use strict";
@@ -274,7 +274,6 @@ const APP_VERSION = "1.1.3";
       );
 
       $("#view-title").textContent = VIEW_TITLES[view];
-      $(".sidebar").classList.remove("open");
 
       Object.values(state.charts).forEach(c => c && c.destroy());
       state.charts = {};
@@ -318,19 +317,6 @@ const APP_VERSION = "1.1.3";
     const v = (location.hash || "#dashboard").slice(1);
     if (state.student) navigate(v);
   });
-
-  // Mobile toggle
-  $("#menu-toggle").addEventListener("click", () => {
-    $(".sidebar").classList.toggle("open");
-  });
-
-  // Mobile bottom-nav "More" button opens the same slide-in sidebar
-  const bnMoreBtn = $("#bn-more-btn");
-  if (bnMoreBtn) {
-    bnMoreBtn.addEventListener("click", () => {
-      $(".sidebar").classList.toggle("open");
-    });
-  }
 
   // ============ HELPERS ============
   const fmt = (n, d = 1) => (n == null || isNaN(n) ? "—" : Number(n).toFixed(d).replace(/\.0$/, ""));
@@ -958,14 +944,12 @@ const APP_VERSION = "1.1.3";
   }
 
   // single close handler for the note viewer (removed the earlier duplicate)
-  document.addEventListener("click", (e) => {
-  if (e.target.closest("#note-viewer-close")) {
+  document.getElementById("note-viewer-close")?.addEventListener("click", () => {
     const overlay = document.getElementById("note-viewer-overlay");
     const frame = document.getElementById("note-viewer-frame");
     overlay.style.display = "none";
-    frame.src = "";
-  }
-});
+    frame.src = ""; // stop loading/playing when closed
+  });
 
   // ---------- Profile ----------
   function renderProfile() {
