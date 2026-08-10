@@ -1,4 +1,4 @@
-const APP_VERSION = "1.1.4";
+const APP_VERSION = "2.1.4";
 
 (function () {
   "use strict";
@@ -899,18 +899,76 @@ if (menuToggleBtn && sidebarEl) {
   }
 
   // ---------- Notes ----------
+  // Step 1: renderNotes() shows only SUBJECT cards (folder-style).
+  // Step 2: clicking a subject card opens a popup modal listing that
+  // subject's PDFs, each with Open + Download buttons.
   function renderNotes() {
     const box = document.getElementById("notes-list");
     if (!box) return;
 
-    const bindButtons = () => {
-      $$("[data-open-note]", box).forEach(btn =>
+    const groupBySubject = (list) => {
+      const groups = {};
+      (list || []).forEach(n => {
+        const key = n.subject || "Other";
+        (groups[key] = groups[key] || []).push(n);
+      });
+      return groups;
+    };
+
+    const noteRowHtml = (n) => `
+      <div class="report-item note-item" data-testid="note-${n.id}"
+        style="display:flex;flex-direction:column;align-items:stretch;gap:12px;margin-bottom:12px;padding-bottom:14px;border-bottom:1px solid #EEF0F4;">
+        <div style="display:flex;align-items:flex-start;gap:14px;min-width:0;width:100%">
+          <div class="note-icon" style="flex-shrink:0"><i class="fa-solid fa-file-pdf"></i></div>
+          <div style="min-width:0;flex:1">
+            <div class="ri-title" style="white-space:normal;word-break:break-word;line-height:1.35">${escapeHtml(n.title)}</div>
+            ${n.description ? `<div class="ri-meta" style="margin:4px 0">${escapeHtml(n.description)}</div>` : ""}
+            <div class="ri-meta">${escapeHtml(n.date || "")}</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;width:100%">
+          <button class="btn btn-secondary" data-open-note="${n.id}" data-testid="open-${n.id}">
+            <i class="fa-solid fa-eye"></i> Open
+          </button>
+          <a class="btn btn-secondary" href="https://drive.google.com/uc?export=download&id=${encodeURIComponent(n.fileId)}" target="_blank" rel="noreferrer" data-testid="download-${n.id}">
+            <i class="fa-solid fa-download"></i> Download
+          </a>
+        </div>
+      </div>
+    `;
+
+    const openSubjectModal = (subject, notesForSubject) => {
+      const modal = document.getElementById("notes-subject-modal");
+      const title = document.getElementById("notes-subject-modal-title");
+      const list = document.getElementById("notes-subject-modal-list");
+      if (!modal || !title || !list) return;
+
+      title.textContent = subject;
+      list.innerHTML = notesForSubject.map(noteRowHtml).join("");
+
+      $$("[data-open-note]", list).forEach(btn =>
         btn.addEventListener("click", () => {
-          const note = state.studyNotes.find(n => n.id === btn.dataset.openNote);
+          const note = notesForSubject.find(n => n.id === btn.dataset.openNote);
           if (note) openNoteViewer(note);
         })
       );
+
+      modal.hidden = false;
     };
+
+    const closeSubjectModal = () => {
+      const modal = document.getElementById("notes-subject-modal");
+      if (modal) modal.hidden = true;
+    };
+
+    // wire the modal's close button / overlay-click once
+    if (!box.dataset.subjectModalWired) {
+      const modal = document.getElementById("notes-subject-modal");
+      const closeBtn = document.getElementById("notes-subject-modal-close");
+      if (closeBtn) closeBtn.addEventListener("click", closeSubjectModal);
+      if (modal) modal.addEventListener("click", (e) => { if (e.target === modal) closeSubjectModal(); });
+      box.dataset.subjectModalWired = "1";
+    }
 
     const render = (list) => {
       if (!list || list.length === 0) {
@@ -918,40 +976,27 @@ if (menuToggleBtn && sidebarEl) {
         return;
       }
 
-      // group notes by subject (folder-style headings)
-      const groups = {};
-      list.forEach(n => {
-        const key = n.subject || "Other";
-        (groups[key] = groups[key] || []).push(n);
-      });
+      const groups = groupBySubject(list);
 
-      box.innerHTML = Object.keys(groups).map(subject => `
-        <div class="notes-group">
-          <h4 class="notes-group-title">${escapeHtml(subject)}</h4>
-          ${groups[subject].map(n => `
-            <div class="report-item note-item" data-testid="note-${n.id}">
-              <div style="display:flex;align-items:flex-start;gap:14px;min-width:0">
-                <div class="note-icon"><i class="fa-solid fa-file-pdf"></i></div>
-                <div style="min-width:0">
-                  <div class="ri-title">${escapeHtml(n.title)}</div>
-                  ${n.description ? `<div class="ri-meta" style="margin:4px 0">${escapeHtml(n.description)}</div>` : ""}
-                  <div class="ri-meta">${escapeHtml(n.date || "")}</div>
-                </div>
-              </div>
-              <div style="display:flex;gap:8px;flex-shrink:0">
-                <button class="btn btn-secondary" data-open-note="${n.id}" data-testid="open-${n.id}">
-                  <i class="fa-solid fa-eye"></i> Open
-                </button>
-                <a class="btn btn-secondary" href="https://drive.google.com/uc?export=download&id=${encodeURIComponent(n.fileId)}" target="_blank" rel="noreferrer" data-testid="download-${n.id}">
-                  <i class="fa-solid fa-download"></i> Download
-                </a>
-              </div>
+      box.innerHTML = `
+        <div class="notes-subject-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px;">
+          ${Object.keys(groups).map(subject => `
+            <div class="report-item note-subject-card" data-subject="${escapeHtml(subject)}" data-testid="subject-folder-${escapeHtml(subject)}"
+              style="cursor:pointer;flex-direction:column;align-items:flex-start;gap:10px;">
+              <div class="note-icon"><i class="fa-solid fa-folder"></i></div>
+              <div class="ri-title">${escapeHtml(subject)}</div>
+              <div class="ri-meta">${groups[subject].length} file${groups[subject].length > 1 ? "s" : ""}</div>
             </div>
           `).join("")}
         </div>
-      `).join("");
+      `;
 
-      bindButtons();
+      $$(".note-subject-card", box).forEach(card =>
+        card.addEventListener("click", () => {
+          const subject = card.dataset.subject;
+          openSubjectModal(subject, groups[subject]);
+        })
+      );
     };
 
     render(state.studyNotes);

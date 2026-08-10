@@ -1125,7 +1125,7 @@ document
 
 </div>
 
-<div id="note-viewer-overlay" class="note-viewer-overlay" style="display:none;">
+<div id="note-viewer-overlay" class="note-viewer-overlay" style="display:none; z-index:100000;">
   <div class="note-viewer-header">
     <span id="note-viewer-title" class="note-viewer-title"></span>
     <div class="note-viewer-actions">
@@ -1138,6 +1138,21 @@ document
     </div>
   </div>
   <iframe id="note-viewer-frame" class="note-viewer-frame" src="" title="Note preview"></iframe>
+</div>
+
+<!-- ================= Notes: Subject PDF-list Popup (NEW) ================= -->
+<!-- Shows when a subject folder card in the Notes section is clicked.
+     Lists that subject's PDFs, each with Open + Download buttons. -->
+<div id="notes-subject-modal" class="modal-overlay" style="z-index:9000;" hidden>
+  <div class="modal-card" style="max-width:600px; width:92vw; max-height:82vh; overflow-y:auto; text-align:left; padding:24px;">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:18px;">
+      <h2 id="notes-subject-modal-title" style="margin:0;">Subject</h2>
+      <button type="button" class="btn btn-secondary" id="notes-subject-modal-close" title="Close">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+    </div>
+    <div id="notes-subject-modal-list"></div>
+  </div>
 </div>
 
 <script type="module" src="https://unpkg.com/@dotlottie/player-component@2.7.12/dist/dotlottie-player.mjs"></script>
