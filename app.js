@@ -903,7 +903,7 @@ if (menuToggleBtn && sidebarEl) {
     const box = document.getElementById("notes-list");
     if (!box) return;
 
-    const bindOpenButtons = () => {
+    const bindButtons = () => {
       $$("[data-open-note]", box).forEach(btn =>
         btn.addEventListener("click", () => {
           const note = state.studyNotes.find(n => n.id === btn.dataset.openNote);
@@ -917,24 +917,41 @@ if (menuToggleBtn && sidebarEl) {
         box.innerHTML = "<div class='muted' style='text-align:center;padding:30px'>No notes uploaded yet. Your mentor's notes will appear here.</div>";
         return;
       }
-      box.innerHTML = list.map(n => `
-        <div class="report-item note-item" data-testid="note-${n.id}">
-          <div style="display:flex;align-items:flex-start;gap:14px;min-width:0">
-            <div class="note-icon"><i class="fa-solid fa-file-pdf"></i></div>
-            <div style="min-width:0">
-              <div class="ri-title">${escapeHtml(n.title)}</div>
-              ${n.description ? `<div class="ri-meta" style="margin:4px 0">${escapeHtml(n.description)}</div>` : ""}
-              <div class="ri-meta">
-                ${n.subject ? escapeHtml(n.subject) + " · " : ""}${escapeHtml(n.date || "")}
+
+      // group notes by subject (folder-style headings)
+      const groups = {};
+      list.forEach(n => {
+        const key = n.subject || "Other";
+        (groups[key] = groups[key] || []).push(n);
+      });
+
+      box.innerHTML = Object.keys(groups).map(subject => `
+        <div class="notes-group">
+          <h4 class="notes-group-title">${escapeHtml(subject)}</h4>
+          ${groups[subject].map(n => `
+            <div class="report-item note-item" data-testid="note-${n.id}">
+              <div style="display:flex;align-items:flex-start;gap:14px;min-width:0">
+                <div class="note-icon"><i class="fa-solid fa-file-pdf"></i></div>
+                <div style="min-width:0">
+                  <div class="ri-title">${escapeHtml(n.title)}</div>
+                  ${n.description ? `<div class="ri-meta" style="margin:4px 0">${escapeHtml(n.description)}</div>` : ""}
+                  <div class="ri-meta">${escapeHtml(n.date || "")}</div>
+                </div>
+              </div>
+              <div style="display:flex;gap:8px;flex-shrink:0">
+                <button class="btn btn-secondary" data-open-note="${n.id}" data-testid="open-${n.id}">
+                  <i class="fa-solid fa-eye"></i> Open
+                </button>
+                <a class="btn btn-secondary" href="https://drive.google.com/uc?export=download&id=${encodeURIComponent(n.fileId)}" target="_blank" rel="noreferrer" data-testid="download-${n.id}">
+                  <i class="fa-solid fa-download"></i> Download
+                </a>
               </div>
             </div>
-          </div>
-          <button class="btn btn-secondary" data-open-note="${n.id}" data-testid="download-${n.id}">
-            <i class="fa-solid fa-eye"></i> Open
-          </button>
+          `).join("")}
         </div>
       `).join("");
-      bindOpenButtons();
+
+      bindButtons();
     };
 
     render(state.studyNotes);

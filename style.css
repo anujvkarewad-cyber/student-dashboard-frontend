@@ -3965,3 +3965,11 @@ opacity:1;
 @keyframes boot-spin {
   to { transform: rotate(360deg); }
 }
+.notes-group { margin-bottom: 24px; }
+.notes-group:last-child { margin-bottom: 0; }
+.notes-group-title {
+  font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px;
+  color: var(--muted); margin: 0 0 10px; padding-bottom: 8px;
+  border-bottom: 1px solid var(--line-2);
+}
+
