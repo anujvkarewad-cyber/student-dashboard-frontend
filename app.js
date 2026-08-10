@@ -957,12 +957,17 @@ if (menuToggleBtn && sidebarEl) {
     overlay.style.display = "flex";
   }
 
-  // single close handler for the note viewer (removed the earlier duplicate)
-  document.getElementById("note-viewer-close")?.addEventListener("click", () => {
-    const overlay = document.getElementById("note-viewer-overlay");
-    const frame = document.getElementById("note-viewer-frame");
-    overlay.style.display = "none";
-    frame.src = ""; // stop loading/playing when closed
+ // single close handler for the note viewer (removed the earlier duplicate)
+  // NOTE: #note-viewer-overlay is defined further down in index.html, AFTER
+  // this <script> tag runs — so getElementById returns null unless we wait
+  // for DOMContentLoaded (same issue the dev panel below already avoids).
+  document.addEventListener("DOMContentLoaded", () => {
+    document.getElementById("note-viewer-close")?.addEventListener("click", () => {
+      const overlay = document.getElementById("note-viewer-overlay");
+      const frame = document.getElementById("note-viewer-frame");
+      overlay.style.display = "none";
+      frame.src = "";
+    });
   });
 
   // ---------- Profile ----------
