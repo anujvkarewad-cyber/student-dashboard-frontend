@@ -1,4 +1,4 @@
-const APP_VERSION = "2.1.4";
+const APP_VERSION = "2.1.5";
 
 (function () {
   "use strict";
@@ -930,9 +930,6 @@ if (menuToggleBtn && sidebarEl) {
           <button class="btn btn-secondary" data-open-note="${n.id}" data-testid="open-${n.id}">
             <i class="fa-solid fa-eye"></i> Open
           </button>
-          <a class="btn btn-secondary" href="https://drive.google.com/uc?export=download&id=${encodeURIComponent(n.fileId)}" target="_blank" rel="noreferrer" data-testid="download-${n.id}">
-            <i class="fa-solid fa-download"></i> Download
-          </a>
         </div>
       </div>
     `;
