@@ -1,4 +1,4 @@
-const APP_VERSION = "2.1.6";
+const APP_VERSION = "2.1.7";
 
 (function () {
   "use strict";
@@ -112,8 +112,8 @@ const APP_VERSION = "2.1.6";
     btn.innerHTML = '<i class="fa-solid fa-arrow-right-to-bracket"></i><span>Login</span>';
 
     if (!result.success) {
-      err.hidden = false;
-      err.innerHTML = '<i class="fa-solid fa-circle-exclamation"></i> ' + result.message;
+      err.hidden = true;
+      showLoginErrorPopup(result.message);
       return;
     }
 
@@ -453,16 +453,27 @@ if (menuToggleBtn && sidebarEl) {
           }
         },
         scales: {
-          x: {
-            grid: { display: false },
-            ticks: { color: "#64748B", font: { family: "Plus Jakarta Sans", weight: "600" } }
-          },
-          y: {
-            beginAtZero: true,
-            grid: { color: "#EEF2F7" },
-            ticks: { color: "#64748B", stepSize: 2 }
-          }
-        }
+  x: {
+    grid: { display: false },
+    ticks: {
+      color: "#64748B",
+      font: { family: "Plus Jakarta Sans", weight: "600", size: window.innerWidth < 480 ? 10 : 12 },
+      maxRotation: 0,
+      minRotation: 0,
+      autoSkip: true,
+      maxTicksLimit: window.innerWidth < 480 ? 4 : 7
+    }
+  },
+  y: {
+    beginAtZero: true,
+    grid: { color: "#EEF2F7" },
+    ticks: {
+      color: "#64748B",
+      stepSize: 2,
+      font: { size: window.innerWidth < 480 ? 10 : 12 }
+    }
+  }
+}
       }
     });
 
@@ -1073,6 +1084,68 @@ if (menuToggleBtn && sidebarEl) {
     if (btn) {
       btn.addEventListener("click", updatePassword);
     }
+  }
+
+  function showLoginErrorPopup(message) {
+    const old = document.getElementById("login-error-popup");
+    if (old) old.remove();
+
+    if (!document.getElementById("login-error-popup-style")) {
+      const style = document.createElement("style");
+      style.id = "login-error-popup-style";
+      style.textContent = `
+        #login-error-popup .login-err-overlay {
+          position: fixed; inset: 0; z-index: 100001;
+          background: rgba(15, 23, 42, 0.55);
+          display: flex; align-items: center; justify-content: center;
+          padding: 16px;
+        }
+        #login-error-popup .login-err-popup {
+          background: #fff; border-radius: 16px; padding: 28px;
+          max-width: 380px; width: 100%;
+          text-align: center;
+          box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+          font-family: 'Plus Jakarta Sans', sans-serif;
+        }
+        #login-error-popup .login-err-icon {
+          width: 56px; height: 56px; border-radius: 50%;
+          background: #FEE2E2; color: #DC2626;
+          display: flex; align-items: center; justify-content: center;
+          margin: 0 auto 16px; font-size: 22px;
+        }
+        #login-error-popup h2 { margin: 0 0 10px; font-size: 19px; color: #0F172A; }
+        #login-error-popup p { margin: 0 0 22px; color: #64748B; line-height: 1.5; }
+        #login-error-popup button {
+          background: #2563EB; color: #fff; border: none;
+          padding: 10px 22px; border-radius: 8px; font-weight: 600;
+          cursor: pointer; width: 100%;
+        }
+      `;
+      document.head.appendChild(style);
+    }
+
+    const isPasswordIssue = /password/i.test(message || "");
+    const heading = isPasswordIssue ? "Incorrect Password" : "Login Failed";
+    const body = message || "Please check your Student ID and password, then try again.";
+
+    const popup = document.createElement("div");
+    popup.id = "login-error-popup";
+    popup.innerHTML = `
+      <div class="login-err-overlay">
+        <div class="login-err-popup">
+          <div class="login-err-icon"><i class="fa-solid fa-circle-exclamation"></i></div>
+          <h2>${heading}</h2>
+          <p>${escapeHtml(body)}</p>
+          <button id="login-err-ok-btn">Try Again</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(popup);
+
+    document.getElementById("login-err-ok-btn").addEventListener("click", () => popup.remove());
+    popup.querySelector(".login-err-overlay").addEventListener("click", (e) => {
+      if (e.target.classList.contains("login-err-overlay")) popup.remove();
+    });
   }
 
   function escapeHtml(str) {

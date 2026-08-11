@@ -3972,4 +3972,75 @@ opacity:1;
   color: var(--muted); margin: 0 0 10px; padding-bottom: 8px;
   border-bottom: 1px solid var(--line-2);
 }
+/* ================= MOBILE FIT — KPI 2x2, tighter chart/card padding ================= */
+@media (max-width: 768px) {
 
+  /* Force the 4 KPI cards into a proper 2x2 grid (overrides earlier 1fr rules) */
+  .kpi-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 10px !important;
+  }
+
+  /* Shrink the cards to match the compact reference look */
+  .kpi {
+    min-height: 128px;
+    padding: 14px;
+    border-radius: 16px;
+  }
+  .kpi-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    font-size: 16px;
+    margin-bottom: 8px;
+  }
+  .kpi-label { font-size: 12.5px; margin-bottom: 4px; }
+  .kpi-value { font-size: 26px; margin-bottom: 4px; }
+  .kpi-foot  { font-size: 11px; }
+
+  /* Give content more breathing room / less "compressed" side padding */
+  .view-container { padding: 12px !important; }
+  .card { padding: clamp(14px, 4vw, 20px); border-radius: 18px; }
+  .card-head h3 { font-size: clamp(17px, 4.5vw, 20px); }
+
+  /* Chart: shorter but wider, auto-scaling height — stretch closer to screen edges */
+  .chart-holder {
+    height: clamp(200px, 45vw, 280px);
+    padding: clamp(10px, 3vw, 18px) clamp(8px, 2vw, 14px);
+    margin-left: -6px;
+    margin-right: -6px;
+    width: calc(100% + 12px);
+  }
+
+  /* Rank/leaderboard hero card — auto-scales with screen width */
+  .rank-display {
+    padding: clamp(18px, 5vw, 28px) clamp(14px, 4vw, 20px);
+  }
+  .rank-num {
+    font-size: clamp(48px, 14vw, 68px);
+  }
+  .rank-badge {
+    font-size: clamp(13px, 3.5vw, 15px);
+    padding: clamp(7px, 2vw, 9px) clamp(14px, 4vw, 20px);
+  }
+  .rank-label {
+    font-size: clamp(11px, 3vw, 13px);
+  }
+  .rank-footer {
+    font-size: clamp(12px, 3.2vw, 14px);
+  }
+
+  /* Mini-stats (Avg/day, Sessions, Last submission) — compact 3-col row */
+  .mini-stats {
+    grid-template-columns: repeat(3, 1fr) !important;
+    gap: 8px !important;
+    margin-top: 16px;
+  }
+  .mini-stats > div { padding: 10px 8px; text-align: center; }
+  .mini-stats span { font-size: 10px; letter-spacing: 0; }
+  .mini-stats b { font-size: 16px; margin-top: 4px; }
+
+  /* Progress card padding tightened to match */
+  .progress-wrap { padding: 16px; margin: 12px 0 18px; }
+  .progress-labels { font-size: 12.5px; }
+}
