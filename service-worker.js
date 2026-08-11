@@ -1,4 +1,4 @@
-const CACHE_VERSION = "1.1.3";
+const CACHE_VERSION = "2.1.7";
 const CACHE_NAME = `upm-static-${CACHE_VERSION}`;
 
 const STATIC_FILES = [
@@ -70,9 +70,9 @@ if (url.pathname === "/service-worker.js") {
 
   }
 
- // JS → Network First
+ // JS + CSS → Network First
 if (
-    url.pathname.endsWith(".js") &&
+    (url.pathname.endsWith(".js") || url.pathname.endsWith(".css")) &&
     url.pathname !== "/service-worker.js"
 ) {
 
