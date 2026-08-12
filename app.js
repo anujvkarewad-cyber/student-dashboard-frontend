@@ -910,14 +910,15 @@ if (menuToggleBtn && sidebarEl) {
   }
 
   // ---------- Notes ----------
-  // Step 1: renderNotes() shows only SUBJECT cards (folder-style).
-  // Step 2: clicking a subject card opens a popup modal listing that
-  // subject's PDFs. If any note in that subject has a `category` set,
-  // the notes are further grouped under category headings inside the
-  // modal (subject -> category -> files), matching the Drive folder
-  // structure created on the backend. Subjects with no categorized
-  // notes fall back to the old flat list — nothing changes visually
-  // for those.
+  // Layered folder navigation:
+  //   Step 1 (page):  Subject folder cards.
+  //   Step 2 (modal): clicking a subject shows its CATEGORY folder cards
+  //                    (if that subject has any categorized notes) — or,
+  //                    if nothing in that subject is categorized, skips
+  //                    straight to the flat notes list (old behaviour).
+  //   Step 3 (modal): clicking a category folder shows that category's
+  //                    notes, with a Back button to return to the
+  //                    category-folder grid.
   function renderNotes() {
     const box = document.getElementById("notes-list");
     if (!box) return;
@@ -931,8 +932,7 @@ if (menuToggleBtn && sidebarEl) {
       return groups;
     };
 
-    // NEW: group a subject's notes by category ("General" bucket for
-    // notes with no category set).
+    // "General" bucket for notes with no category set.
     const groupByCategory = (list) => {
       const groups = {};
       (list || []).forEach(n => {
@@ -961,56 +961,66 @@ if (menuToggleBtn && sidebarEl) {
       </div>
     `;
 
-    // NEW: a category section = heading + its notes, used only when the
-    // subject actually has categorized notes.
-    const categorySectionHtml = (categoryName, notes) => `
-      <div class="notes-category-group" data-testid="category-${escapeHtml(categoryName)}" style="margin-bottom:18px;">
-        <div class="notes-category-heading" style="display:flex;align-items:center;gap:6px;font-weight:700;font-size:12px;color:var(--muted,#64748B);text-transform:uppercase;letter-spacing:.04em;margin:14px 0 10px;">
-          <i class="fa-solid fa-folder-open"></i>${escapeHtml(categoryName)}
-        </div>
-        ${notes.map(noteRowHtml).join("")}
+    const folderCardHtml = (name, count, testidPrefix) => `
+      <div class="report-item note-subject-card" data-folder="${escapeHtml(name)}" data-testid="${testidPrefix}-${escapeHtml(name)}"
+        style="cursor:pointer;flex-direction:column;align-items:flex-start;gap:10px;">
+        <div class="note-icon"><i class="fa-solid fa-folder"></i></div>
+        <div class="ri-title">${escapeHtml(name)}</div>
+        <div class="ri-meta">${count} file${count > 1 ? "s" : ""}</div>
       </div>
     `;
 
-    const openSubjectModal = (subject, notesForSubject) => {
-      const modal = document.getElementById("notes-subject-modal");
-      const title = document.getElementById("notes-subject-modal-title");
-      const list = document.getElementById("notes-subject-modal-list");
-      const searchInput = document.getElementById("notes-subject-modal-search");
-      if (!modal || !title || !list) return;
+    const modal = document.getElementById("notes-subject-modal");
+    const modalTitle = document.getElementById("notes-subject-modal-title");
+    const modalList = document.getElementById("notes-subject-modal-list");
+    const modalSearchWrap = document.getElementById("notes-subject-modal-search-wrap");
+    if (!modal || !modalTitle || !modalList) return;
 
-      title.textContent = subject;
+    // Injects a Back button into the modal header once (persists across
+    // re-renders since the modal itself lives outside the view template).
+    const ensureBackButton = () => {
+      let backBtn = document.getElementById("notes-subject-modal-back");
+      if (!backBtn) {
+        const headerLeft = document.createElement("div");
+        headerLeft.style.display = "flex";
+        headerLeft.style.alignItems = "center";
+        headerLeft.style.gap = "10px";
+        headerLeft.style.minWidth = "0";
 
-      // does this subject actually use categories, or is it all "General"?
-      const hasRealCategories = notesForSubject.some(n => n.category && String(n.category).trim());
+        backBtn = document.createElement("button");
+        backBtn.type = "button";
+        backBtn.id = "notes-subject-modal-back";
+        backBtn.className = "btn btn-secondary";
+        backBtn.title = "Back";
+        backBtn.innerHTML = '<i class="fa-solid fa-arrow-left"></i>';
+        backBtn.hidden = true;
+
+        modalTitle.parentNode.insertBefore(headerLeft, modalTitle);
+        headerLeft.appendChild(backBtn);
+        headerLeft.appendChild(modalTitle);
+      }
+      return backBtn;
+    };
+    const backBtn = ensureBackButton();
+
+    // ---- Step 3: flat notes list (with search + Open buttons) ----
+    const showNotesList = (heading, notes, onBack) => {
+      modalTitle.textContent = heading;
+      backBtn.hidden = !onBack;
+      backBtn.onclick = onBack || null;
+      if (modalSearchWrap) modalSearchWrap.hidden = false;
 
       const renderFiltered = (query) => {
         const q = (query || "").trim().toLowerCase();
-        const filtered = q
-          ? notesForSubject.filter(n => (n.title || "").toLowerCase().includes(q))
-          : notesForSubject;
+        const filtered = q ? notes.filter(n => (n.title || "").toLowerCase().includes(q)) : notes;
 
-        if (!filtered.length) {
-          list.innerHTML = "<div class='muted' style='text-align:center;padding:20px'>No notes match your search.</div>";
-          return;
-        }
+        modalList.innerHTML = filtered.length
+          ? filtered.map(noteRowHtml).join("")
+          : "<div class='muted' style='text-align:center;padding:20px'>No notes match your search.</div>";
 
-        if (hasRealCategories) {
-          const catGroups = groupByCategory(filtered);
-          // "General" (uncategorized) notes shown first, then categories alphabetically
-          const catNames = Object.keys(catGroups).sort((a, b) => {
-            if (a === "General") return -1;
-            if (b === "General") return 1;
-            return a.localeCompare(b);
-          });
-          list.innerHTML = catNames.map(cat => categorySectionHtml(cat, catGroups[cat])).join("");
-        } else {
-          list.innerHTML = filtered.map(noteRowHtml).join("");
-        }
-
-        $$("[data-open-note]", list).forEach(btn =>
+        $$("[data-open-note]", modalList).forEach(btn =>
           btn.addEventListener("click", () => {
-            const note = notesForSubject.find(n => n.id === btn.dataset.openNote);
+            const note = notes.find(n => n.id === btn.dataset.openNote);
             if (note) openNoteViewer(note);
           })
         );
@@ -1018,6 +1028,7 @@ if (menuToggleBtn && sidebarEl) {
 
       renderFiltered("");
 
+      const searchInput = document.getElementById("notes-subject-modal-search");
       if (searchInput) {
         searchInput.value = "";
         // avoid stacking multiple listeners across repeated opens
@@ -1025,24 +1036,63 @@ if (menuToggleBtn && sidebarEl) {
         searchInput.parentNode.replaceChild(freshInput, searchInput);
         freshInput.addEventListener("input", () => renderFiltered(freshInput.value));
       }
+    };
+
+    // ---- Step 2: category folder grid inside a subject ----
+    const showCategoryFolders = (subject, notesForSubject) => {
+      modalTitle.textContent = subject;
+      backBtn.hidden = true;
+      if (modalSearchWrap) modalSearchWrap.hidden = true; // no search at folder level
+
+      const catGroups = groupByCategory(notesForSubject);
+      const catNames = Object.keys(catGroups).sort((a, b) => {
+        if (a === "General") return -1;
+        if (b === "General") return 1;
+        return a.localeCompare(b);
+      });
+
+      modalList.innerHTML = `
+        <div class="notes-subject-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px;">
+          ${catNames.map(cat => folderCardHtml(cat, catGroups[cat].length, "category-folder")).join("")}
+        </div>
+      `;
+
+      $$("[data-folder]", modalList).forEach(card =>
+        card.addEventListener("click", () => {
+          const cat = card.dataset.folder;
+          showNotesList(`${subject} · ${cat}`, catGroups[cat], () => showCategoryFolders(subject, notesForSubject));
+        })
+      );
+    };
+
+    // ---- Step 1 entry point: subject clicked ----
+    const openSubjectModal = (subject, notesForSubject) => {
+      const hasRealCategories = notesForSubject.some(n => n.category && String(n.category).trim());
+
+      if (hasRealCategories) {
+        showCategoryFolders(subject, notesForSubject);
+      } else {
+        showNotesList(subject, notesForSubject, null);
+      }
 
       modal.hidden = false;
     };
 
     const closeSubjectModal = () => {
-      const modal = document.getElementById("notes-subject-modal");
       const searchInput = document.getElementById("notes-subject-modal-search");
       if (searchInput) searchInput.value = "";
-      if (modal) modal.hidden = true;
+      backBtn.hidden = true;
+      modal.hidden = true;
     };
 
-    // wire the modal's close button / overlay-click once
-    if (!box.dataset.subjectModalWired) {
-      const modal = document.getElementById("notes-subject-modal");
+    // wire the modal's close button / overlay-click ONCE, on the modal
+    // itself (which persists across navigate() calls) rather than on
+    // #notes-list (which gets recreated every time this view is opened).
+    if (!modal.dataset.wired) {
       const closeBtn = document.getElementById("notes-subject-modal-close");
       if (closeBtn) closeBtn.addEventListener("click", closeSubjectModal);
-      if (modal) modal.addEventListener("click", (e) => { if (e.target === modal) closeSubjectModal(); });
-      box.dataset.subjectModalWired = "1";
+      modal.addEventListener("click", (e) => { if (e.target === modal) closeSubjectModal(); });
+      modal.dataset.wired = "1";
     }
 
     const render = (list) => {
@@ -1080,7 +1130,6 @@ if (menuToggleBtn && sidebarEl) {
       .then(list => { state.studyNotes = list || []; render(state.studyNotes); })
       .catch(err => console.error("Failed to refresh notes:", err));
   }
-
   
   function openNoteViewer(note) {
     const overlay = document.getElementById("note-viewer-overlay");
