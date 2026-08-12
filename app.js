@@ -912,7 +912,12 @@ if (menuToggleBtn && sidebarEl) {
   // ---------- Notes ----------
   // Step 1: renderNotes() shows only SUBJECT cards (folder-style).
   // Step 2: clicking a subject card opens a popup modal listing that
-  // subject's PDFs, each with Open + Download buttons.
+  // subject's PDFs. If any note in that subject has a `category` set,
+  // the notes are further grouped under category headings inside the
+  // modal (subject -> category -> files), matching the Drive folder
+  // structure created on the backend. Subjects with no categorized
+  // notes fall back to the old flat list — nothing changes visually
+  // for those.
   function renderNotes() {
     const box = document.getElementById("notes-list");
     if (!box) return;
@@ -921,6 +926,17 @@ if (menuToggleBtn && sidebarEl) {
       const groups = {};
       (list || []).forEach(n => {
         const key = n.subject || "Other";
+        (groups[key] = groups[key] || []).push(n);
+      });
+      return groups;
+    };
+
+    // NEW: group a subject's notes by category ("General" bucket for
+    // notes with no category set).
+    const groupByCategory = (list) => {
+      const groups = {};
+      (list || []).forEach(n => {
+        const key = (n.category && String(n.category).trim()) ? String(n.category).trim() : "General";
         (groups[key] = groups[key] || []).push(n);
       });
       return groups;
@@ -945,6 +961,17 @@ if (menuToggleBtn && sidebarEl) {
       </div>
     `;
 
+    // NEW: a category section = heading + its notes, used only when the
+    // subject actually has categorized notes.
+    const categorySectionHtml = (categoryName, notes) => `
+      <div class="notes-category-group" data-testid="category-${escapeHtml(categoryName)}" style="margin-bottom:18px;">
+        <div class="notes-category-heading" style="display:flex;align-items:center;gap:6px;font-weight:700;font-size:12px;color:var(--muted,#64748B);text-transform:uppercase;letter-spacing:.04em;margin:14px 0 10px;">
+          <i class="fa-solid fa-folder-open"></i>${escapeHtml(categoryName)}
+        </div>
+        ${notes.map(noteRowHtml).join("")}
+      </div>
+    `;
+
     const openSubjectModal = (subject, notesForSubject) => {
       const modal = document.getElementById("notes-subject-modal");
       const title = document.getElementById("notes-subject-modal-title");
@@ -954,15 +981,32 @@ if (menuToggleBtn && sidebarEl) {
 
       title.textContent = subject;
 
+      // does this subject actually use categories, or is it all "General"?
+      const hasRealCategories = notesForSubject.some(n => n.category && String(n.category).trim());
+
       const renderFiltered = (query) => {
         const q = (query || "").trim().toLowerCase();
         const filtered = q
           ? notesForSubject.filter(n => (n.title || "").toLowerCase().includes(q))
           : notesForSubject;
 
-        list.innerHTML = filtered.length
-          ? filtered.map(noteRowHtml).join("")
-          : "<div class='muted' style='text-align:center;padding:20px'>No notes match your search.</div>";
+        if (!filtered.length) {
+          list.innerHTML = "<div class='muted' style='text-align:center;padding:20px'>No notes match your search.</div>";
+          return;
+        }
+
+        if (hasRealCategories) {
+          const catGroups = groupByCategory(filtered);
+          // "General" (uncategorized) notes shown first, then categories alphabetically
+          const catNames = Object.keys(catGroups).sort((a, b) => {
+            if (a === "General") return -1;
+            if (b === "General") return 1;
+            return a.localeCompare(b);
+          });
+          list.innerHTML = catNames.map(cat => categorySectionHtml(cat, catGroups[cat])).join("");
+        } else {
+          list.innerHTML = filtered.map(noteRowHtml).join("");
+        }
 
         $$("[data-open-note]", list).forEach(btn =>
           btn.addEventListener("click", () => {
@@ -1037,6 +1081,7 @@ if (menuToggleBtn && sidebarEl) {
       .catch(err => console.error("Failed to refresh notes:", err));
   }
 
+  
   function openNoteViewer(note) {
     const overlay = document.getElementById("note-viewer-overlay");
     const frame = document.getElementById("note-viewer-frame");
