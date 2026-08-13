@@ -20,6 +20,7 @@ const APP_VERSION = "2.1.7";
     notifSeen: { announcements: new Set(), mentorNotes: new Set(), notes: new Set(), reports: new Set() },
     notifUnread: 0,
     notifFeed: [],
+    notifConsecutiveFailures: 0,
     // MCQ
     mcq: {
       subject: null,
@@ -198,6 +199,8 @@ const APP_VERSION = "2.1.7";
         checkForNewNotifications();
         checkStreakReminder();
       }, 60000);
+      // circuit breaker cooldown — every 5 min, give the backend another chance
+      setInterval(() => { state.notifConsecutiveFailures = 0; }, 300000);
     }
 
     // route
@@ -1839,15 +1842,23 @@ if (menuToggleBtn && sidebarEl) {
 window.__umpShowPushToast = (title, body) => showToast("fa-bell", title, body);
   async function safeFetch(fn, fallback) {
     try {
-      return await fn();
+      const result = await fn();
+      state.notifConsecutiveFailures = 0; // reset on any success
+      return result;
     } catch (err) {
-      console.warn("Notification sub-fetch failed (non-fatal):", err.message);
+      state.notifConsecutiveFailures++;
+      if (state.notifConsecutiveFailures <= 2) {
+        console.warn("Notification sub-fetch failed (non-fatal):", err.message);
+      } // after that, stay quiet — circuit breaker will pause polling anyway
       return fallback;
     }
   }
 
   async function checkForNewNotifications() {
     if (!state.student) return;
+    // circuit breaker: after 3 consecutive total failures, back off silently
+    // for a while instead of hammering a down backend every poll cycle
+    if (state.notifConsecutiveFailures >= 3) return;
     try {
       // sequential (not Promise.all) — Apps Script chokes on parallel requests
       const announcements = await safeFetch(() => api.getAnnouncements(), state.announcements);
