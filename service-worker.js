@@ -1,6 +1,32 @@
+importScripts("https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js");
+importScripts("https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js");
+
+firebase.initializeApp({
+  apiKey: "AIzaSyCC12dNFolIqWJYHB7p6wZWIKfMehB58a4",
+  authDomain: "ump-dashboard.firebaseapp.com",
+  projectId: "ump-dashboard",
+  storageBucket: "ump-dashboard.firebasestorage.app",
+  messagingSenderId: "566076646952",
+  appId: "1:566076646952:web:caa09a3b82eeed3aef771d",
+});
+
+const messaging = firebase.messaging();
+
+messaging.onBackgroundMessage((payload) => {
+  console.log("Background push received:", payload);
+  const title = (payload.notification && payload.notification.title) || (payload.data && payload.data.title) || "UMP Dashboard";
+  const options = {
+    body: (payload.notification && payload.notification.body) || (payload.data && payload.data.body) || "",
+    icon: "/icon/icon-192.png",
+    badge: "/icon/icon-192.png",
+  };
+  self.registration.showNotification(title, options);
+});
+
+
+
 const CACHE_VERSION = "2.1.7";
 const CACHE_NAME = `upm-static-${CACHE_VERSION}`;
-
 const STATIC_FILES = [
   "/",
   "/style.css",

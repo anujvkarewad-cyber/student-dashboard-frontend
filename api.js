@@ -101,5 +101,7 @@ verifyOTP(studentId, otp) {
 markMentorFeedbackRead(id) {
   return callAPI("feedback.read", { id });
 },
-  
+  saveDeviceToken(studentId, token) {
+  return callAPI("saveDeviceToken", { studentId, token });
+},
 };

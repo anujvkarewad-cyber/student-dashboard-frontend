@@ -17,6 +17,9 @@ const APP_VERSION = "2.1.7";
     leaderboard: [],
     reports: [],
     charts: {},
+    notifSeen: { announcements: new Set(), mentorNotes: new Set(), notes: new Set(), reports: new Set() },
+    notifUnread: 0,
+    notifFeed: [],
     // MCQ
     mcq: {
       subject: null,
@@ -150,23 +153,22 @@ const APP_VERSION = "2.1.7";
     $("#user-name").textContent = student.studentName;
     $("#user-id").textContent = student.studentId;
 
-    // load core data in parallel
-    const [
-      stats,
-      log,
-      lb,
-      reports,
-      announcements,
-      notes,
-      studyNotes
-    ] = await Promise.all([
-      api.getStats(student.studentId),
-      api.getStudyLog(student.studentId),
-      api.getLeaderboard(),
-      api.getWeeklyReports(student.studentId),
-      api.getAnnouncements(),
-      api.getStudentMentorNotes(student.studentId),
-      api.getNotes()
+    // load core data in small parallel batches — full parallel (7 at once)
+    // overloads Apps Script, full sequential is too slow. Batches of 3 balance both.
+    const [stats, log, lb] = await Promise.all([
+      safeFetch(() => api.getStats(student.studentId), {}),
+      safeFetch(() => api.getStudyLog(student.studentId), []),
+      safeFetch(() => api.getLeaderboard(), []),
+    ]);
+
+    const [reports, announcements] = await Promise.all([
+      safeFetch(() => api.getWeeklyReports(student.studentId), []),
+      safeFetch(() => api.getAnnouncements(), []),
+    ]);
+
+    const [notes, studyNotes] = await Promise.all([
+      safeFetch(() => api.getStudentMentorNotes(student.studentId), []),
+      safeFetch(() => api.getNotes(), []),
     ]);
 
     state.stats = stats;
@@ -183,6 +185,19 @@ const APP_VERSION = "2.1.7";
     const feedbacks = await api.getMentorFeedback(student.studentId);
     if (Array.isArray(feedbacks) && feedbacks.length > 0) {
       showMentorFeedback(feedbacks[0]);
+    }
+
+    // notifications: seed baseline (don't toast for stuff that already existed) + start polling
+    seedNotifBaseline();
+    checkStreakReminder();
+    if (window.UMP_PUSH) window.UMP_PUSH.requestAndSaveToken(student.studentId);
+    if (!state._notifPollStarted) {
+      state._notifPollStarted = true;
+      setInterval(() => {
+        if (!state.student) return;
+        checkForNewNotifications();
+        checkStreakReminder();
+      }, 60000);
     }
 
     // route
@@ -1763,6 +1778,196 @@ if (menuToggleBtn && sidebarEl) {
     }
   });
 
+// ============ NOTIFICATIONS ============
+  const notifBell = document.getElementById("notif-bell");
+  const notifBadge = document.getElementById("notif-badge");
+  const notifPanel = document.getElementById("notif-panel");
+  const notifPanelList = document.getElementById("notif-panel-list");
+  const notifWrap = document.getElementById("notif-wrap");
+
+  const annKey  = (a) => `a:${a.title}|${a.date}`;
+  const noteMKey = (n) => `m:${n.date}|${String(n.note || "").slice(0, 40)}`;
+  const noteNKey = (n) => `n:${n.id}`;
+  const repKey  = (r) => `r:${r.weekOf}`;
+
+  function seedNotifBaseline() {
+    (state.announcements || []).forEach(a => state.notifSeen.announcements.add(annKey(a)));
+    (state.mentorNotes || []).forEach(n => state.notifSeen.mentorNotes.add(noteMKey(n)));
+    (state.studyNotes || []).forEach(n => state.notifSeen.notes.add(noteNKey(n)));
+    (state.reports || []).forEach(r => state.notifSeen.reports.add(repKey(r)));
+  }
+
+  function updateNotifBadge() {
+    if (!notifBadge) return;
+    notifBadge.textContent = state.notifUnread > 9 ? "9+" : String(state.notifUnread);
+    notifBadge.hidden = state.notifUnread === 0;
+  }
+
+  function pushNotif(icon, title, sub) {
+    state.notifFeed.unshift({ icon, title, sub, ts: Date.now() });
+    state.notifFeed = state.notifFeed.slice(0, 20);
+    state.notifUnread++;
+    updateNotifBadge();
+    showToast(icon, title, sub);
+  }
+
+  function showToast(icon, title, sub) {
+    let stack = document.getElementById("notif-toast-stack");
+    if (!stack) {
+      stack = document.createElement("div");
+      stack.id = "notif-toast-stack";
+      stack.className = "notif-toast-stack";
+      document.body.appendChild(stack);
+    }
+    const el = document.createElement("div");
+    el.className = "notif-toast";
+    el.innerHTML = `
+      <div class="notif-toast-icon"><i class="fa-solid ${icon}"></i></div>
+      <div>
+        <div class="notif-toast-title">${escapeHtml(title)}</div>
+        <div class="notif-toast-sub">${escapeHtml(sub || "")}</div>
+      </div>
+    `;
+    stack.appendChild(el);
+    setTimeout(() => {
+      el.style.transition = "opacity .3s ease, transform .3s ease";
+      el.style.opacity = "0";
+      el.style.transform = "translateX(30px)";
+      setTimeout(() => el.remove(), 300);
+    }, 5000);
+  }
+window.__umpShowPushToast = (title, body) => showToast("fa-bell", title, body);
+  async function safeFetch(fn, fallback) {
+    try {
+      return await fn();
+    } catch (err) {
+      console.warn("Notification sub-fetch failed (non-fatal):", err.message);
+      return fallback;
+    }
+  }
+
+  async function checkForNewNotifications() {
+    if (!state.student) return;
+    try {
+      // sequential (not Promise.all) — Apps Script chokes on parallel requests
+      const announcements = await safeFetch(() => api.getAnnouncements(), state.announcements);
+      const mentorNotes   = await safeFetch(() => api.getStudentMentorNotes(state.student.studentId), state.mentorNotes);
+      const studyNotes    = await safeFetch(() => api.getNotes(state.student.studentId), state.studyNotes);
+      const reports       = await safeFetch(() => api.getWeeklyReports(state.student.studentId), state.reports);
+
+      (announcements || []).forEach(a => {
+        const k = annKey(a);
+        if (!state.notifSeen.announcements.has(k)) {
+          state.notifSeen.announcements.add(k);
+          pushNotif("fa-bullhorn", a.title || "New announcement", a.message || "");
+        }
+      });
+
+      (mentorNotes || []).forEach(n => {
+        const k = noteMKey(n);
+        if (!state.notifSeen.mentorNotes.has(k)) {
+          state.notifSeen.mentorNotes.add(k);
+          pushNotif("fa-comment-dots", "New mentor note", n.note || "");
+        }
+      });
+
+      (studyNotes || []).forEach(n => {
+        const k = noteNKey(n);
+        if (!state.notifSeen.notes.has(k)) {
+          state.notifSeen.notes.add(k);
+          pushNotif("fa-file-pdf", "New study material", n.title || "");
+        }
+      });
+
+      (reports || []).forEach(r => {
+        const k = repKey(r);
+        if (!state.notifSeen.reports.has(k)) {
+          state.notifSeen.reports.add(k);
+          pushNotif("fa-envelope-open-text", "Weekly report ready", r.weekOf || "");
+        }
+      });
+
+      state.announcements = announcements;
+      state.mentorNotes = mentorNotes;
+      state.studyNotes = studyNotes;
+      state.reports = reports;
+
+      // re-render currently active view if it shows any of this data
+      const activeView = (location.hash || "#dashboard").slice(1);
+      if (activeView === "dashboard") renderMentorNotes(state.mentorNotes || []);
+      if (activeView === "reports") renderReports();
+      if (activeView === "notes") renderNotes();
+    } catch (err) {
+      console.error("Notification check failed:", err);
+    }
+  }
+
+function isToday(dateStr) {
+    if (!dateStr) return false;
+    const d = new Date(dateStr);
+    if (isNaN(d)) return false;
+    const now = new Date();
+    return d.getFullYear() === now.getFullYear()
+      && d.getMonth() === now.getMonth()
+      && d.getDate() === now.getDate();
+  }
+
+  function checkStreakReminder() {
+    if (!state.student || !state.stats) return;
+
+    const now = new Date();
+    if (now.getHours() < 18) return; // sirf shaam 6 PM ke baad remind karo
+
+    const todayKey = now.toISOString().slice(0, 10);
+    const storageKey = `ump_streak_reminder_${state.student.studentId}_${todayKey}`;
+    if (localStorage.getItem(storageKey)) return; // aaj already dikha chuke
+
+    if (isToday(state.stats.lastSubmission)) return; // aaj already submit ho chuka hai
+
+    localStorage.setItem(storageKey, "1");
+    pushNotif(
+      "fa-fire",
+      "Streak break ho sakta hai!",
+      "Aaj abhi tak study log nahi kiya hai — abhi \"Log study hours\" pe jaake entry daal do."
+    );
+  }
+
+  function renderNotifPanel() {
+    if (!notifPanelList) return;
+    if (!state.notifFeed.length) {
+      notifPanelList.innerHTML = `<div class="notif-empty">No notifications yet.</div>`;
+      return;
+    }
+    notifPanelList.innerHTML = state.notifFeed.map(n => `
+      <div class="notif-item">
+        <div class="notif-item-icon"><i class="fa-solid ${n.icon}"></i></div>
+        <div>
+          <div class="notif-item-title">${escapeHtml(n.title)}</div>
+          <div class="notif-item-sub">${escapeHtml((n.sub || "").slice(0, 90))}</div>
+        </div>
+      </div>
+    `).join("");
+  }
+
+  if (notifBell) {
+    notifBell.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const willOpen = notifPanel.hidden;
+      notifPanel.hidden = !willOpen;
+      if (willOpen) {
+        renderNotifPanel();
+        state.notifUnread = 0;
+        updateNotifBadge();
+      }
+    });
+
+    document.addEventListener("click", (e) => {
+      if (notifWrap && !notifWrap.contains(e.target)) notifPanel.hidden = true;
+    });
+  }
+
+  
+  
   // ============ BOOT ============
   boot();
 
@@ -1785,11 +1990,13 @@ if (menuToggleBtn && sidebarEl) {
       // only re-render if the student is currently looking at the tracker view
       const activeView = (location.hash || "#dashboard").slice(1);
       if (activeView === "tracker") renderTracker();
+
+      checkForNewNotifications();
+      checkStreakReminder();
     } catch (err) {
       console.error("Background refresh failed:", err);
     }
   });
-
   // ---------- Developer Theme Panel ----------
   // NOTE: these elements are defined further down in index.html, AFTER this
   // <script> tag, so we must wait for DOMContentLoaded before looking them up

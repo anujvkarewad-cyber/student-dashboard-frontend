@@ -257,6 +257,17 @@
 
   <div class="topbar-actions">
 
+    <div class="notif-wrap" id="notif-wrap">
+      <button type="button" class="notif-bell" id="notif-bell" data-testid="notif-bell" title="Notifications">
+        <i class="fa-solid fa-bell"></i>
+        <span class="notif-badge" id="notif-badge" hidden>0</span>
+      </button>
+      <div id="notif-panel" class="notif-panel" hidden>
+        <div class="notif-panel-head">Notifications</div>
+        <div id="notif-panel-list" class="notif-panel-list"></div>
+      </div>
+    </div>
+
     <div class="topbar-card streak-card">
       <div class="card-icon">
     <dotlottie-player
@@ -526,7 +537,7 @@
   <div class="view" data-testid="view-mcq">
     <div class="section-heading">
       <h2>MCQ Practice</h2>
-      <p class="muted">Choose a subject, then pick a chapter to start a timed quiz.</p>
+      <p class="muted">Comming Soon</p>
     </div>
 
     <!-- Step 1: Subject -->
@@ -1029,7 +1040,10 @@
 </div>
 
 <!-- =================== SCRIPTS =================== -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js"></script>
 <script src="api.js"></script>
+<script src="firebase-init.js"></script>
 <script src="app.js"></script>
 <script>
 
