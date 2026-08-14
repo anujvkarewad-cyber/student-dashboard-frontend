@@ -1,4 +1,4 @@
-const APP_VERSION = "2.1.7";
+const APP_VERSION = "2.2.0";
 
 (function () {
   "use strict";
@@ -195,7 +195,62 @@ if ((location.hash || "#dashboard").slice(1) === "dashboard") {
     // notifications: seed baseline (don't toast for stuff that already existed) + start polling
     seedNotifBaseline();
     checkStreakReminder();
-    if (window.UMP_PUSH) window.UMP_PUSH.requestAndSaveToken(studentId);
+
+    // --- Robust FCM registration ---
+    (async () => {
+      if (!window.UMP_PUSH) {
+        console.warn("[APP] UMP_PUSH not loaded");
+        return;
+      }
+
+      if (!window.UMP_PUSH.isSupported()) {
+        console.warn("[APP] Push not supported on this browser/device");
+        return;
+      }
+
+      const perm = window.UMP_PUSH.getPermissionState();
+      console.log("[APP] Push permission state:", perm);
+
+      // If previously denied, don't spam — show a banner in profile maybe.
+      if (perm === "denied") {
+        console.warn("[APP] Push permission previously denied — user needs to enable from browser settings");
+        // Optional: expose a UI hint
+        if (window.__umpShowPushToast) {
+          window.__umpShowPushToast(
+            "🔕 Notifications blocked",
+            "Enable notifications from browser settings to receive mentor updates."
+          );
+        }
+        return;
+      }
+
+      // Try to get token — this will also prompt if 'default'
+      const token = await window.UMP_PUSH.requestAndSaveToken(studentId);
+      if (token) {
+        console.log("[APP] Push registered successfully");
+      } else {
+        console.warn("[APP] Push registration failed or permission not granted");
+
+        // If permission is default, user dismissed prompt — we can retry later
+        // Show a gentle reminder only once per session
+        if (Notification.permission === "default" && !sessionStorage.getItem("ump_push_prompt_shown")) {
+          sessionStorage.setItem("ump_push_prompt_shown", "1");
+          setTimeout(() => {
+            if (window.__umpShowPushToast) {
+              window.__umpShowPushToast(
+                "🔔 Enable notifications",
+                "Allow notifications to get instant mentor messages and new notes alerts."
+              );
+            }
+          }, 3000);
+        }
+      }
+
+      // Periodically refresh token (every 30 min) in case it rotates
+      setInterval(() => {
+        window.UMP_PUSH.refreshIfNeeded(studentId);
+      }, 30 * 60 * 1000);
+    })();
 
     if (!state._notifPollStarted) {
   state._notifPollStarted = true;
@@ -1175,6 +1230,77 @@ if ((location.hash || "#dashboard").slice(1) === "dashboard") {
     const btn = $("#change-password-btn");
     if (btn) {
       btn.addEventListener("click", updatePassword);
+    }
+
+    // --- Push notification enable section inside profile card ---
+    try {
+      const profileGrid = document.querySelector(".profile-grid");
+      if (profileGrid && !document.getElementById("push-status-row")) {
+        const pushDiv = document.createElement("div");
+        pushDiv.id = "push-status-row";
+        pushDiv.style.gridColumn = "1 / -1";
+        pushDiv.innerHTML = `
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+            <div>
+              <div style="font-weight:700; font-size:14px;">🔔 Push Notifications</div>
+              <div id="push-status-text" style="font-size:13px; color:#64748B; margin-top:4px;">Checking...</div>
+            </div>
+            <button id="enable-push-btn" class="btn-primary sm" type="button">
+              <i class="fa-solid fa-bell"></i> Enable Notifications
+            </button>
+          </div>
+          <div id="push-debug" style="margin-top:10px; font-size:11px; color:#94A3B8; word-break:break-all;"></div>
+        `;
+        profileGrid.appendChild(pushDiv);
+
+        const statusText = pushDiv.querySelector("#push-status-text");
+        const enableBtn = pushDiv.querySelector("#enable-push-btn");
+        const debugEl = pushDiv.querySelector("#push-debug");
+
+        const updateStatus = () => {
+          const perm = (window.UMP_PUSH && window.UMP_PUSH.getPermissionState()) || (Notification && Notification.permission) || "unknown";
+          const token = localStorage.getItem("ump_fcm_token_" + state.student.studentId);
+          if (perm === "granted" && token) {
+            statusText.textContent = "✅ Enabled on this device";
+            statusText.style.color = "#10B981";
+            enableBtn.innerHTML = '<i class="fa-solid fa-check"></i> Enabled';
+            enableBtn.disabled = true;
+            debugEl.textContent = "Token: " + token.slice(0, 40) + "...";
+          } else if (perm === "denied") {
+            statusText.textContent = "❌ Blocked — enable from browser site settings, then reload";
+            statusText.style.color = "#EF4444";
+            enableBtn.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> Blocked';
+            enableBtn.disabled = true;
+          } else if (perm === "default") {
+            statusText.textContent = "⚪ Not yet enabled";
+            statusText.style.color = "#F59E0B";
+            enableBtn.disabled = false;
+          } else {
+            statusText.textContent = "Status: " + perm;
+            enableBtn.disabled = false;
+          }
+        };
+
+        updateStatus();
+
+        enableBtn.addEventListener("click", async () => {
+          enableBtn.disabled = true;
+          enableBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Enabling...';
+          try {
+            const t = await window.UMP_PUSH.requestAndSaveToken(state.student.studentId, { force: true });
+            if (t) {
+              if (window.__umpShowPushToast) window.__umpShowPushToast("✅ Notifications enabled", "You will now receive mentor updates instantly.");
+            } else {
+              if (window.__umpShowPushToast) window.__umpShowPushToast("❌ Could not enable", "Check browser permission and try again.");
+            }
+          } catch (e) {
+            console.error(e);
+          }
+          setTimeout(updateStatus, 600);
+        });
+      }
+    } catch (e) {
+      console.warn("push UI inject failed", e);
     }
   }
 
