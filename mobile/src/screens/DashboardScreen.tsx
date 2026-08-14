@@ -18,11 +18,19 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Card, ErrorBanner, InitialsAvatar, PrimaryButton, SectionHeader } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
-import { useNotifications } from '../context/NotificationsContext';
+import { AppNotification, NotificationType, useNotifications } from '../context/NotificationsContext';
 import { useWeatherTheme } from '../hooks/useWeatherTheme';
 import { colors, radius, spacing } from '../theme';
 
 const format = (value?: number, suffix = '') => value == null || Number.isNaN(Number(value)) ? '—' : `${Number(value).toFixed(1).replace('.0', '')}${suffix}`;
+
+const notificationVisual: Record<NotificationType, { icon: keyof typeof Ionicons.glyphMap; tint: string; soft: string }> = {
+  announcement: { icon: 'megaphone', tint: colors.primary, soft: colors.primarySoft },
+  mentor: { icon: 'chatbubble-ellipses', tint: colors.purple, soft: colors.purpleSoft },
+  material: { icon: 'document-text', tint: colors.red, soft: colors.redSoft },
+  report: { icon: 'analytics', tint: colors.teal, soft: colors.tealSoft },
+  feedback: { icon: 'mail-unread', tint: '#B36A16', soft: colors.amberSoft },
+};
 
 const Metric = ({ icon, label, value, tint, soft }: { icon: keyof typeof Ionicons.glyphMap; label: string; value: string; tint: string; soft: string }) => (
   <Card style={styles.metric}>
@@ -44,9 +52,10 @@ export const DashboardScreen = () => {
   const navigation = useNavigation<any>();
   const { student } = useAuth();
   const { data, loading, refreshing, error, refreshAll, dismissFeedback } = useData();
-  const { unreadCount } = useNotifications();
+  const { notifications, unreadCount, isRead, markRead, markAllRead } = useNotifications();
   const { weather, theme, loading: weatherLoading, weatherError, refreshWeather, isLive } = useWeatherTheme();
   const [feedbackVisible, setFeedbackVisible] = useState(true);
+  const [notificationsVisible, setNotificationsVisible] = useState(false);
   const heroTarget = useRef<View | null>(null);
   const feedback = data.feedback[0];
   const stats = data.stats;
@@ -61,6 +70,13 @@ export const DashboardScreen = () => {
 
   const refreshDashboard = async () => {
     await Promise.allSettled([refreshAll(), refreshWeather()]);
+  };
+
+  const openNotification = async (item: AppNotification) => {
+    await markRead(item.id);
+    setNotificationsVisible(false);
+    if (item.target === 'reports') navigation.navigate('Reports');
+    else if (item.target === 'notes') navigation.navigate('Notes');
   };
 
   return (
@@ -78,7 +94,7 @@ export const DashboardScreen = () => {
             <Text style={styles.eyebrow}>UJJWAL PATHAK MENTORSHIP</Text>
             <Text style={styles.dashboardLabel}>Student dashboard</Text>
           </View>
-          <Pressable style={styles.notificationButton} onPress={() => navigation.navigate('Notifications')} accessibilityLabel="Open notifications">
+          <Pressable style={styles.notificationButton} onPress={() => setNotificationsVisible(true)} accessibilityLabel="Open notifications popup">
             <Ionicons name="notifications-outline" size={21} color={colors.inkSoft} />
             {unreadCount ? <View style={styles.notificationBadge}><Text style={styles.notificationBadgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text></View> : null}
           </Pressable>
@@ -216,6 +232,41 @@ export const DashboardScreen = () => {
         </Card>
       </ScrollView>
 
+      <Modal visible={notificationsVisible} transparent animationType="slide" onRequestClose={() => setNotificationsVisible(false)}>
+        <View style={styles.notificationOverlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setNotificationsVisible(false)} accessibilityLabel="Close notifications popup" />
+          <View style={styles.notificationSheet}>
+            <View style={styles.sheetHandle} />
+            <View style={styles.sheetHeader}>
+              <View><Text style={styles.sheetTitle}>Notifications</Text><Text style={styles.sheetSubtitle}>{unreadCount ? `${unreadCount} unread update${unreadCount === 1 ? '' : 's'}` : 'You’re all caught up'}</Text></View>
+              {unreadCount ? <Pressable onPress={() => markAllRead()} style={styles.sheetMarkAll}><Text style={styles.sheetMarkAllText}>Mark all read</Text></Pressable> : null}
+            </View>
+
+            <View style={styles.popupList}>
+              {notifications.length ? notifications.slice(0, 5).map((item) => {
+                const tone = notificationVisual[item.type];
+                const read = isRead(item.id);
+                return (
+                  <Pressable key={item.id} onPress={() => openNotification(item)} style={({ pressed }) => [styles.popupItem, !read && styles.popupItemUnread, pressed && styles.popupItemPressed]}>
+                    <View style={[styles.popupIcon, { backgroundColor: tone.soft }]}><Ionicons name={tone.icon} size={19} color={tone.tint} /></View>
+                    <View style={styles.popupBody}>
+                      <View style={styles.popupTitleRow}><Text style={[styles.popupTitle, !read && styles.popupTitleUnread]} numberOfLines={1}>{item.title}</Text>{!read ? <View style={styles.popupUnreadDot} /> : null}</View>
+                      <Text style={styles.popupText} numberOfLines={2}>{item.body}</Text>
+                      <Text style={styles.popupDate}>{item.date}</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={16} color={colors.muted} />
+                  </Pressable>
+                );
+              }) : <View style={styles.popupEmpty}><Ionicons name="notifications-off-outline" size={28} color={colors.muted} /><Text style={styles.popupEmptyText}>No notifications yet</Text></View>}
+            </View>
+
+            <Pressable onPress={() => { setNotificationsVisible(false); navigation.navigate('Notifications'); }} style={styles.viewAllButton}>
+              <Text style={styles.viewAllText}>View all notifications</Text><Ionicons name="arrow-forward" size={17} color={colors.primary} />
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
       <Modal visible={Boolean(feedback && feedbackVisible)} transparent animationType="fade" onRequestClose={closeFeedback}>
         <View style={styles.modalBackdrop}>
           <View style={styles.feedbackCard}>
@@ -325,6 +376,30 @@ const styles = StyleSheet.create({
   quoteIcon: { marginTop: spacing.lg },
   mentorText: { color: colors.inkSoft, fontSize: 14, lineHeight: 22, fontWeight: '600', marginTop: spacing.sm },
   mentorDate: { color: colors.muted, fontSize: 10, marginTop: spacing.md },
+  notificationOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(9,20,43,0.48)' },
+  notificationSheet: { maxHeight: '78%', backgroundColor: 'rgba(248,250,255,0.98)', borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xxl, borderWidth: 1, borderColor: 'rgba(255,255,255,0.95)' },
+  sheetHandle: { width: 42, height: 4, borderRadius: 2, backgroundColor: '#CBD3E1', alignSelf: 'center', marginBottom: spacing.lg },
+  sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, marginBottom: spacing.lg },
+  sheetTitle: { color: colors.ink, fontSize: 21, fontWeight: '900', letterSpacing: -0.4 },
+  sheetSubtitle: { color: colors.muted, fontSize: 10, marginTop: 3 },
+  sheetMarkAll: { backgroundColor: colors.primarySoft, borderRadius: radius.pill, paddingHorizontal: 11, paddingVertical: 8 },
+  sheetMarkAllText: { color: colors.primary, fontSize: 9, fontWeight: '900' },
+  popupList: { gap: spacing.sm },
+  popupItem: { minHeight: 68, flexDirection: 'row', alignItems: 'center', gap: spacing.md, borderRadius: radius.md, padding: spacing.sm, borderWidth: 1, borderColor: 'transparent' },
+  popupItemUnread: { backgroundColor: '#FFFFFF', borderColor: '#DCE4FA' },
+  popupItemPressed: { opacity: 0.72, transform: [{ scale: 0.995 }] },
+  popupIcon: { width: 42, height: 42, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  popupBody: { flex: 1 },
+  popupTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  popupTitle: { flex: 1, color: colors.inkSoft, fontSize: 11, fontWeight: '700' },
+  popupTitleUnread: { color: colors.ink, fontWeight: '900' },
+  popupUnreadDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.primary },
+  popupText: { color: colors.muted, fontSize: 9, lineHeight: 13, marginTop: 3 },
+  popupDate: { color: colors.muted, fontSize: 7, fontWeight: '700', marginTop: 4 },
+  popupEmpty: { alignItems: 'center', justifyContent: 'center', paddingVertical: spacing.xxxl, gap: spacing.sm },
+  popupEmptyText: { color: colors.muted, fontSize: 11 },
+  viewAllButton: { minHeight: 48, marginTop: spacing.lg, borderRadius: radius.md, backgroundColor: colors.primarySoft, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
+  viewAllText: { color: colors.primary, fontSize: 12, fontWeight: '900' },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(10,25,49,0.55)', justifyContent: 'center', padding: spacing.xl },
   feedbackCard: { backgroundColor: colors.surface, borderRadius: radius.xl, padding: spacing.xxl },
   feedbackIcon: { width: 54, height: 54, borderRadius: 18, backgroundColor: colors.primarySoft, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.lg },
