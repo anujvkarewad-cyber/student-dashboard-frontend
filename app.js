@@ -167,39 +167,30 @@ const APP_VERSION = "2.1.7";
 
     // load core data in small parallel batches — full parallel (7 at once)
     // overloads Apps Script, full sequential is too slow. Batches of ~3 balance both.
-    const [stats, log, lb] = await Promise.all([
-      safeFetch(() => api.getStats(studentId), {}),
-      safeFetch(() => api.getStudyLog(studentId), []),
-      safeFetch(() => api.getLeaderboard(), []),
-    ]);
-    state.stats = stats;
-    state.log = log;
-    state.leaderboard = lb;
-    $("#topbar-streak").textContent = stats.streak ?? 0;
+    state.stats = await safeFetch(() => api.getStats(studentId), {});
+$("#topbar-streak").textContent = state.stats.streak ?? 0;
 
-    const [reports, announcements] = await Promise.all([
-      safeFetch(() => api.getWeeklyReports(studentId), []),
-      safeFetch(() => api.getAnnouncements(), []),
-    ]);
-    state.reports = reports;
-    state.announcements = announcements;
+// Dashboard turant dikhao
+const initial = (location.hash || "#dashboard").slice(1);
+navigate(VIEW_TITLES[initial] ? initial : "dashboard");
 
-    const [notes, studyNotes] = await Promise.all([
-      safeFetch(() => api.getStudentMentorNotes(studentId), []),
-      safeFetch(() => api.getNotes(studentId), []),
-    ]);
-    state.mentorNotes = notes;
-    state.studyNotes = studyNotes;
+// Baaki data background mein load karo
+state.log          = await safeFetch(() => api.getStudyLog(studentId), []);
+state.leaderboard  = await safeFetch(() => api.getLeaderboard(), []);
+state.reports      = await safeFetch(() => api.getWeeklyReports(studentId), []);
+state.announcements= await safeFetch(() => api.getAnnouncements(), []);
+state.mentorNotes  = await safeFetch(() => api.getStudentMentorNotes(studentId), []);
+state.studyNotes   = await safeFetch(() => api.getNotes(studentId), []);
 
-    // route — do this once, after data is loaded
-    const initial = (location.hash || "#dashboard").slice(1);
-    navigate(VIEW_TITLES[initial] ? initial : "dashboard");
+const feedbacks = await safeFetch(() => api.getMentorFeedback(studentId), []);
+if (Array.isArray(feedbacks) && feedbacks.length > 0) {
+  showMentorFeedback(feedbacks[0]);
+}
 
-    // mentor feedback popup (non-blocking, after route)
-    const feedbacks = await safeFetch(() => api.getMentorFeedback(studentId), []);
-    if (Array.isArray(feedbacks) && feedbacks.length > 0) {
-      showMentorFeedback(feedbacks[0]);
-    }
+// Stats load hone ke baad dashboard refresh karo
+if ((location.hash || "#dashboard").slice(1) === "dashboard") {
+  navigate("dashboard");
+}
 
     // notifications: seed baseline (don't toast for stuff that already existed) + start polling
     seedNotifBaseline();
