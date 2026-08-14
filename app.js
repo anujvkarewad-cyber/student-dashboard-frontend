@@ -198,15 +198,25 @@ if ((location.hash || "#dashboard").slice(1) === "dashboard") {
     if (window.UMP_PUSH) window.UMP_PUSH.requestAndSaveToken(studentId);
 
     if (!state._notifPollStarted) {
-      state._notifPollStarted = true;
-      setInterval(() => {
-        if (!state.student) return;
-        checkForNewNotifications();
-        checkStreakReminder();
-      }, 300000); // every 5 min — lighter on Apps Script
+  state._notifPollStarted = true;
 
-      setInterval(() => { state.notifConsecutiveFailures = 0; }, 300000);
-    }
+  // Pehla check - 30 sec baad
+  setTimeout(() => {
+    if (!state.student) return;
+    checkForNewNotifications();
+  }, 30000);
+
+  // Har 2 min baad
+  setInterval(() => {
+    if (!state.student) return;
+    checkForNewNotifications();
+    checkStreakReminder();
+  }, 120000); // 2 minutes
+
+  setInterval(() => { 
+    state.notifConsecutiveFailures = 0; 
+  }, 300000);
+}
   }
 
   // =======================================
@@ -1856,7 +1866,7 @@ if ((location.hash || "#dashboard").slice(1) === "dashboard") {
       const k = annKey(a);
       if (!state.notifSeen.announcements.has(k)) {
         state.notifSeen.announcements.add(k);
-        pushNotif("fa-bullhorn", a.title || "New announcement", a.message || "");
+        pushNotif("fa-bullhorn", a.title || "New announcement", a.body || a.message || "");
       }
     });
 
