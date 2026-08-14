@@ -41,7 +41,15 @@
           "configureAndroidBackup": true
         }
       ],
-      "expo-document-picker"
+      "expo-document-picker",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow Ujjwal Pathak Mentorship to use your location only for local weather and adaptive dashboard themes.",
+          "isAndroidBackgroundLocationEnabled": false,
+          "isAndroidForegroundServiceEnabled": false
+        }
+      ]
     ]
   }
 }

@@ -20,6 +20,11 @@ A separate React Native + Expo Android client for the existing student dashboard
 - Subject-wise notes/study material
 - Profile, password update and logout
 - Cached dashboard data plus pull-to-refresh
+- Time-aware hero with opt-in local weather, adaptive colors and glass surfaces
+
+## Location and weather privacy
+
+The dashboard requests foreground location only while the app is in use. Coordinates are sent directly from the device to the key-free Open-Meteo forecast API and are never sent to the mentorship backend. Precise coordinates are not persisted; only the latest weather summary and broad city/region label are cached for 30 minutes. If permission is denied or weather is unavailable, the UI falls back to a fully functional local-time theme.
 
 ## Run safely
 

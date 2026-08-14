@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { BlurView } from 'expo-blur';
 import React from 'react';
 import { ActivityIndicator, Image, StyleSheet, Text, View } from 'react-native';
 import { useAuth } from '../context/AuthContext';
@@ -39,6 +40,7 @@ const MainTabs = () => (
       tabBarInactiveTintColor: '#8290A5',
       tabBarLabelStyle: styles.tabLabel,
       tabBarStyle: styles.tabBar,
+      tabBarBackground: () => <BlurView intensity={85} tint="light" style={StyleSheet.absoluteFill} />,
       tabBarItemStyle: styles.tabItem,
       tabBarIcon: ({ focused, color }) => (
         <View style={[styles.tabIcon, focused && styles.tabIconActive]}>
@@ -104,7 +106,7 @@ export const AppNavigator = () => {
 };
 
 const styles = StyleSheet.create({
-  tabBar: { position: 'absolute', height: 73, paddingTop: 7, paddingBottom: 8, marginHorizontal: 12, marginBottom: 10, borderTopWidth: 0, borderRadius: radius.lg, backgroundColor: colors.surface, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 7 }, shadowOpacity: 0.14, shadowRadius: 16, elevation: 9 },
+  tabBar: { position: 'absolute', height: 73, paddingTop: 7, paddingBottom: 8, marginHorizontal: 12, marginBottom: 10, borderTopWidth: 0, borderWidth: 1, borderColor: 'rgba(255,255,255,0.92)', borderRadius: radius.lg, backgroundColor: 'rgba(255,255,255,0.74)', overflow: 'hidden', shadowColor: colors.shadow, shadowOffset: { width: 0, height: 7 }, shadowOpacity: 0.14, shadowRadius: 16, elevation: 9 },
   tabItem: { paddingVertical: 1 },
   tabLabel: { fontSize: 9, fontWeight: '800', marginTop: 1 },
   tabIcon: { width: 38, height: 31, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },

@@ -117,10 +117,10 @@ export const Chip = ({ label, selected, onPress }: { label: string; selected: bo
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: colors.surface,
+    backgroundColor: 'rgba(255,255,255,0.84)',
     borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: 'rgba(255,255,255,0.94)',
     padding: spacing.lg,
     ...shadow,
   },
