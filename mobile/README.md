@@ -18,8 +18,9 @@ A separate React Native + Expo Android client for the existing student dashboard
 - Leaderboard and personal rank summary
 - Weekly reports
 - Subject-wise notes/study material with protected in-app Drive preview
-- YPT-style Focus Room timer with subject selection, pause/resume, daily totals and local history
-- In-app notification center with unread badge, filters and read state
+- YPT-style Focus Room timer with subject selection, session targets, pause/resume, daily totals and local history
+- Study Receipts with closed-book self-recall, recall-effort score and 24-hour memory checks
+- In-app notification center with unread badge, memory-review reminders, filters and read state
 - Profile, password update and logout
 - Cached dashboard data plus pull-to-refresh
 - Time-aware hero with opt-in local weather, adaptive colors and glass surfaces
@@ -31,6 +32,8 @@ Notes open inside the app through the Google Drive `/preview` surface. The app d
 ## Focus timer privacy
 
 Focus sessions and active timer state are stored locally per student on the device. The timer survives navigation, pause/resume and app restarts by using timestamps, and the screen remains awake while a session runs. It does not write timer data to Apps Script or Google Sheets in this version.
+
+On session completion, the app creates three closed-book recall prompts from the student's subject and declared target. The resulting Study Receipt clearly labels its score as **recall effort**, not academic correctness. A 24-hour self-reported memory check is scheduled locally and appears in the notification center when due. Source-grounded AI grading remains disabled until a secure server-side AI endpoint and mentor-approved PDF sources are configured; no AI secret is shipped in the APK.
 
 ## Location and weather privacy
 

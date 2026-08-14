@@ -2,9 +2,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useAuth } from './AuthContext';
 import { useData } from './DataContext';
+import { useStudyReceipts } from './StudyReceiptContext';
 
-export type NotificationType = 'announcement' | 'mentor' | 'material' | 'report' | 'feedback';
-export type NotificationTarget = 'home' | 'notes' | 'reports';
+export type NotificationType = 'announcement' | 'mentor' | 'material' | 'report' | 'feedback' | 'memory';
+export type NotificationTarget = 'home' | 'notes' | 'reports' | 'receipt';
 
 export type AppNotification = {
   id: string;
@@ -13,6 +14,7 @@ export type AppNotification = {
   body: string;
   date: string;
   target: NotificationTarget;
+  sessionId?: string;
   order: number;
 };
 
@@ -32,6 +34,7 @@ const stable = (value: unknown) => String(value || '').trim().replace(/\s+/g, ' 
 export const NotificationsProvider = ({ children }: PropsWithChildren) => {
   const { student } = useAuth();
   const { data } = useData();
+  const { dueReceipts } = useStudyReceipts();
   const [readIds, setReadIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -52,6 +55,16 @@ export const NotificationsProvider = ({ children }: PropsWithChildren) => {
     const items: AppNotification[] = [];
     let order = 10_000;
 
+    dueReceipts.forEach((item) => items.push({
+      id: `memory:${item.id}`,
+      type: 'memory',
+      title: '24-hour memory check due',
+      body: `${item.subject} · ${item.target}`,
+      date: 'Due now',
+      target: 'receipt',
+      sessionId: item.sessionId,
+      order: order--,
+    }));
     data.feedback.forEach((item) => items.push({
       id: `feedback:${item.id}`,
       type: 'feedback',
@@ -99,7 +112,7 @@ export const NotificationsProvider = ({ children }: PropsWithChildren) => {
     }));
 
     return items.sort((a, b) => b.order - a.order).slice(0, 50);
-  }, [data.announcements, data.feedback, data.mentorNotes, data.reports, data.studyNotes]);
+  }, [data.announcements, data.feedback, data.mentorNotes, data.reports, data.studyNotes, dueReceipts]);
 
   const persist = useCallback(async (next: Set<string>) => {
     setReadIds(next);

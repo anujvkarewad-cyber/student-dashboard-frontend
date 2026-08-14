@@ -19,6 +19,7 @@ import { NotePreviewScreen } from '../screens/NotePreviewScreen';
 import { NoteSubjectScreen } from '../screens/NoteSubjectScreen';
 import { ProfileScreen } from '../screens/ProfileScreen';
 import { ReportsScreen } from '../screens/ReportsScreen';
+import { StudyReceiptScreen } from '../screens/StudyReceiptScreen';
 import { TrackerScreen } from '../screens/TrackerScreen';
 import { colors, radius } from '../theme';
 import type { MainTabParamList, RootStackParamList } from './types';
@@ -97,6 +98,7 @@ export const AppNavigator = () => {
           <>
             <RootStack.Screen name="Main" component={MainTabs} options={{ headerShown: false }} />
             <RootStack.Screen name="Notifications" component={NotificationsScreen} options={{ title: 'Notifications' }} />
+            <RootStack.Screen name="StudyReceipt" component={StudyReceiptScreen} options={{ title: 'Study Receipt' }} />
             <RootStack.Screen name="Reports" component={ReportsScreen} options={{ title: 'Weekly reports' }} />
             <RootStack.Screen name="Leaderboard" component={LeaderboardScreen} options={{ title: 'Leaderboard' }} />
             <RootStack.Screen name="AddStudyLog" component={AddStudyLogScreen} options={{ title: 'Log study hours', presentation: 'modal', animation: 'slide_from_bottom' }} />

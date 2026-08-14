@@ -13,6 +13,7 @@ export type RootStackParamList = {
   ForgotPassword: undefined;
   Main: NavigatorScreenParams<MainTabParamList> | undefined;
   Notifications: undefined;
+  StudyReceipt: { sessionId: string };
   Reports: undefined;
   Leaderboard: undefined;
   AddStudyLog: undefined;

@@ -18,6 +18,7 @@ const typeStyle: Record<NotificationType, { icon: keyof typeof Ionicons.glyphMap
   material: { icon: 'document-text', tint: colors.red, soft: colors.redSoft },
   report: { icon: 'analytics', tint: colors.teal, soft: colors.tealSoft },
   feedback: { icon: 'mail-unread', tint: '#B36A16', soft: colors.amberSoft },
+  memory: { icon: 'refresh-circle', tint: colors.purple, soft: colors.purpleSoft },
 };
 
 export const NotificationsScreen = ({ navigation }: Props) => {
@@ -28,7 +29,8 @@ export const NotificationsScreen = ({ navigation }: Props) => {
 
   const open = async (item: AppNotification) => {
     await markRead(item.id);
-    if (item.target === 'reports') navigation.navigate('Reports');
+    if (item.target === 'receipt' && item.sessionId) navigation.navigate('StudyReceipt', { sessionId: item.sessionId });
+    else if (item.target === 'reports') navigation.navigate('Reports');
     else if (item.target === 'notes') navigation.navigate('Main', { screen: 'Notes' });
     else navigation.navigate('Main', { screen: 'Home' });
   };

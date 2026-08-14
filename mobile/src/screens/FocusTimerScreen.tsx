@@ -1,13 +1,15 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useMemo } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Circle } from 'react-native-svg';
 import { Card, Chip, EmptyState, SectionHeader } from '../components/ui';
 import { useFocusTimer } from '../context/FocusTimerContext';
+import { useStudyReceipts } from '../context/StudyReceiptContext';
 import { colors, radius, spacing } from '../theme';
 
 const subjects = ['Accounts', 'Law', 'Taxation', 'Costing', 'Audit', 'FM', 'SM', 'Revision', 'Mock Test'];
@@ -42,7 +44,9 @@ const TimerAction = ({ icon, label, onPress, tone = 'primary' }: { icon: keyof t
 );
 
 export const FocusTimerScreen = () => {
-  const { hydrated, status, subject, elapsedSeconds, sessions, setSubject, start, pause, resume, finish, discard, removeSession } = useFocusTimer();
+  const navigation = useNavigation<any>();
+  const { hydrated, status, subject, target, elapsedSeconds, sessions, setSubject, setTarget, start, pause, resume, finish, discard, removeSession } = useFocusTimer();
+  const { receiptForSession, dueReceipts } = useStudyReceipts();
 
   const todaySessions = useMemo(() => sessions.filter((session) => isToday(session.endedAt)), [sessions]);
   const completedToday = todaySessions.reduce((total, session) => total + session.durationSeconds, 0);
@@ -58,6 +62,10 @@ export const FocusTimerScreen = () => {
   };
 
   const startTimer = async () => {
+    if (!target.trim()) {
+      Alert.alert('Set a session target', 'Write exactly what you plan to understand or complete before starting the timer.');
+      return;
+    }
     tap();
     await start();
   };
@@ -82,7 +90,7 @@ export const FocusTimerScreen = () => {
         onPress: async () => {
           tap(Haptics.ImpactFeedbackStyle.Heavy);
           const session = await finish();
-          if (session) Alert.alert('Session complete ✨', `${formatCompact(session.durationSeconds)} focused on ${session.subject}.`);
+          if (session) navigation.navigate('StudyReceipt', { sessionId: session.id });
         },
       },
     ],
@@ -129,6 +137,7 @@ export const FocusTimerScreen = () => {
             </Svg>
             <View style={styles.timerCenter}>
               <View style={styles.subjectPill}><Ionicons name="book" size={13} color="#C9D6FF" /><Text style={styles.activeSubject}>{subject}</Text></View>
+              {target ? <Text style={styles.activeTarget} numberOfLines={2}>{target}</Text> : null}
               <Text style={styles.timerText}>{formatTimer(elapsedSeconds)}</Text>
               <Text style={styles.timerHint}>{status === 'running' ? 'Stay focused — screen will remain awake' : status === 'paused' ? 'Session paused' : 'Ready when you are'}</Text>
             </View>
@@ -149,8 +158,27 @@ export const FocusTimerScreen = () => {
         <SectionHeader title="Choose subject" />
         <Card style={styles.subjectCard}>
           <View style={styles.chips}>{subjects.map((item) => <Chip key={item} label={item} selected={subject === item} onPress={() => setSubject(item)} />)}</View>
-          {status !== 'idle' ? <Text style={styles.lockedHint}><Ionicons name="lock-closed" size={11} /> Subject is locked while a session is active.</Text> : null}
+          <View style={styles.targetDivider} />
+          <Text style={styles.targetLabel}>SESSION TARGET</Text>
+          <TextInput
+            value={target}
+            onChangeText={setTarget}
+            editable={status === 'idle'}
+            placeholder="e.g. Understand AS 16 and solve 20 questions"
+            placeholderTextColor={colors.muted}
+            maxLength={140}
+            style={[styles.targetInput, status !== 'idle' && styles.targetInputLocked]}
+          />
+          {status !== 'idle' ? <Text style={styles.lockedHint}><Ionicons name="lock-closed" size={11} /> Subject and target are locked while a session is active.</Text> : <Text style={styles.targetHelp}>Your target becomes the source prompt for the Study Receipt.</Text>}
         </Card>
+
+        {dueReceipts.length ? (
+          <Pressable onPress={() => navigation.navigate('StudyReceipt', { sessionId: dueReceipts[0].sessionId })} style={styles.memoryDue}>
+            <View style={styles.memoryDueIcon}><Ionicons name="alarm" size={21} color={colors.purple} /></View>
+            <View style={{ flex: 1 }}><Text style={styles.memoryDueTitle}>{dueReceipts.length} memory check{dueReceipts.length === 1 ? '' : 's'} due</Text><Text style={styles.memoryDueText}>Test what you still remember after 24 hours.</Text></View>
+            <Ionicons name="chevron-forward" size={18} color={colors.primary} />
+          </Pressable>
+        ) : null}
 
         <SectionHeader title="Today's focus" />
         <Card style={styles.goalCard}>
@@ -169,19 +197,30 @@ export const FocusTimerScreen = () => {
         </Card>
 
         <SectionHeader title="Recent focus sessions" />
-        {sessions.length ? sessions.slice(0, 10).map((session) => (
-          <Card key={session.id} style={styles.sessionCard}>
-            <View style={styles.sessionIcon}><Ionicons name="checkmark-done" size={20} color={colors.success} /></View>
-            <View style={styles.sessionBody}>
-              <Text style={styles.sessionSubject}>{session.subject}</Text>
-              <Text style={styles.sessionDate}>{new Date(session.endedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} · {new Date(session.startedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</Text>
-            </View>
-            <Text style={styles.sessionDuration}>{formatCompact(session.durationSeconds)}</Text>
-            <Pressable hitSlop={12} onPress={() => Alert.alert('Remove session?', 'This only removes the local focus record.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Remove', style: 'destructive', onPress: () => removeSession(session.id) }])}>
-              <Ionicons name="trash-outline" size={17} color={colors.muted} />
-            </Pressable>
-          </Card>
-        )) : <Card><EmptyState icon="timer-outline" title="No focus sessions yet" message="Choose a subject and start your first distraction-free session." /></Card>}
+        {sessions.length ? sessions.slice(0, 10).map((session) => {
+          const receipt = receiptForSession(session.id);
+          return (
+            <Card key={session.id} style={styles.sessionCard}>
+              <View style={styles.sessionIcon}><Ionicons name="checkmark-done" size={20} color={colors.success} /></View>
+              <View style={styles.sessionBody}>
+                <Text style={styles.sessionSubject}>{session.subject}</Text>
+                {session.target ? <Text style={styles.sessionTarget} numberOfLines={1}>{session.target}</Text> : null}
+                <Text style={styles.sessionDate}>{new Date(session.endedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} · {new Date(session.startedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</Text>
+              </View>
+              <View style={styles.sessionRight}>
+                <Text style={styles.sessionDuration}>{formatCompact(session.durationSeconds)}</Text>
+                <View style={styles.sessionActions}>
+                  <Pressable onPress={() => navigation.navigate('StudyReceipt', { sessionId: session.id })} style={[styles.receiptButton, receipt && styles.receiptButtonDone]}>
+                    <Ionicons name={receipt ? 'receipt' : 'receipt-outline'} size={16} color={receipt ? colors.success : colors.primary} />
+                  </Pressable>
+                  <Pressable hitSlop={10} onPress={() => Alert.alert('Remove session?', 'This only removes the local focus record.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Remove', style: 'destructive', onPress: () => removeSession(session.id) }])}>
+                    <Ionicons name="trash-outline" size={16} color={colors.muted} />
+                  </Pressable>
+                </View>
+              </View>
+            </Card>
+          );
+        }) : <Card><EmptyState icon="timer-outline" title="No focus sessions yet" message="Choose a subject and start your first distraction-free session." /></Card>}
 
         <View style={styles.privacyNote}><Ionicons name="phone-portrait-outline" size={18} color={colors.primary} /><Text style={styles.privacyText}>Timer history stays on this device for now and does not write to the mentorship backend.</Text></View>
       </ScrollView>
@@ -210,6 +249,7 @@ const styles = StyleSheet.create({
   timerCenter: { alignItems: 'center' },
   subjectPill: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(9,23,53,0.28)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: radius.pill },
   activeSubject: { color: '#FFFFFF', fontSize: 10, fontWeight: '800' },
+  activeTarget: { color: 'rgba(255,255,255,0.68)', fontSize: 9, lineHeight: 13, textAlign: 'center', maxWidth: 185, marginTop: spacing.sm },
   timerText: { color: '#FFFFFF', fontSize: 40, fontWeight: '900', letterSpacing: 1.5, marginTop: spacing.md, fontVariant: ['tabular-nums'] },
   timerHint: { color: 'rgba(255,255,255,0.62)', fontSize: 9, marginTop: 6 },
   actionsGlass: { alignSelf: 'stretch', minHeight: 66, borderRadius: 20, overflow: 'hidden', backgroundColor: 'rgba(8,18,44,0.2)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)', padding: spacing.sm, flexDirection: 'row', gap: spacing.sm },
@@ -224,7 +264,16 @@ const styles = StyleSheet.create({
   discardText: { color: 'rgba(255,255,255,0.6)', fontSize: 10, fontWeight: '700', textDecorationLine: 'underline' },
   subjectCard: { marginBottom: spacing.xxl, shadowOpacity: 0.04 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  targetDivider: { height: 1, backgroundColor: colors.border, marginVertical: spacing.lg },
+  targetLabel: { color: colors.primary, fontSize: 8, fontWeight: '900', letterSpacing: 1 },
+  targetInput: { minHeight: 49, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: '#FFFFFF', color: colors.ink, fontSize: 12, paddingHorizontal: spacing.md, marginTop: spacing.sm },
+  targetInputLocked: { backgroundColor: colors.canvas, color: colors.muted },
+  targetHelp: { color: colors.muted, fontSize: 8, marginTop: spacing.sm },
   lockedHint: { color: colors.muted, fontSize: 9, marginTop: spacing.md },
+  memoryDue: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, backgroundColor: colors.purpleSoft, borderWidth: 1, borderColor: '#DED4FF', borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.xxl },
+  memoryDueIcon: { width: 42, height: 42, borderRadius: 13, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
+  memoryDueTitle: { color: colors.ink, fontSize: 12, fontWeight: '900' },
+  memoryDueText: { color: colors.muted, fontSize: 9, marginTop: 3 },
   goalCard: { marginBottom: spacing.xxl, shadowOpacity: 0.04 },
   goalTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   goalValue: { color: colors.ink, fontSize: 25, fontWeight: '900' },
@@ -242,8 +291,13 @@ const styles = StyleSheet.create({
   sessionIcon: { width: 40, height: 40, borderRadius: 13, backgroundColor: colors.tealSoft, alignItems: 'center', justifyContent: 'center' },
   sessionBody: { flex: 1 },
   sessionSubject: { color: colors.ink, fontSize: 13, fontWeight: '900' },
-  sessionDate: { color: colors.muted, fontSize: 9, marginTop: 3 },
-  sessionDuration: { color: colors.primary, fontSize: 12, fontWeight: '900' },
+  sessionTarget: { color: colors.inkSoft, fontSize: 9, marginTop: 2 },
+  sessionDate: { color: colors.muted, fontSize: 8, marginTop: 3 },
+  sessionRight: { alignItems: 'flex-end', gap: 7 },
+  sessionDuration: { color: colors.primary, fontSize: 11, fontWeight: '900' },
+  sessionActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  receiptButton: { width: 29, height: 29, borderRadius: 9, backgroundColor: colors.primarySoft, alignItems: 'center', justifyContent: 'center' },
+  receiptButtonDone: { backgroundColor: colors.tealSoft },
   privacyNote: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.lg, backgroundColor: colors.primarySoft, borderRadius: radius.md, padding: spacing.md },
   privacyText: { flex: 1, color: colors.inkSoft, fontSize: 9, lineHeight: 14 },
 });

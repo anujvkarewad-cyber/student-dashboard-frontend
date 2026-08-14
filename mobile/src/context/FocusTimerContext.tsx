@@ -8,6 +8,7 @@ export type FocusStatus = 'idle' | 'running' | 'paused';
 export type FocusSession = {
   id: string;
   subject: string;
+  target?: string;
   startedAt: number;
   endedAt: number;
   durationSeconds: number;
@@ -16,6 +17,7 @@ export type FocusSession = {
 type FocusTimerState = {
   status: FocusStatus;
   subject: string;
+  target: string;
   startedAt: number | null;
   sessionStartedAt: number | null;
   elapsedBeforeRun: number;
@@ -25,9 +27,11 @@ type FocusTimerValue = {
   hydrated: boolean;
   status: FocusStatus;
   subject: string;
+  target: string;
   elapsedSeconds: number;
   sessions: FocusSession[];
   setSubject: (subject: string) => void;
+  setTarget: (target: string) => void;
   start: () => Promise<void>;
   pause: () => Promise<void>;
   resume: () => Promise<void>;
@@ -39,6 +43,7 @@ type FocusTimerValue = {
 const idleTimer: FocusTimerState = {
   status: 'idle',
   subject: 'Accounts',
+  target: '',
   startedAt: null,
   sessionStartedAt: null,
   elapsedBeforeRun: 0,
@@ -86,7 +91,7 @@ export const FocusTimerProvider = ({ children }: PropsWithChildren) => {
     ]).then(([savedTimer, savedSessions]) => {
       if (!mounted) return;
       try {
-        setTimer(savedTimer ? JSON.parse(savedTimer) as FocusTimerState : idleTimer);
+        setTimer(savedTimer ? { ...idleTimer, ...(JSON.parse(savedTimer) as FocusTimerState) } : idleTimer);
         setSessions(savedSessions ? JSON.parse(savedSessions) as FocusSession[] : []);
       } catch {
         setTimer(idleTimer);
@@ -115,12 +120,18 @@ export const FocusTimerProvider = ({ children }: PropsWithChildren) => {
     saveTimer({ ...timer, subject }).catch(() => undefined);
   }, [saveTimer, timer]);
 
+  const setTarget = useCallback((target: string) => {
+    if (timer.status !== 'idle') return;
+    saveTimer({ ...timer, target }).catch(() => undefined);
+  }, [saveTimer, timer]);
+
   const start = useCallback(async () => {
-    if (timer.status !== 'idle' || !timer.subject) return;
+    if (timer.status !== 'idle' || !timer.subject || !timer.target.trim()) return;
     const now = Date.now();
     await saveTimer({
       status: 'running',
       subject: timer.subject,
+      target: timer.target.trim(),
       startedAt: now,
       sessionStartedAt: now,
       elapsedBeforeRun: 0,
@@ -149,6 +160,7 @@ export const FocusTimerProvider = ({ children }: PropsWithChildren) => {
     const completed: FocusSession = {
       id: `${now}-${Math.random().toString(36).slice(2, 8)}`,
       subject: timer.subject,
+      target: timer.target.trim(),
       startedAt: timer.sessionStartedAt || now,
       endedAt: now,
       durationSeconds,
@@ -175,16 +187,18 @@ export const FocusTimerProvider = ({ children }: PropsWithChildren) => {
     hydrated,
     status: timer.status,
     subject: timer.subject,
+    target: timer.target,
     elapsedSeconds: elapsedFor(timer, clock),
     sessions,
     setSubject,
+    setTarget,
     start,
     pause,
     resume,
     finish,
     discard,
     removeSession,
-  }), [clock, discard, finish, hydrated, pause, removeSession, resume, sessions, setSubject, start, timer]);
+  }), [clock, discard, finish, hydrated, pause, removeSession, resume, sessions, setSubject, setTarget, start, timer]);
 
   return <FocusTimerContext.Provider value={value}>{children}</FocusTimerContext.Provider>;
 };
