@@ -22,6 +22,7 @@ import { useData } from '../context/DataContext';
 import { AppNotification, NotificationType, useNotifications } from '../context/NotificationsContext';
 import { useWeatherTheme } from '../hooks/useWeatherTheme';
 import { colors, radius, spacing } from '../theme';
+import { groupsForStudent } from '../utils/caGroups';
 
 const format = (value?: number, suffix = '') => value == null || Number.isNaN(Number(value)) ? '—' : `${Number(value).toFixed(1).replace('.0', '')}${suffix}`;
 
@@ -55,7 +56,12 @@ export const DashboardScreen = () => {
   const navigation = useNavigation<any>();
   const { student } = useAuth();
   const { data, loading, refreshing, error, refreshAll, dismissFeedback } = useData();
-  const { todayAttempt: dailyMcq, streak: mcqStreak } = useDailyMcq();
+  const { todayAttempts: dailyMcqAttempts, streakForGroup } = useDailyMcq();
+  const mcqGroups = groupsForStudent(student?.group);
+  const completedMcqGroups = mcqGroups.filter((group) => dailyMcqAttempts.find((attempt) => attempt.group === group)?.completedAt).length;
+  const activeMcq = dailyMcqAttempts.find((attempt) => mcqGroups.includes(attempt.group) && !attempt.completedAt);
+  const allMcqComplete = completedMcqGroups === mcqGroups.length;
+  const mcqStreak = Math.max(...mcqGroups.map((group) => streakForGroup(group)), 0);
   const { notifications, unreadCount, isRead, markRead, markAllRead } = useNotifications();
   const { weather, theme, loading: weatherLoading, weatherError, refreshWeather, isLive } = useWeatherTheme();
   const [feedbackVisible, setFeedbackVisible] = useState(true);
@@ -80,7 +86,7 @@ export const DashboardScreen = () => {
     await markRead(item.id);
     setNotificationsVisible(false);
     if (item.target === 'receipt' && item.sessionId) navigation.navigate('StudyReceipt', { sessionId: item.sessionId });
-    else if (item.target === 'mcq') navigation.navigate('DailyMcq');
+    else if (item.target === 'mcq') navigation.navigate('DailyMcq', item.group ? { group: item.group } : undefined);
     else if (item.target === 'reports') navigation.navigate('Reports');
     else if (item.target === 'notes') navigation.navigate('Notes');
   };
@@ -185,23 +191,23 @@ export const DashboardScreen = () => {
           <Metric icon="analytics-outline" label="Daily average" value={format(stats.averageHours, 'h')} tint={colors.amber} soft={colors.amberSoft} />
         </View>
 
-        <Pressable onPress={() => navigation.navigate('DailyMcq')} style={({ pressed }) => [styles.dailyChallenge, Boolean(dailyMcq?.completedAt) && styles.dailyChallengeDone, pressed && styles.dailyChallengePressed]}>
+        <Pressable onPress={() => navigation.navigate('DailyMcq')} style={({ pressed }) => [styles.dailyChallenge, allMcqComplete && styles.dailyChallengeDone, pressed && styles.dailyChallengePressed]}>
           <View style={styles.dailyAccent} />
-          <View style={[styles.dailyChallengeIcon, Boolean(dailyMcq?.completedAt) && styles.dailyChallengeIconDone]}>
-            <Ionicons name={dailyMcq?.completedAt ? 'checkmark-done' : 'help-circle'} size={25} color={dailyMcq?.completedAt ? colors.success : colors.primary} />
+          <View style={[styles.dailyChallengeIcon, allMcqComplete && styles.dailyChallengeIconDone]}>
+            <Ionicons name={allMcqComplete ? 'checkmark-done' : 'help-circle'} size={25} color={allMcqComplete ? colors.success : colors.primary} />
           </View>
           <View style={styles.dailyChallengeBody}>
             <View style={styles.dailyChallengeTop}>
-              <Text style={styles.dailyChallengeEyebrow}>DAILY MCQ</Text>
-              <View style={[styles.dailyStatus, Boolean(dailyMcq?.completedAt) && styles.dailyStatusDone]}><Text style={[styles.dailyStatusText, Boolean(dailyMcq?.completedAt) && styles.dailyStatusTextDone]}>{dailyMcq?.completedAt ? 'DONE' : dailyMcq ? 'IN PROGRESS' : 'READY'}</Text></View>
+              <Text style={styles.dailyChallengeEyebrow}>GROUP-WISE DAILY MCQ</Text>
+              <View style={[styles.dailyStatus, allMcqComplete && styles.dailyStatusDone]}><Text style={[styles.dailyStatusText, allMcqComplete && styles.dailyStatusTextDone]}>{allMcqComplete ? 'DONE' : activeMcq ? 'IN PROGRESS' : 'READY'}</Text></View>
             </View>
-            <Text style={styles.dailyChallengeTitle}>{dailyMcq?.completedAt ? `${dailyMcq.score}/${dailyMcq.total} correct today` : dailyMcq ? 'Continue today’s challenge' : 'Your daily challenge is ready'}</Text>
+            <Text style={styles.dailyChallengeTitle}>{allMcqComplete ? 'Both group challenges completed' : activeMcq ? `Continue ${activeMcq.group} challenge` : 'Group I & Group II challenges are ready'}</Text>
             <View style={styles.dailyMetaRow}>
-              <View style={styles.dailyMeta}><Ionicons name="help-circle-outline" size={12} color={colors.primary} /><Text style={styles.dailyMetaText}>{dailyMcq ? `${Object.keys(dailyMcq.answers).length}/10 answered` : '10 questions'}</Text></View>
+              <View style={styles.dailyMeta}><Ionicons name="layers-outline" size={12} color={colors.primary} /><Text style={styles.dailyMetaText}>{completedMcqGroups}/{mcqGroups.length} groups done</Text></View>
               <View style={styles.dailyMeta}><Ionicons name="flame-outline" size={12} color={colors.amber} /><Text style={styles.dailyMetaText}>{mcqStreak} day streak</Text></View>
             </View>
           </View>
-          <View style={[styles.dailyArrow, Boolean(dailyMcq?.completedAt) && styles.dailyArrowDone]}><Ionicons name="arrow-forward" size={18} color={dailyMcq?.completedAt ? colors.success : colors.primary} /></View>
+          <View style={[styles.dailyArrow, allMcqComplete && styles.dailyArrowDone]}><Ionicons name="arrow-forward" size={18} color={allMcqComplete ? colors.success : colors.primary} /></View>
         </Pressable>
 
         <SectionHeader title="Quick actions" />

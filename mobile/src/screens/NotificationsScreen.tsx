@@ -31,7 +31,7 @@ export const NotificationsScreen = ({ navigation }: Props) => {
   const open = async (item: AppNotification) => {
     await markRead(item.id);
     if (item.target === 'receipt' && item.sessionId) navigation.navigate('StudyReceipt', { sessionId: item.sessionId });
-    else if (item.target === 'mcq') navigation.navigate('DailyMcq');
+    else if (item.target === 'mcq') navigation.navigate('DailyMcq', item.group ? { group: item.group } : undefined);
     else if (item.target === 'reports') navigation.navigate('Reports');
     else if (item.target === 'notes') navigation.navigate('Main', { screen: 'Notes' });
     else navigation.navigate('Main', { screen: 'Home' });

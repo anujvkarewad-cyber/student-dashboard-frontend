@@ -1,4 +1,5 @@
 import type { NavigatorScreenParams } from '@react-navigation/native';
+import type { CaGroup } from '../utils/caGroups';
 
 export type MainTabParamList = {
   Home: undefined;
@@ -14,7 +15,7 @@ export type RootStackParamList = {
   Main: NavigatorScreenParams<MainTabParamList> | undefined;
   Notifications: undefined;
   StudyReceipt: { sessionId: string };
-  DailyMcq: undefined;
+  DailyMcq: { group?: CaGroup } | undefined;
   Reports: undefined;
   Leaderboard: undefined;
   AddStudyLog: undefined;

@@ -6,9 +6,11 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Card, PrimaryButton, SectionHeader } from '../components/ui';
+import { useAuth } from '../context/AuthContext';
 import { useDailyMcq } from '../context/DailyMcqContext';
 import type { RootStackParamList } from '../navigation/types';
 import { colors, radius, spacing } from '../theme';
+import { CaGroup, caGroupDetails, groupsForStudent } from '../utils/caGroups';
 
 const QUIZ_SECONDS = 10 * 60;
 const letters = ['A', 'B', 'C', 'D'];
@@ -23,12 +25,18 @@ const formatDuration = (seconds?: number) => {
   return minutes ? `${minutes}m ${secs}s` : `${secs}s`;
 };
 
-export const DailyMcqScreen = ({ navigation }: Props) => {
-  const { hydrated, todayAttempt, todayQuestions, history, streak, startDaily, answerQuestion, submitDaily } = useDailyMcq();
+export const DailyMcqScreen = ({ navigation, route }: Props) => {
+  const { student } = useAuth();
+  const { hydrated, todayAttempts, history, attemptForGroup, questionsForGroup, streakForGroup, startDaily, answerQuestion, submitDaily } = useDailyMcq();
+  const allowedGroups = useMemo(() => groupsForStudent(student?.group), [student?.group]);
+  const [selectedGroup, setSelectedGroup] = useState<CaGroup>(route.params?.group && allowedGroups.includes(route.params.group) ? route.params.group : allowedGroups[0]);
   const [index, setIndex] = useState(0);
   const [clock, setClock] = useState(Date.now());
   const [starting, setStarting] = useState(false);
   const autoSubmitted = useRef(false);
+  const todayAttempt = attemptForGroup(selectedGroup);
+  const todayQuestions = questionsForGroup(selectedGroup);
+  const streak = streakForGroup(selectedGroup);
 
   const active = todayAttempt && !todayAttempt.completedAt;
   const elapsed = active ? Math.max(0, Math.floor((clock - todayAttempt.startedAt) / 1000)) : 0;
@@ -36,6 +44,16 @@ export const DailyMcqScreen = ({ navigation }: Props) => {
   const answered = todayAttempt ? Object.keys(todayAttempt.answers).length : 0;
   const question = todayQuestions[index];
   const percentage = todayAttempt?.completedAt && todayAttempt.total ? Math.round(((todayAttempt.score || 0) / todayAttempt.total) * 100) : 0;
+
+  useEffect(() => {
+    if (route.params?.group && allowedGroups.includes(route.params.group)) setSelectedGroup(route.params.group);
+  }, [allowedGroups, route.params?.group]);
+
+  useEffect(() => {
+    setIndex(0);
+    setClock(Date.now());
+    autoSubmitted.current = false;
+  }, [selectedGroup]);
 
   useEffect(() => {
     if (!active) return;
@@ -46,24 +64,51 @@ export const DailyMcqScreen = ({ navigation }: Props) => {
   useEffect(() => {
     if (!active || timeLeft > 0 || autoSubmitted.current) return;
     autoSubmitted.current = true;
-    submitDaily().then(() => Alert.alert('Time is up', 'Your answered questions have been submitted.'));
-  }, [active, submitDaily, timeLeft]);
+    submitDaily(selectedGroup).then(() => Alert.alert('Time is up', `Your ${selectedGroup} answered questions have been submitted.`));
+  }, [active, selectedGroup, submitDaily, timeLeft]);
 
   const subjectMix = useMemo(() => [...new Set(todayQuestions.map((item) => item.subject))], [todayQuestions]);
 
   const start = async () => {
     setStarting(true);
     try {
-      await startDaily();
+      await startDaily(selectedGroup);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
+    } catch (error) {
+      Alert.alert('Another attempt is active', error instanceof Error ? error.message : 'Finish the active group attempt first.');
     } finally { setStarting(false); }
   };
 
   const select = async (option: number) => {
     if (!question) return;
     Haptics.selectionAsync().catch(() => undefined);
-    await answerQuestion(question.id, option);
+    await answerQuestion(selectedGroup, question.id, option);
   };
+
+  const selectGroup = (group: CaGroup) => {
+    if (active && group !== selectedGroup) {
+      Alert.alert('Finish current attempt first', `Your ${selectedGroup} timer is running.`);
+      return;
+    }
+    setSelectedGroup(group);
+  };
+
+  const groupSelector = (
+    <View style={styles.groupSelector}>
+      {allowedGroups.map((group) => {
+        const details = caGroupDetails[group];
+        const attempt = attemptForGroup(group);
+        const selected = selectedGroup === group;
+        return (
+          <Pressable key={group} onPress={() => selectGroup(group)} style={[styles.groupCard, selected && { backgroundColor: details.soft, borderColor: details.color }]}>
+            <View style={[styles.groupBadge, selected && { backgroundColor: details.color }]}><Text style={[styles.groupBadgeText, selected && { color: '#FFFFFF' }]}>{details.short}</Text></View>
+            <View style={{ flex: 1 }}><Text style={[styles.groupName, selected && { color: details.color }]}>{group}</Text><Text style={styles.groupStatus}>{attempt?.completedAt ? `${attempt.score}/${attempt.total} done` : attempt ? `${Object.keys(attempt.answers).length}/10 answered` : 'Ready today'}</Text></View>
+            {attempt?.completedAt ? <Ionicons name="checkmark-circle" size={18} color={colors.success} /> : null}
+          </Pressable>
+        );
+      })}
+    </View>
+  );
 
   const confirmSubmit = () => {
     const unanswered = todayQuestions.length - answered;
@@ -72,7 +117,7 @@ export const DailyMcqScreen = ({ navigation }: Props) => {
       unanswered ? `${unanswered} question${unanswered === 1 ? ' is' : 's are'} still unanswered.` : 'You have answered all questions.',
       [
         { text: 'Review', style: 'cancel' },
-        { text: 'Submit', onPress: () => submitDaily() },
+        { text: 'Submit', onPress: () => submitDaily(selectedGroup) },
       ],
     );
   };
@@ -83,11 +128,13 @@ export const DailyMcqScreen = ({ navigation }: Props) => {
     return (
       <SafeAreaView style={styles.safe} edges={['bottom']}>
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-          <LinearGradient colors={['#162E61', '#3459CD', '#7256D7']} style={styles.hero}>
+          <Text style={styles.selectLabel}>CHOOSE YOUR GROUP</Text>
+          {groupSelector}
+          <LinearGradient colors={selectedGroup === 'Group I' ? ['#162E61', '#3459CD', '#5575DF'] : ['#33275F', '#6545AE', '#8662CF']} style={styles.hero}>
             <View style={styles.heroGlow} />
             <View style={styles.calendar}><Text style={styles.calendarDay}>{new Date().getDate()}</Text><Text style={styles.calendarMonth}>{new Date().toLocaleDateString('en-IN', { month: 'short' }).toUpperCase()}</Text></View>
-            <Text style={styles.eyebrow}>DAILY KNOWLEDGE CHECK</Text>
-            <Text style={styles.title}>10 questions.{`\n`}One focused attempt.</Text>
+            <Text style={styles.eyebrow}>{selectedGroup.toUpperCase()} · DAILY KNOWLEDGE CHECK</Text>
+            <Text style={styles.title}>10 {selectedGroup} questions.{`\n`}One focused attempt.</Text>
             <Text style={styles.subtitle}>Build recall consistency with a fresh mixed-subject challenge every day.</Text>
             <View style={styles.heroStats}>
               <View style={styles.heroStat}><Text style={styles.heroStatValue}>10</Text><Text style={styles.heroStatLabel}>QUESTIONS</Text></View>
@@ -115,7 +162,7 @@ export const DailyMcqScreen = ({ navigation }: Props) => {
           </Card>
 
           <PrimaryButton label="Start today's MCQ" icon="play" loading={starting} onPress={start} />
-          {history.filter((item) => item.completedAt).length ? <Text style={styles.historyHint}>{history.filter((item) => item.completedAt).length} previous daily challenge{history.filter((item) => item.completedAt).length === 1 ? '' : 's'} stored on this device.</Text> : null}
+          {history.filter((item) => item.group === selectedGroup && item.completedAt).length ? <Text style={styles.historyHint}>{history.filter((item) => item.group === selectedGroup && item.completedAt).length} previous {selectedGroup} challenge{history.filter((item) => item.group === selectedGroup && item.completedAt).length === 1 ? '' : 's'} stored on this device.</Text> : null}
         </ScrollView>
       </SafeAreaView>
     );
@@ -125,9 +172,11 @@ export const DailyMcqScreen = ({ navigation }: Props) => {
     return (
       <SafeAreaView style={styles.safe} edges={['bottom']}>
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          <Text style={styles.selectLabel}>GROUP CHALLENGES</Text>
+          {groupSelector}
           <LinearGradient colors={percentage >= 70 ? ['#126B61', '#1A9B86'] : ['#344867', '#536B8E']} style={styles.resultHero}>
             <View style={styles.resultIcon}><Ionicons name={percentage >= 70 ? 'trophy' : 'flag'} size={29} color={percentage >= 70 ? colors.amber : colors.primary} /></View>
-            <Text style={styles.resultEyebrow}>TODAY'S RESULT</Text>
+            <Text style={styles.resultEyebrow}>{selectedGroup.toUpperCase()} · TODAY'S RESULT</Text>
             <Text style={styles.resultScore}>{percentage}%</Text>
             <Text style={styles.resultText}>{todayAttempt.score}/{todayAttempt.total} correct · {formatDuration(todayAttempt.durationSeconds)}</Text>
             <View style={styles.resultStreak}><Ionicons name="flame" size={17} color="#FFD36D" /><Text style={styles.resultStreakText}>{streak} day MCQ streak</Text></View>
@@ -159,7 +208,7 @@ export const DailyMcqScreen = ({ navigation }: Props) => {
     <SafeAreaView style={styles.safe} edges={['bottom']}>
       <ScrollView contentContainerStyle={styles.quizContent} showsVerticalScrollIndicator={false}>
         <View style={styles.quizHeader}>
-          <View><Text style={styles.quizEyebrow}>DAILY MCQ · {question?.subject}</Text><Text style={styles.quizPosition}>Question {index + 1} of {todayQuestions.length}</Text></View>
+          <View><Text style={styles.quizEyebrow}>{selectedGroup.toUpperCase()} · {question?.subject}</Text><Text style={styles.quizPosition}>Question {index + 1} of {todayQuestions.length}</Text></View>
           <View style={[styles.clock, timeLeft <= 60 && styles.clockWarning]}><Ionicons name="timer-outline" size={17} color={timeLeft <= 60 ? colors.red : colors.primary} /><Text style={[styles.clockText, timeLeft <= 60 && { color: colors.red }]}>{formatClock(timeLeft)}</Text></View>
         </View>
         <View style={styles.progress}><View style={[styles.progressFill, { width: `${((index + 1) / todayQuestions.length) * 100}%` }]} /></View>
@@ -200,6 +249,13 @@ const styles = StyleSheet.create({
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.canvas, gap: spacing.md },
   loadingText: { color: colors.muted, fontSize: 11 },
   content: { padding: spacing.lg, paddingBottom: 50 },
+  selectLabel: { color: colors.muted, fontSize: 8, fontWeight: '900', letterSpacing: 1, marginBottom: spacing.sm },
+  groupSelector: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.lg },
+  groupCard: { flex: 1, minHeight: 67, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderRadius: radius.lg, borderWidth: 1.5, borderColor: colors.border, backgroundColor: '#FFFFFF', padding: spacing.sm },
+  groupBadge: { width: 33, height: 33, borderRadius: 11, backgroundColor: colors.canvas, alignItems: 'center', justifyContent: 'center' },
+  groupBadgeText: { color: colors.inkSoft, fontSize: 9, fontWeight: '900' },
+  groupName: { color: colors.ink, fontSize: 10, fontWeight: '900' },
+  groupStatus: { color: colors.muted, fontSize: 7, marginTop: 3 },
   hero: { borderRadius: radius.xl, padding: spacing.xl, overflow: 'hidden', marginBottom: spacing.lg },
   heroGlow: { position: 'absolute', width: 230, height: 230, borderRadius: 115, backgroundColor: 'rgba(255,255,255,0.08)', right: -70, top: -80 },
   calendar: { width: 58, height: 61, borderRadius: 18, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', marginBottom: spacing.lg },

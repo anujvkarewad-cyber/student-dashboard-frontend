@@ -1,10 +1,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { dailyMcqBank, DailyMcqQuestion } from '../data/dailyMcqBank';
+import { CaGroup, subjectGroup } from '../utils/caGroups';
 import { useAuth } from './AuthContext';
 
 export type DailyMcqAttempt = {
   date: string;
+  group: CaGroup;
   questionIds: string[];
   answers: Record<string, number>;
   startedAt: number;
@@ -17,13 +19,14 @@ export type DailyMcqAttempt = {
 type DailyMcqValue = {
   hydrated: boolean;
   dateKey: string;
-  todayAttempt?: DailyMcqAttempt;
-  todayQuestions: DailyMcqQuestion[];
+  todayAttempts: DailyMcqAttempt[];
   history: DailyMcqAttempt[];
-  streak: number;
-  startDaily: () => Promise<DailyMcqAttempt>;
-  answerQuestion: (questionId: string, option: number) => Promise<void>;
-  submitDaily: () => Promise<DailyMcqAttempt | null>;
+  attemptForGroup: (group: CaGroup) => DailyMcqAttempt | undefined;
+  questionsForGroup: (group: CaGroup) => DailyMcqQuestion[];
+  streakForGroup: (group: CaGroup) => number;
+  startDaily: (group: CaGroup) => Promise<DailyMcqAttempt>;
+  answerQuestion: (group: CaGroup, questionId: string, option: number) => Promise<void>;
+  submitDaily: (group: CaGroup) => Promise<DailyMcqAttempt | null>;
 };
 
 const DailyMcqContext = createContext<DailyMcqValue | undefined>(undefined);
@@ -54,17 +57,18 @@ const seededRandom = (seedValue: number) => {
   };
 };
 
-const dailyQuestionIds = (date: string, studentId: string) => {
-  const random = seededRandom(hash(`${date}:${studentId}`));
-  return [...dailyMcqBank]
+const dailyQuestionIds = (date: string, studentId: string, group: CaGroup) => {
+  const random = seededRandom(hash(`${date}:${studentId}:${group}`));
+  return dailyMcqBank
+    .filter((question) => subjectGroup(question.subject) === group)
     .map((question) => ({ question, sort: random() }))
     .sort((a, b) => a.sort - b.sort)
     .slice(0, 10)
     .map(({ question }) => question.id);
 };
 
-const calculateStreak = (attempts: DailyMcqAttempt[]) => {
-  const completed = new Set(attempts.filter((attempt) => attempt.completedAt).map((attempt) => attempt.date));
+const calculateStreak = (attempts: DailyMcqAttempt[], group: CaGroup) => {
+  const completed = new Set(attempts.filter((attempt) => attempt.group === group && attempt.completedAt).map((attempt) => attempt.date));
   const cursor = new Date();
   if (!completed.has(localDateKey(cursor))) cursor.setDate(cursor.getDate() - 1);
   let streak = 0;
@@ -80,7 +84,7 @@ export const DailyMcqProvider = ({ children }: PropsWithChildren) => {
   const [history, setHistory] = useState<DailyMcqAttempt[]>([]);
   const [hydrated, setHydrated] = useState(false);
   const dateKey = localDateKey();
-  const todayAttempt = history.find((attempt) => attempt.date === dateKey);
+  const todayAttempts = history.filter((attempt) => attempt.date === dateKey && (attempt.group === 'Group I' || attempt.group === 'Group II'));
 
   useEffect(() => {
     let mounted = true;
@@ -100,16 +104,27 @@ export const DailyMcqProvider = ({ children }: PropsWithChildren) => {
 
   const persist = useCallback(async (next: DailyMcqAttempt[]) => {
     setHistory(next);
-    if (student) await AsyncStorage.setItem(storageKey(student.studentId), JSON.stringify(next.slice(0, 90)));
+    if (student) await AsyncStorage.setItem(storageKey(student.studentId), JSON.stringify(next.slice(0, 180)));
   }, [student]);
 
-  const startDaily = useCallback(async () => {
+  const attemptForGroup = useCallback((group: CaGroup) => history.find((attempt) => attempt.date === dateKey && attempt.group === group), [dateKey, history]);
+
+  const questionsForGroup = useCallback((group: CaGroup) => {
+    const attempt = attemptForGroup(group);
+    const ids = attempt?.questionIds || dailyQuestionIds(dateKey, student?.studentId || 'demo', group);
+    return ids.map((id) => dailyMcqBank.find((question) => question.id === id)).filter(Boolean) as DailyMcqQuestion[];
+  }, [attemptForGroup, dateKey, student?.studentId]);
+
+  const startDaily = useCallback(async (group: CaGroup) => {
     if (!student) throw new Error('Please sign in again.');
-    const existing = history.find((attempt) => attempt.date === dateKey);
+    const existing = history.find((attempt) => attempt.date === dateKey && attempt.group === group);
     if (existing) return existing;
+    const runningOtherGroup = history.find((attempt) => attempt.date === dateKey && attempt.group !== group && !attempt.completedAt);
+    if (runningOtherGroup) throw new Error(`Finish the ${runningOtherGroup.group} attempt before starting ${group}.`);
     const attempt: DailyMcqAttempt = {
       date: dateKey,
-      questionIds: dailyQuestionIds(dateKey, student.studentId),
+      group,
+      questionIds: dailyQuestionIds(dateKey, student.studentId, group),
       answers: {},
       startedAt: Date.now(),
     };
@@ -117,15 +132,15 @@ export const DailyMcqProvider = ({ children }: PropsWithChildren) => {
     return attempt;
   }, [dateKey, history, persist, student]);
 
-  const answerQuestion = useCallback(async (questionId: string, option: number) => {
-    const current = history.find((attempt) => attempt.date === dateKey);
+  const answerQuestion = useCallback(async (group: CaGroup, questionId: string, option: number) => {
+    const current = history.find((attempt) => attempt.date === dateKey && attempt.group === group);
     if (!current || current.completedAt) return;
     const updated = { ...current, answers: { ...current.answers, [questionId]: option } };
-    await persist(history.map((attempt) => attempt.date === dateKey ? updated : attempt));
+    await persist(history.map((attempt) => attempt.date === dateKey && attempt.group === group ? updated : attempt));
   }, [dateKey, history, persist]);
 
-  const submitDaily = useCallback(async () => {
-    const current = history.find((attempt) => attempt.date === dateKey);
+  const submitDaily = useCallback(async (group: CaGroup) => {
+    const current = history.find((attempt) => attempt.date === dateKey && attempt.group === group);
     if (!current || current.completedAt) return current || null;
     const questions = current.questionIds.map((id) => dailyMcqBank.find((question) => question.id === id)).filter(Boolean) as DailyMcqQuestion[];
     const score = questions.reduce((total, question) => total + (current.answers[question.id] === question.answer ? 1 : 0), 0);
@@ -137,25 +152,22 @@ export const DailyMcqProvider = ({ children }: PropsWithChildren) => {
       total: questions.length,
       durationSeconds: Math.max(1, Math.floor((completedAt - current.startedAt) / 1000)),
     };
-    await persist(history.map((attempt) => attempt.date === dateKey ? updated : attempt));
+    await persist(history.map((attempt) => attempt.date === dateKey && attempt.group === group ? updated : attempt));
     return updated;
   }, [dateKey, history, persist]);
-
-  const todayQuestions = useMemo(() => (todayAttempt?.questionIds || dailyQuestionIds(dateKey, student?.studentId || 'demo'))
-    .map((id) => dailyMcqBank.find((question) => question.id === id))
-    .filter(Boolean) as DailyMcqQuestion[], [dateKey, student?.studentId, todayAttempt?.questionIds]);
 
   const value = useMemo<DailyMcqValue>(() => ({
     hydrated,
     dateKey,
-    todayAttempt,
-    todayQuestions,
+    todayAttempts,
     history,
-    streak: calculateStreak(history),
+    attemptForGroup,
+    questionsForGroup,
+    streakForGroup: (group) => calculateStreak(history, group),
     startDaily,
     answerQuestion,
     submitDaily,
-  }), [answerQuestion, dateKey, history, hydrated, startDaily, submitDaily, todayAttempt, todayQuestions]);
+  }), [answerQuestion, attemptForGroup, dateKey, history, hydrated, questionsForGroup, startDaily, submitDaily, todayAttempts]);
 
   return <DailyMcqContext.Provider value={value}>{children}</DailyMcqContext.Provider>;
 };

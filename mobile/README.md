@@ -17,10 +17,10 @@ A separate React Native + Expo Android client for the existing student dashboard
 - Daily tracker history and native study-log form with photo/PDF proof
 - Leaderboard and personal rank summary
 - Weekly reports
-- Subject-wise notes/study material with protected in-app Drive preview
+- Group I/Group II and subject-wise study material with protected in-app Drive preview
 - YPT-style Focus Room timer with subject selection, session targets, pause/resume, daily totals and local history
 - Study Receipts with closed-book self-recall, recall-effort score and 24-hour memory checks
-- Daily MCQ Challenge with 10 deterministic questions, timer, persistence, streak and explanation review
+- Separate Group I and Group II Daily MCQ Challenges with 10 deterministic questions each, timers, persistence, streaks and explanation review
 - In-app notification center with unread badge, MCQ/memory-review reminders, filters and read state
 - Profile, password update and logout
 - Cached dashboard data plus pull-to-refresh
@@ -38,7 +38,7 @@ On session completion, the app creates three closed-book recall prompts from the
 
 ## Daily MCQ content safety
 
-The preview APK includes a deterministic 10-question daily challenge selected from a local foundation-question bank. Attempts survive navigation/app restarts, auto-submit after 10 minutes, and store results locally with explanations and a daily streak. The bank is visibly labelled **demo draft** and must not be treated as mentor-approved exam preparation. Before the connected release, questions need mentor approval, syllabus/version metadata, source citations, and a managed question-bank API.
+The preview APK includes separate deterministic 10-question challenges for CA Intermediate Group I and Group II, selected from a local foundation-question bank. Each group has its own daily attempt, 10-minute timer, result and streak. Attempts survive navigation/app restarts and store explanations locally. The bank is visibly labelled **demo draft** and must not be treated as mentor-approved exam preparation. Before the connected release, questions need mentor approval, syllabus/version metadata, source citations, and a managed question-bank API.
 
 ## Location and weather privacy
 

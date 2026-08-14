@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { CaGroup, groupsForStudent } from '../utils/caGroups';
 import { useAuth } from './AuthContext';
 import { useDailyMcq } from './DailyMcqContext';
 import { useData } from './DataContext';
@@ -16,6 +17,7 @@ export type AppNotification = {
   date: string;
   target: NotificationTarget;
   sessionId?: string;
+  group?: CaGroup;
   order: number;
 };
 
@@ -35,7 +37,7 @@ const stable = (value: unknown) => String(value || '').trim().replace(/\s+/g, ' 
 export const NotificationsProvider = ({ children }: PropsWithChildren) => {
   const { student } = useAuth();
   const { data } = useData();
-  const { dateKey: dailyMcqDate, todayAttempt: dailyMcqAttempt } = useDailyMcq();
+  const { dateKey: dailyMcqDate, todayAttempts: dailyMcqAttempts } = useDailyMcq();
   const { dueReceipts } = useStudyReceipts();
   const [readIds, setReadIds] = useState<Set<string>>(new Set());
 
@@ -57,14 +59,19 @@ export const NotificationsProvider = ({ children }: PropsWithChildren) => {
     const items: AppNotification[] = [];
     let order = 10_000;
 
-    if (!dailyMcqAttempt?.completedAt) items.push({
-      id: `mcq:${dailyMcqDate}`,
-      type: 'mcq',
-      title: dailyMcqAttempt ? 'Continue today’s Daily MCQ' : 'Today’s Daily MCQ is ready',
-      body: dailyMcqAttempt ? `${Object.keys(dailyMcqAttempt.answers).length}/10 answered · finish before the day ends` : '10 mixed-subject questions · 10 minute challenge',
-      date: 'Today',
-      target: 'mcq',
-      order: order--,
+    groupsForStudent(student?.group).forEach((group) => {
+      const attempt = dailyMcqAttempts.find((item) => item.group === group);
+      if (attempt?.completedAt) return;
+      items.push({
+        id: `mcq:${dailyMcqDate}:${group}`,
+        type: 'mcq',
+        title: attempt ? `Continue ${group} Daily MCQ` : `${group} Daily MCQ is ready`,
+        body: attempt ? `${Object.keys(attempt.answers).length}/10 answered · finish before the day ends` : `10 ${group} questions · 10 minute challenge`,
+        date: 'Today',
+        target: 'mcq',
+        group,
+        order: order--,
+      });
     });
     dueReceipts.forEach((item) => items.push({
       id: `memory:${item.id}`,
@@ -123,7 +130,7 @@ export const NotificationsProvider = ({ children }: PropsWithChildren) => {
     }));
 
     return items.sort((a, b) => b.order - a.order).slice(0, 50);
-  }, [dailyMcqAttempt, dailyMcqDate, data.announcements, data.feedback, data.mentorNotes, data.reports, data.studyNotes, dueReceipts]);
+  }, [dailyMcqAttempts, dailyMcqDate, data.announcements, data.feedback, data.mentorNotes, data.reports, data.studyNotes, dueReceipts, student?.group]);
 
   const persist = useCallback(async (next: Set<string>) => {
     setReadIds(next);
