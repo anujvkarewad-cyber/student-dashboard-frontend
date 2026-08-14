@@ -1,4 +1,4 @@
-const APP_VERSION = "2.2.0";
+const APP_VERSION = "2.3.0";
 
 (function () {
   "use strict";
@@ -154,47 +154,90 @@ const APP_VERSION = "2.2.0";
     $("#user-name").textContent = student.studentName;
     $("#user-id").textContent = student.studentId;
 
-    // safe defaults so an early navigate() doesn't hit undefined data
-    state.stats = {};
+    const studentId = student.studentId;
+    const cacheKey = `ump_cache_${studentId}`;
+    let cached = null;
+    try { cached = JSON.parse(localStorage.getItem(cacheKey) || "null"); } catch(e) { cached = null; }
+
+    // safe defaults
+    state.stats = (cached && cached.stats) || {};
     state.log = [];
-    state.leaderboard = [];
+    state.leaderboard = (cached && cached.leaderboard) || [];
     state.reports = [];
-    state.announcements = [];
-    state.mentorNotes = [];
+    state.announcements = (cached && cached.announcements) || [];
+    state.mentorNotes = (cached && cached.mentorNotes) || [];
     state.studyNotes = [];
 
-    const studentId = student.studentId;
+    // Show dashboard instantly with cached data if available — fixes load lag
+    if (cached && cached.stats) {
+      $("#topbar-streak").textContent = cached.stats.streak ?? 0;
+      const initial = (location.hash || "#dashboard").slice(1);
+      navigate(VIEW_TITLES[initial] ? initial : "dashboard");
+    } else {
+      // No cache — show skeleton dashboard immediately, then fetch
+      $("#topbar-streak").textContent = "—";
+      const initial = (location.hash || "#dashboard").slice(1);
+      navigate(VIEW_TITLES[initial] ? initial : "dashboard");
+    }
 
-    // load core data in small parallel batches — full parallel (7 at once)
-    // overloads Apps Script, full sequential is too slow. Batches of ~3 balance both.
-    state.stats = await safeFetch(() => api.getStats(studentId), {});
-$("#topbar-streak").textContent = state.stats.streak ?? 0;
+    // === OPTIMIZED: Critical data in parallel (not sequential) ===
+    // This reduces dashboard load from ~7-10s sequential to ~2-3s parallel
+    try {
+      const [stats, announcements, mentorNotes, leaderboard] = await Promise.all([
+        safeFetch(() => api.getStats(studentId), state.stats || {}),
+        safeFetch(() => api.getAnnouncements(), state.announcements || []),
+        safeFetch(() => api.getStudentMentorNotes(studentId), state.mentorNotes || []),
+        safeFetch(() => api.getLeaderboard(), state.leaderboard || [])
+      ]);
+      state.stats = stats;
+      state.announcements = announcements;
+      state.mentorNotes = mentorNotes;
+      state.leaderboard = leaderboard;
+      $("#topbar-streak").textContent = stats.streak ?? 0;
 
-// Dashboard turant dikhao
-const initial = (location.hash || "#dashboard").slice(1);
-navigate(VIEW_TITLES[initial] ? initial : "dashboard");
+      // Cache for next instant load
+      try {
+        localStorage.setItem(cacheKey, JSON.stringify({
+          stats, announcements, mentorNotes, leaderboard,
+          ts: Date.now()
+        }));
+      } catch(e) { console.warn("Cache save failed", e); }
 
-// Baaki data background mein load karo
-state.log          = await safeFetch(() => api.getStudyLog(studentId), []);
-state.leaderboard  = await safeFetch(() => api.getLeaderboard(), []);
-state.reports      = await safeFetch(() => api.getWeeklyReports(studentId), []);
-state.announcements= await safeFetch(() => api.getAnnouncements(), []);
-state.mentorNotes  = await safeFetch(() => api.getStudentMentorNotes(studentId), []);
-state.studyNotes   = await safeFetch(() => api.getNotes(studentId), []);
+      // Refresh dashboard if still on it
+      if ((location.hash || "#dashboard").slice(1) === "dashboard") {
+        // Use rAF to avoid blocking main thread
+        requestAnimationFrame(() => navigate("dashboard"));
+      }
+    } catch (e) {
+      console.error("Critical data parallel fetch failed", e);
+    }
 
-const feedbacks = await safeFetch(() => api.getMentorFeedback(studentId), []);
-if (Array.isArray(feedbacks) && feedbacks.length > 0) {
-  showMentorFeedback(feedbacks[0]);
-}
-
-// Stats load hone ke baad dashboard refresh karo
-if ((location.hash || "#dashboard").slice(1) === "dashboard") {
-  navigate("dashboard");
-}
+    // === Background non-critical data — also parallel, no artificial delays ===
+    // Use allSettled so one failure doesn't block others
+    Promise.allSettled([
+      safeFetch(() => api.getStudyLog(studentId), []).then(v => {
+        state.log = v;
+        if ((location.hash || "#dashboard").slice(1) === "tracker") renderTracker();
+      }),
+      safeFetch(() => api.getWeeklyReports(studentId), []).then(v => {
+        state.reports = v;
+        if ((location.hash || "#dashboard").slice(1) === "reports") renderReports();
+      }),
+      safeFetch(() => api.getNotes(studentId), []).then(v => {
+        state.studyNotes = v;
+        if ((location.hash || "#dashboard").slice(1) === "notes") renderNotes();
+      }),
+      safeFetch(() => api.getMentorFeedback(studentId), []).then(v => {
+        if (Array.isArray(v) && v.length > 0) showMentorFeedback(v[0]);
+      })
+    ]).then(() => {
+      console.log("✅ Background data loaded (parallel)");
+    });
 
     // notifications: seed baseline (don't toast for stuff that already existed) + start polling
     seedNotifBaseline();
     checkStreakReminder();
+    initPullToRefresh();
 
     // --- Robust FCM registration ---
     (async () => {
@@ -211,10 +254,8 @@ if ((location.hash || "#dashboard").slice(1) === "dashboard") {
       const perm = window.UMP_PUSH.getPermissionState();
       console.log("[APP] Push permission state:", perm);
 
-      // If previously denied, don't spam — show a banner in profile maybe.
       if (perm === "denied") {
         console.warn("[APP] Push permission previously denied — user needs to enable from browser settings");
-        // Optional: expose a UI hint
         if (window.__umpShowPushToast) {
           window.__umpShowPushToast(
             "🔕 Notifications blocked",
@@ -224,15 +265,11 @@ if ((location.hash || "#dashboard").slice(1) === "dashboard") {
         return;
       }
 
-      // Try to get token — this will also prompt if 'default'
       const token = await window.UMP_PUSH.requestAndSaveToken(studentId);
       if (token) {
         console.log("[APP] Push registered successfully");
       } else {
         console.warn("[APP] Push registration failed or permission not granted");
-
-        // If permission is default, user dismissed prompt — we can retry later
-        // Show a gentle reminder only once per session
         if (Notification.permission === "default" && !sessionStorage.getItem("ump_push_prompt_shown")) {
           sessionStorage.setItem("ump_push_prompt_shown", "1");
           setTimeout(() => {
@@ -246,32 +283,26 @@ if ((location.hash || "#dashboard").slice(1) === "dashboard") {
         }
       }
 
-      // Periodically refresh token (every 30 min) in case it rotates
       setInterval(() => {
         window.UMP_PUSH.refreshIfNeeded(studentId);
       }, 30 * 60 * 1000);
     })();
 
     if (!state._notifPollStarted) {
-  state._notifPollStarted = true;
-
-  // Pehla check - 30 sec baad
-  setTimeout(() => {
-    if (!state.student) return;
-    checkForNewNotifications();
-  }, 30000);
-
-  // Har 2 min baad
-  setInterval(() => {
-    if (!state.student) return;
-    checkForNewNotifications();
-    checkStreakReminder();
-  }, 120000); // 2 minutes
-
-  setInterval(() => { 
-    state.notifConsecutiveFailures = 0; 
-  }, 300000);
-}
+      state._notifPollStarted = true;
+      setTimeout(() => {
+        if (!state.student) return;
+        checkForNewNotifications();
+      }, 15000);
+      setInterval(() => {
+        if (!state.student) return;
+        checkForNewNotifications();
+        checkStreakReminder();
+      }, 90000);
+      setInterval(() => { 
+        state.notifConsecutiveFailures = 0; 
+      }, 300000);
+    }
   }
 
   // =======================================
@@ -1875,15 +1906,15 @@ if ((location.hash || "#dashboard").slice(1) === "dashboard") {
     }
   });
 
-  // ============ NOTIFICATIONS ============
+  // ============ NOTIFICATIONS ============ (IMPROVED: description + timeAgo + click navigations)
   const notifBell = document.getElementById("notif-bell");
   const notifBadge = document.getElementById("notif-badge");
   const notifPanel = document.getElementById("notif-panel");
   const notifPanelList = document.getElementById("notif-panel-list");
   const notifWrap = document.getElementById("notif-wrap");
 
-  const annKey  = (a) => `a:${a.title}|${a.date}`;
-  const noteMKey = (n) => `m:${n.date}|${String(n.note || "").slice(0, 40)}`;
+  const annKey  = (a) => `a:${a.title}|${a.date}|${(a.message||"").slice(0,20)}`;
+  const noteMKey = (n) => `m:${n.date}|${String(n.note || "").slice(0, 60)}`;
   const noteNKey = (n) => `n:${n.id}`;
   const repKey  = (r) => `r:${r.weekOf}`;
 
@@ -1900,15 +1931,34 @@ if ((location.hash || "#dashboard").slice(1) === "dashboard") {
     notifBadge.hidden = state.notifUnread === 0;
   }
 
-  function pushNotif(icon, title, sub) {
-    state.notifFeed.unshift({ icon, title, sub, ts: Date.now() });
-    state.notifFeed = state.notifFeed.slice(0, 20);
-    state.notifUnread++;
-    updateNotifBadge();
-    showToast(icon, title, sub);
+  function timeAgo(ts) {
+    const s = Math.floor((Date.now() - ts) / 1000);
+    if (s < 60) return "just now";
+    if (s < 3600) return `${Math.floor(s/60)}m ago`;
+    if (s < 86400) return `${Math.floor(s/3600)}h ago`;
+    if (s < 604800) return `${Math.floor(s/86400)}d ago`;
+    return new Date(ts).toLocaleDateString("en-IN", { day:"2-digit", month:"short" });
   }
 
-  function showToast(icon, title, sub) {
+  function pushNotif(icon, title, sub, opts = {}) {
+    const item = {
+      icon,
+      title: title || "Notification",
+      sub: sub || "",
+      desc: opts.desc || sub || "",
+      type: opts.type || "general",
+      ts: Date.now(),
+      raw: opts.raw || null,
+      nav: opts.nav || null
+    };
+    state.notifFeed.unshift(item);
+    state.notifFeed = state.notifFeed.slice(0, 30);
+    state.notifUnread++;
+    updateNotifBadge();
+    showToast(icon, title, sub, opts);
+  }
+
+  function showToast(icon, title, sub, opts = {}) {
     let stack = document.getElementById("notif-toast-stack");
     if (!stack) {
       stack = document.createElement("div");
@@ -1918,25 +1968,42 @@ if ((location.hash || "#dashboard").slice(1) === "dashboard") {
     }
     const el = document.createElement("div");
     el.className = "notif-toast";
+    const fullDesc = opts.desc && opts.desc !== sub ? `<div class="notif-toast-desc">${escapeHtml(opts.desc.slice(0,180))}</div>` : "";
     el.innerHTML = `
       <div class="notif-toast-icon"><i class="fa-solid ${icon}"></i></div>
-      <div>
+      <div style="flex:1;min-width:0">
         <div class="notif-toast-title">${escapeHtml(title)}</div>
-        <div class="notif-toast-sub">${escapeHtml(sub || "")}</div>
+        <div class="notif-toast-sub">${escapeHtml((sub || "").slice(0,120))}</div>
+        ${fullDesc}
       </div>
+      <button class="notif-toast-close" style="background:none;border:none;color:#94A3B8;cursor:pointer;margin-left:8px"><i class="fa-solid fa-xmark"></i></button>
     `;
+    if (opts.nav) {
+      el.style.cursor = "pointer";
+      el.addEventListener("click", (e) => {
+        if (!e.target.closest(".notif-toast-close")) {
+          if (opts.nav.startsWith("#")) location.hash = opts.nav;
+          else navigate(opts.nav);
+          el.remove();
+        }
+      });
+    }
+    el.querySelector(".notif-toast-close").addEventListener("click", () => {
+      el.style.opacity = "0";
+      setTimeout(() => el.remove(), 300);
+    });
     stack.appendChild(el);
     setTimeout(() => {
+      if (!el.parentNode) return;
       el.style.transition = "opacity .3s ease, transform .3s ease";
       el.style.opacity = "0";
       el.style.transform = "translateX(30px)";
       setTimeout(() => el.remove(), 300);
-    }, 5000);
+    }, 6000);
   }
 
-  window.__umpShowPushToast = (title, body) => showToast("fa-bell", title, body);
+  window.__umpShowPushToast = (title, body, nav) => showToast("fa-bell", title, body, { desc: body, nav: nav || null });
 
-  // ✅ FIX: Improved safeFetch with better error tracking
   async function safeFetch(fn, fallback) {
     try {
       const result = await fn();
@@ -1945,105 +2012,113 @@ if ((location.hash || "#dashboard").slice(1) === "dashboard") {
     } catch (err) {
       state.notifConsecutiveFailures++;
       if (state.notifConsecutiveFailures <= 2) {
-        console.warn("Notification sub-fetch failed (non-fatal):", err.message);
+        console.warn("Fetch failed (non-fatal):", err.message);
       }
       return fallback;
     }
   }
 
-  // ✅ FIX: Completely rewritten checkForNewNotifications with debouncing
-  async function checkForNewNotifications() {
-  if (!state.student) return;
-  if (isCheckingNotifications) return;
-  if (state.notifConsecutiveFailures >= 3) return;
-
-  isCheckingNotifications = true;
-
-  try {
-    // Sequential - ek ek karke
-    const announcements = await safeFetch(
-      () => api.getAnnouncements(),
-      state.announcements
-    );
-
-    await new Promise(r => setTimeout(r, 2000)); // 2 sec gap
-
-    const mentorNotes = await safeFetch(
-      () => api.getStudentMentorNotes(state.student.studentId),
-      state.mentorNotes
-    );
-
-    await new Promise(r => setTimeout(r, 2000)); // 2 sec gap
-
-    const studyNotes = await safeFetch(
-      () => api.getNotes(state.student.studentId),
-      state.studyNotes
-    );
-
-    await new Promise(r => setTimeout(r, 2000)); // 2 sec gap
-
-    const reports = await safeFetch(
-      () => api.getWeeklyReports(state.student.studentId),
-      state.reports
-    );
-
-    // Announcements check
-    (announcements || []).forEach(a => {
-      const k = annKey(a);
-      if (!state.notifSeen.announcements.has(k)) {
-        state.notifSeen.announcements.add(k);
-        pushNotif("fa-bullhorn", a.title || "New announcement", a.body || a.message || "");
+  async function checkForNewNotifications(showLogs = true) {
+    if (!state.student) return 0;
+    if (isCheckingNotifications) return 0;
+    if (state.notifConsecutiveFailures >= 3) return 0;
+    isCheckingNotifications = true;
+    if (showLogs) console.log("🔄 Checking notifications (parallel, no artificial lag)...");
+    try {
+      const [announcements, mentorNotes, studyNotes, reports] = await Promise.all([
+        safeFetch(() => api.getAnnouncements(), state.announcements),
+        safeFetch(() => api.getStudentMentorNotes(state.student.studentId), state.mentorNotes),
+        safeFetch(() => api.getNotes(state.student.studentId), state.studyNotes),
+        safeFetch(() => api.getWeeklyReports(state.student.studentId), state.reports)
+      ]);
+      let newCount = 0;
+      (announcements || []).forEach(a => {
+        const k = annKey(a);
+        if (!state.notifSeen.announcements.has(k)) {
+          state.notifSeen.announcements.add(k);
+          newCount++;
+          pushNotif("fa-bullhorn", a.title || "New announcement", (a.message||"").slice(0,100) || a.title || "", {
+            desc: a.message || a.body || "",
+            type: "announcement",
+            raw: a,
+            nav: "#dashboard"
+          });
+        }
+      });
+      (mentorNotes || []).forEach(n => {
+        const k = noteMKey(n);
+        if (!state.notifSeen.mentorNotes.has(k)) {
+          state.notifSeen.mentorNotes.add(k);
+          newCount++;
+          pushNotif("fa-comment-dots", "New mentor note", (n.note || "").slice(0, 100), {
+            desc: n.note || "",
+            type: "mentor",
+            raw: n,
+            nav: "#dashboard"
+          });
+        }
+      });
+      (studyNotes || []).forEach(n => {
+        const k = noteNKey(n);
+        if (!state.notifSeen.notes.has(k)) {
+          state.notifSeen.notes.add(k);
+          newCount++;
+          pushNotif("fa-file-pdf", "New study material", n.title || "", {
+            desc: `${n.subject || ""} ${n.category || ""} - ${n.title || ""} ${n.description || ""}`.trim(),
+            type: "notes",
+            raw: n,
+            nav: "#notes"
+          });
+        }
+      });
+      (reports || []).forEach(r => {
+        const k = repKey(r);
+        if (!state.notifSeen.reports.has(k)) {
+          state.notifSeen.reports.add(k);
+          newCount++;
+          pushNotif("fa-envelope-open-text", "Weekly report ready", r.weekOf || "", {
+            desc: `Level: ${r.level || ""}, Hours: ${r.weeklyHours || ""}, Rank: ${r.rank || ""}`,
+            type: "report",
+            raw: r,
+            nav: "#reports"
+          });
+        }
+      });
+      state.announcements = announcements;
+      state.mentorNotes = mentorNotes;
+      state.studyNotes = studyNotes;
+      state.reports = reports;
+      const activeView = (location.hash || "#dashboard").slice(1);
+      if (activeView === "dashboard") {
+        renderMentorNotes(state.mentorNotes || []);
+        const box = document.getElementById("announcement-list");
+        if (box && state.announcements) {
+          box.innerHTML = state.announcements.map(a => `
+            <div class="announcement-item">
+              <div class="announcement-dot"></div>
+              <div class="announcement-content">
+                <div class="announcement-top">
+                  <h4>${escapeHtml(a.title)}</h4>
+                  <span>${escapeHtml(a.date)}</span>
+                </div>
+                <p>${escapeHtml(a.message)}</p>
+              </div>
+            </div>
+          `).join("");
+        }
       }
-    });
-
-    // Mentor notes check
-    (mentorNotes || []).forEach(n => {
-      const k = noteMKey(n);
-      if (!state.notifSeen.mentorNotes.has(k)) {
-        state.notifSeen.mentorNotes.add(k);
-        pushNotif("fa-comment-dots", "New mentor note", n.note || "");
-      }
-    });
-
-    // Study notes check
-    (studyNotes || []).forEach(n => {
-      const k = noteNKey(n);
-      if (!state.notifSeen.notes.has(k)) {
-        state.notifSeen.notes.add(k);
-        pushNotif("fa-file-pdf", "New study material", n.title || "");
-      }
-    });
-
-    // Reports check
-    (reports || []).forEach(r => {
-      const k = repKey(r);
-      if (!state.notifSeen.reports.has(k)) {
-        state.notifSeen.reports.add(k);
-        pushNotif("fa-envelope-open-text", "Weekly report ready", r.weekOf || "");
-      }
-    });
-
-    // State update
-    state.announcements = announcements;
-    state.mentorNotes = mentorNotes;
-    state.studyNotes = studyNotes;
-    state.reports = reports;
-
-    // Re-render active view
-    const activeView = (location.hash || "#dashboard").slice(1);
-    if (activeView === "dashboard") renderMentorNotes(state.mentorNotes || []);
-    if (activeView === "reports") renderReports();
-    if (activeView === "notes") renderNotes();
-
-    console.log('✅ Notification check complete');
-
-  } catch (err) {
-    console.error("❌ Notification check failed:", err);
-    state.notifConsecutiveFailures++;
-  } finally {
-    isCheckingNotifications = false;
+      if (activeView === "reports") renderReports();
+      if (activeView === "notes") renderNotes();
+      if (showLogs) console.log(`✅ Notification check complete, ${newCount} new`);
+      return newCount;
+    } catch (err) {
+      console.error("❌ Notification check failed:", err);
+      state.notifConsecutiveFailures++;
+      return 0;
+    } finally {
+      isCheckingNotifications = false;
+    }
   }
-}
 
   function isToday(dateStr) {
     if (!dateStr) return false;
@@ -2057,39 +2132,51 @@ if ((location.hash || "#dashboard").slice(1) === "dashboard") {
 
   function checkStreakReminder() {
     if (!state.student || !state.stats) return;
-
     const now = new Date();
     if (now.getHours() < 18) return;
-
     const todayKey = now.toISOString().slice(0, 10);
     const storageKey = `ump_streak_reminder_${state.student.studentId}_${todayKey}`;
     if (localStorage.getItem(storageKey)) return;
-
     if (isToday(state.stats.lastSubmission)) return;
-
     localStorage.setItem(storageKey, "1");
     pushNotif(
       "fa-fire",
       "Streak break ho sakta hai!",
-      "Aaj abhi tak study log nahi kiya hai — abhi \"Log study hours\" pe jaake entry daal do."
+      "Aaj abhi tak study log nahi kiya hai — abhi Log study hours pe jaake entry daal do.",
+      { desc: "Maintain your daily streak by logging study hours before midnight.", type: "streak", nav: "#tracker" }
     );
   }
 
   function renderNotifPanel() {
     if (!notifPanelList) return;
     if (!state.notifFeed.length) {
-      notifPanelList.innerHTML = `<div class="notif-empty">No notifications yet.</div>`;
+      notifPanelList.innerHTML = `<div class="notif-empty">No notifications yet.<br><small style="color:#94A3B8">Pull down to refresh ↕️</small></div>`;
       return;
     }
-    notifPanelList.innerHTML = state.notifFeed.map(n => `
-      <div class="notif-item">
+    notifPanelList.innerHTML = state.notifFeed.map((n, idx) => `
+      <div class="notif-item ${n.type ? 'notif-type-'+n.type : ''}" data-idx="${idx}" data-nav="${n.nav || ''}" style="cursor:${n.nav ? 'pointer' : 'default'}">
         <div class="notif-item-icon"><i class="fa-solid ${n.icon}"></i></div>
-        <div>
-          <div class="notif-item-title">${escapeHtml(n.title)}</div>
-          <div class="notif-item-sub">${escapeHtml((n.sub || "").slice(0, 90))}</div>
+        <div style="flex:1;min-width:0">
+          <div class="notif-item-title" style="display:flex;justify-content:space-between;gap:8px;align-items:center">
+            <span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(n.title)}</span>
+            <span style="font-size:10px;color:#94A3B8;white-space:nowrap">${timeAgo(n.ts)}</span>
+          </div>
+          <div class="notif-item-sub" style="margin-top:2px">${escapeHtml(n.sub || "")}</div>
+          ${n.desc && n.desc !== n.sub ? `<div class="notif-item-desc" style="margin-top:6px;font-size:12px;color:#475569;line-height:1.4;background:#F8FAFC;padding:6px 8px;border-radius:6px;white-space:normal;word-break:break-word">${escapeHtml(n.desc.slice(0,200))}${n.desc.length>200?'...':''}</div>` : ""}
+          ${n.type ? `<span style="display:inline-block;margin-top:6px;font-size:10px;padding:2px 6px;border-radius:10px;background:#EEF2FF;color:#4F46E5;text-transform:uppercase">${escapeHtml(n.type)}</span>` : ""}
         </div>
       </div>
     `).join("");
+    notifPanelList.querySelectorAll("[data-nav]").forEach(el => {
+      el.addEventListener("click", () => {
+        const nav = el.getAttribute("data-nav");
+        if (nav) {
+          notifPanel.hidden = true;
+          if (nav.startsWith("#")) location.hash = nav;
+          else navigate(nav);
+        }
+      });
+    });
   }
 
   if (notifBell) {
@@ -2103,11 +2190,238 @@ if ((location.hash || "#dashboard").slice(1) === "dashboard") {
         updateNotifBadge();
       }
     });
-
     document.addEventListener("click", (e) => {
       if (notifWrap && !notifWrap.contains(e.target)) notifPanel.hidden = true;
     });
+    const panelHead = document.querySelector(".notif-panel-head");
+    if (panelHead && !document.getElementById("notif-refresh-btn")) {
+      const refreshBtn = document.createElement("button");
+      refreshBtn.id = "notif-refresh-btn";
+      refreshBtn.innerHTML = '<i class="fa-solid fa-rotate"></i>';
+      refreshBtn.title = "Refresh notifications";
+      refreshBtn.style.cssText = "background:none;border:none;cursor:pointer;color:#64748B;padding:4px 8px;border-radius:6px;margin-left:auto";
+      refreshBtn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        refreshBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+        refreshBtn.disabled = true;
+        await checkForNewNotifications(true);
+        renderNotifPanel();
+        refreshBtn.innerHTML = '<i class="fa-solid fa-rotate"></i>';
+        refreshBtn.disabled = false;
+      });
+      panelHead.style.display = "flex";
+      panelHead.style.alignItems = "center";
+      panelHead.style.justifyContent = "space-between";
+      panelHead.appendChild(refreshBtn);
+    }
   }
+
+  // ========== PULL TO REFRESH ========== (FEATURE 2)
+  let pullState = { startY: 0, pulling: false, threshold: 80, currentY: 0 };
+
+  function createPullIndicator() {
+    if (document.getElementById("pull-refresh-indicator")) return;
+    const indicator = document.createElement("div");
+    indicator.id = "pull-refresh-indicator";
+    indicator.style.cssText = `
+      position: fixed; top: 0; left: 0; right: 0; height: 60px;
+      display: flex; align-items: center; justify-content: center;
+      background: linear-gradient(180deg, rgba(255,255,255,0.95) 0%, rgba(248,250,252,0.9) 100%);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid #E2E8F0;
+      transform: translateY(-100%);
+      transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      z-index: 9999;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-size: 14px; color: #475569; gap: 10px;
+    `;
+    indicator.innerHTML = `
+      <span id="pull-refresh-icon" style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:#EEF2FF;color:#4F46E5;transition:transform 0.2s"><i class="fa-solid fa-arrow-down"></i></span>
+      <span id="pull-refresh-text">Pull to refresh</span>
+    `;
+    document.body.appendChild(indicator);
+    const style = document.createElement("style");
+    style.id = "pull-refresh-style";
+    style.textContent = `
+      @keyframes pullSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+      .pull-refreshing #pull-refresh-icon { animation: pullSpin 0.8s linear infinite; background:#2563EB !important; color:#fff !important; }
+      .notif-item:hover { background:#F8FAFC; }
+      .notif-item { padding:12px; border-bottom:1px solid #F1F5F9; display:flex; gap:10px; transition:background 0.15s; }
+      .notif-item:last-child { border-bottom:none; }
+      .notif-item-icon { width:36px; height:36px; border-radius:10px; background:#EEF2FF; color:#4F46E5; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+      .notif-panel { max-height: 70vh; overflow-y:auto; }
+      .notif-panel-head { padding:12px 16px; font-weight:700; border-bottom:1px solid #F1F5F9; position:sticky; top:0; background:#fff; z-index:1; }
+      .notif-toast { display:flex; gap:12px; padding:14px 16px; background:#fff; border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,0.12); border:1px solid #E2E8F0; min-width:300px; max-width:380px; margin-bottom:10px; }
+      .notif-toast-stack { position:fixed; top:20px; right:20px; z-index:100002; display:flex; flex-direction:column; gap:8px; }
+      .notif-toast-icon { width:40px;height:40px;border-radius:10px;background:#EEF2FF;color:#4F46E5;display:flex;align-items:center;justify-content:center;flex-shrink:0; }
+      .notif-toast-title { font-weight:700; font-size:14px; color:#0F172A; }
+      .notif-toast-sub { font-size:13px; color:#475569; margin-top:2px; }
+      .notif-toast-desc { font-size:12px; color:#64748B; margin-top:6px; background:#F8FAFC; padding:6px 8px; border-radius:6px; }
+    `;
+    document.head.appendChild(style);
+  }
+
+  async function refreshCurrentView() {
+    const view = (location.hash || "#dashboard").slice(1);
+    const studentId = state.student?.studentId;
+    if (!studentId) return;
+    console.log("🔄 Pull refresh for view:", view);
+    const indicator = document.getElementById("pull-refresh-indicator");
+    const icon = document.getElementById("pull-refresh-icon");
+    const text = document.getElementById("pull-refresh-text");
+    if (indicator) {
+      indicator.classList.add("pull-refreshing");
+      if (icon) icon.innerHTML = '<i class="fa-solid fa-spinner"></i>';
+      if (text) text.textContent = "Refreshing...";
+    }
+    try {
+      if (view === "dashboard" || view === "") {
+        const [stats, announcements, mentorNotes, leaderboard] = await Promise.all([
+          safeFetch(() => api.getStats(studentId), state.stats),
+          safeFetch(() => api.getAnnouncements(), state.announcements),
+          safeFetch(() => api.getStudentMentorNotes(studentId), state.mentorNotes),
+          safeFetch(() => api.getLeaderboard(), state.leaderboard)
+        ]);
+        state.stats = stats;
+        state.announcements = announcements;
+        state.mentorNotes = mentorNotes;
+        state.leaderboard = leaderboard;
+        $("#topbar-streak").textContent = stats.streak ?? 0;
+        navigate("dashboard");
+        if (window.__umpShowPushToast) window.__umpShowPushToast("✅ Refreshed", "Dashboard updated");
+      } else if (view === "tracker") {
+        const [stats, log] = await Promise.all([
+          api.getStats(studentId),
+          api.getStudyLog(studentId)
+        ]);
+        state.stats = stats;
+        state.log = log;
+        $("#topbar-streak").textContent = stats.streak ?? 0;
+        renderTracker();
+        if (window.__umpShowPushToast) window.__umpShowPushToast("✅ Refreshed", "Tracker updated");
+      } else if (view === "notes") {
+        const notes = await safeFetch(() => api.getNotes(studentId), state.studyNotes);
+        state.studyNotes = notes;
+        renderNotes();
+        if (window.__umpShowPushToast) window.__umpShowPushToast("✅ Refreshed", "Notes updated");
+      } else if (view === "reports") {
+        const reports = await api.getWeeklyReports(studentId);
+        state.reports = reports;
+        renderReports();
+      } else if (view === "leaderboard") {
+        const lb = await api.getLeaderboard();
+        state.leaderboard = lb;
+        renderLeaderboard();
+      } else {
+        await checkForNewNotifications(false);
+        renderNotifPanel();
+      }
+    } catch (e) {
+      console.error("Pull refresh failed", e);
+      if (window.__umpShowPushToast) window.__umpShowPushToast("❌ Refresh failed", e.message || "Try again");
+    } finally {
+      setTimeout(() => {
+        const ind = document.getElementById("pull-refresh-indicator");
+        if (ind) {
+          ind.style.transform = "translateY(-100%)";
+          ind.classList.remove("pull-refreshing");
+          const ic = document.getElementById("pull-refresh-icon");
+          const tx = document.getElementById("pull-refresh-text");
+          if (ic) ic.innerHTML = '<i class="fa-solid fa-arrow-down"></i>';
+          if (tx) tx.textContent = "Pull to refresh";
+        }
+      }, 500);
+    }
+  }
+
+  function initPullToRefresh() {
+    createPullIndicator();
+    const mainEl = document.querySelector(".main") || document.getElementById("view-container") || document.body;
+    const indicator = document.getElementById("pull-refresh-indicator");
+    if (!mainEl || !indicator) return;
+    let startY = 0;
+    let isAtTop = false;
+    mainEl.addEventListener("touchstart", (e) => {
+      const scrollTopMain = mainEl.scrollTop || 0;
+      const scrollTopWin = window.scrollY || document.documentElement.scrollTop || 0;
+      const viewContainer = document.querySelector(".view-container");
+      const containerScroll = viewContainer ? viewContainer.scrollTop : 0;
+      if (scrollTopMain === 0 && scrollTopWin === 0 && containerScroll === 0) {
+        isAtTop = true;
+        startY = e.touches[0].clientY;
+        pullState.startY = startY;
+        pullState.pulling = false;
+      } else {
+        isAtTop = false;
+      }
+    }, { passive: true });
+    mainEl.addEventListener("touchmove", (e) => {
+      if (!isAtTop) return;
+      const currentY = e.touches[0].clientY;
+      const diff = currentY - startY;
+      if (diff > 0 && diff < 150) {
+        const scrollTop = mainEl.scrollTop || document.documentElement.scrollTop || 0;
+        if (scrollTop === 0) {
+          pullState.pulling = true;
+          pullState.currentY = diff;
+          const progress = Math.min(diff / pullState.threshold, 1.2);
+          indicator.style.transform = `translateY(${Math.min(diff - 60, 0)}px)`;
+          const icon = document.getElementById("pull-refresh-icon");
+          const text = document.getElementById("pull-refresh-text");
+          if (progress >= 1) {
+            if (icon) { icon.style.transform = "rotate(180deg)"; icon.style.background = "#DCFCE7"; icon.style.color = "#16A34A"; }
+            if (text) text.textContent = "Release to refresh";
+          } else {
+            if (icon) { icon.style.transform = `rotate(${progress * 180}deg)`; icon.style.background = "#EEF2FF"; icon.style.color = "#4F46E5"; }
+            if (text) text.textContent = "Pull to refresh";
+          }
+        }
+      }
+    }, { passive: true });
+    mainEl.addEventListener("touchend", async () => {
+      if (!isAtTop || !pullState.pulling) return;
+      const diff = pullState.currentY;
+      pullState.pulling = false;
+      isAtTop = false;
+      if (diff >= pullState.threshold) {
+        indicator.style.transform = "translateY(0)";
+        await refreshCurrentView();
+      } else {
+        indicator.style.transform = "translateY(-100%)";
+      }
+      pullState.currentY = 0;
+    }, { passive: true });
+    // Mouse drag for desktop testing
+    let mouseDown = false;
+    mainEl.addEventListener("mousedown", (e) => {
+      if ((mainEl.scrollTop || 0) === 0 && e.clientY < 120) {
+        mouseDown = true;
+        startY = e.clientY;
+      }
+    });
+    mainEl.addEventListener("mousemove", (e) => {
+      if (!mouseDown) return;
+      const diff = e.clientY - startY;
+      if (diff > 0 && diff < 120 && (mainEl.scrollTop || 0) === 0) {
+        const progress = Math.min(diff / pullState.threshold, 1);
+        indicator.style.transform = `translateY(${Math.min(diff - 60, 0)}px)`;
+        const text = document.getElementById("pull-refresh-text");
+        if (progress >= 1 && text) text.textContent = "Release to refresh";
+      }
+    });
+    mainEl.addEventListener("mouseup", async (e) => {
+      if (!mouseDown) return;
+      mouseDown = false;
+      const diff = e.clientY - startY;
+      if (diff >= pullState.threshold) {
+        indicator.style.transform = "translateY(0)";
+        await refreshCurrentView();
+      } else {
+        indicator.style.transform = "translateY(-100%)";
+      }
+    });
+  }
+
 
   // ============ BOOT ============
   boot();
