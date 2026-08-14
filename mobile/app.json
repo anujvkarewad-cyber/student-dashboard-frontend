@@ -1,0 +1,47 @@
+{
+  "expo": {
+    "name": "Ujjwal Pathak Mentorship",
+    "slug": "ujjwal-pathak-mentorship",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "upmentorship",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#F4F7FB"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.ujjwalpathak.mentorship",
+      "config": {
+        "usesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "com.ujjwalpathak.mentorship",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "backgroundColor": "#F9F5EF",
+        "foregroundImage": "./assets/adaptive-icon.png"
+      },
+      "predictiveBackGestureEnabled": true,
+      "permissions": [
+        "INTERNET"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-secure-store",
+        {
+          "configureAndroidBackup": true
+        }
+      ],
+      "expo-document-picker"
+    ]
+  }
+}
