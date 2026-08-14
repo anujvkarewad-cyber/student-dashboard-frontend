@@ -159,6 +159,8 @@ export const DashboardScreen = () => {
 
         <SectionHeader title="Quick actions" />
         <Card style={styles.actionsCard}>
+          <Action icon="timer-outline" label="Start focus timer" onPress={() => navigation.navigate('Focus')} />
+          <View style={styles.actionDivider} />
           <Action icon="add-circle-outline" label="Log study hours" onPress={() => navigation.navigate('Tracker')} />
           <View style={styles.actionDivider} />
           <Action icon="document-text-outline" label="Weekly reports" onPress={() => navigation.navigate('Reports')} />

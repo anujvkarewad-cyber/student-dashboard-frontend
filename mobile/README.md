@@ -17,10 +17,19 @@ A separate React Native + Expo Android client for the existing student dashboard
 - Daily tracker history and native study-log form with photo/PDF proof
 - Leaderboard and personal rank summary
 - Weekly reports
-- Subject-wise notes/study material
+- Subject-wise notes/study material with protected in-app Drive preview
+- YPT-style Focus Room timer with subject selection, pause/resume, daily totals and local history
 - Profile, password update and logout
 - Cached dashboard data plus pull-to-refresh
 - Time-aware hero with opt-in local weather, adaptive colors and glass surfaces
+
+## Protected note previews
+
+Notes open inside the app through the Google Drive `/preview` surface. The app does not provide download or external-open actions, blocks download/export navigations, hides common download/print controls, and prevents screen capture while the native preview is open. The Drive owner should also open each file's sharing settings and disable **Viewers and commenters can see the option to download, print, and copy**. No client app can make displayed content mathematically copy-proof, but using both controls provides the strongest practical restriction.
+
+## Focus timer privacy
+
+Focus sessions and active timer state are stored locally per student on the device. The timer survives navigation, pause/resume and app restarts by using timestamps, and the screen remains awake while a session runs. It does not write timer data to Apps Script or Google Sheets in this version.
 
 ## Location and weather privacy
 

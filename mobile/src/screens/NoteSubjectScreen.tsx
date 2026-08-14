@@ -1,28 +1,15 @@
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React, { useMemo, useState } from 'react';
-import { Alert, FlatList, Linking, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { EmptyState } from '../components/ui';
 import { useData } from '../context/DataContext';
 import type { RootStackParamList } from '../navigation/types';
 import { colors, radius, spacing } from '../theme';
-import type { StudyNote } from '../types';
-
 type Props = NativeStackScreenProps<RootStackParamList, 'NoteSubject'>;
 
-const openNote = async (note: StudyNote) => {
-  const url = note.url || (note.fileId ? `https://drive.google.com/file/d/${note.fileId}/view` : '');
-  if (!url) {
-    Alert.alert('Preview unavailable', 'This sample resource has no live file. Connected backend resources will open here.');
-    return;
-  }
-  const supported = await Linking.canOpenURL(url);
-  if (supported) await Linking.openURL(url);
-  else Alert.alert('Cannot open file', 'The resource link is not valid.');
-};
-
-export const NoteSubjectScreen = ({ route }: Props) => {
+export const NoteSubjectScreen = ({ route, navigation }: Props) => {
   const { subject } = route.params;
   const { data } = useData();
   const [query, setQuery] = useState('');
@@ -40,7 +27,7 @@ export const NoteSubjectScreen = ({ route }: Props) => {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
         renderItem={({ item }) => (
-          <Pressable onPress={() => openNote(item)} style={({ pressed }) => [styles.noteCard, pressed && { opacity: 0.78 }]}>
+          <Pressable onPress={() => navigation.navigate('NotePreview', { noteId: item.id })} style={({ pressed }) => [styles.noteCard, pressed && { opacity: 0.78 }]}>
             <View style={styles.pdfIcon}><Ionicons name="document-text" size={24} color={colors.red} /></View>
             <View style={styles.noteBody}>
               {item.category ? <Text style={styles.category}>{item.category.toUpperCase()}</Text> : null}
@@ -48,7 +35,7 @@ export const NoteSubjectScreen = ({ route }: Props) => {
               {item.description ? <Text style={styles.description} numberOfLines={2}>{item.description}</Text> : null}
               <View style={styles.noteMeta}><Ionicons name="calendar-outline" size={12} color={colors.muted} /><Text style={styles.noteDate}>{item.date || 'Recently added'}</Text></View>
             </View>
-            <View style={styles.openIcon}><Ionicons name="open-outline" size={18} color={colors.primary} /></View>
+            <View style={styles.openIcon}><Ionicons name="eye-outline" size={18} color={colors.primary} /></View>
           </Pressable>
         )}
         ListHeaderComponent={
