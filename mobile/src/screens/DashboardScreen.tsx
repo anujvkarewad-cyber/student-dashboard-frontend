@@ -185,16 +185,23 @@ export const DashboardScreen = () => {
           <Metric icon="analytics-outline" label="Daily average" value={format(stats.averageHours, 'h')} tint={colors.amber} soft={colors.amberSoft} />
         </View>
 
-        <Pressable onPress={() => navigation.navigate('DailyMcq')} style={({ pressed }) => [styles.dailyChallenge, pressed && styles.dailyChallengePressed]}>
-          <LinearGradient colors={dailyMcq?.completedAt ? ['#E3F8F1', '#EDF9F6'] : ['#ECEFFF', '#F6F2FF']} style={styles.dailyChallengeGradient}>
-            <View style={[styles.dailyChallengeIcon, Boolean(dailyMcq?.completedAt) && { backgroundColor: colors.tealSoft }]}><Ionicons name={dailyMcq?.completedAt ? 'checkmark-done' : 'help-circle'} size={25} color={dailyMcq?.completedAt ? colors.success : colors.primary} /></View>
-            <View style={styles.dailyChallengeBody}>
-              <Text style={styles.dailyChallengeEyebrow}>DAILY MCQ CHALLENGE</Text>
-              <Text style={styles.dailyChallengeTitle}>{dailyMcq?.completedAt ? `${dailyMcq.score}/${dailyMcq.total} completed today` : dailyMcq ? 'Continue today’s attempt' : 'Your 10 questions are ready'}</Text>
-              <Text style={styles.dailyChallengeText}>{mcqStreak} day streak · explanations after submission</Text>
+        <Pressable onPress={() => navigation.navigate('DailyMcq')} style={({ pressed }) => [styles.dailyChallenge, Boolean(dailyMcq?.completedAt) && styles.dailyChallengeDone, pressed && styles.dailyChallengePressed]}>
+          <View style={styles.dailyAccent} />
+          <View style={[styles.dailyChallengeIcon, Boolean(dailyMcq?.completedAt) && styles.dailyChallengeIconDone]}>
+            <Ionicons name={dailyMcq?.completedAt ? 'checkmark-done' : 'help-circle'} size={25} color={dailyMcq?.completedAt ? colors.success : colors.primary} />
+          </View>
+          <View style={styles.dailyChallengeBody}>
+            <View style={styles.dailyChallengeTop}>
+              <Text style={styles.dailyChallengeEyebrow}>DAILY MCQ</Text>
+              <View style={[styles.dailyStatus, Boolean(dailyMcq?.completedAt) && styles.dailyStatusDone]}><Text style={[styles.dailyStatusText, Boolean(dailyMcq?.completedAt) && styles.dailyStatusTextDone]}>{dailyMcq?.completedAt ? 'DONE' : dailyMcq ? 'IN PROGRESS' : 'READY'}</Text></View>
             </View>
-            <Ionicons name="arrow-forward-circle" size={27} color={dailyMcq?.completedAt ? colors.success : colors.primary} />
-          </LinearGradient>
+            <Text style={styles.dailyChallengeTitle}>{dailyMcq?.completedAt ? `${dailyMcq.score}/${dailyMcq.total} correct today` : dailyMcq ? 'Continue today’s challenge' : 'Your daily challenge is ready'}</Text>
+            <View style={styles.dailyMetaRow}>
+              <View style={styles.dailyMeta}><Ionicons name="help-circle-outline" size={12} color={colors.primary} /><Text style={styles.dailyMetaText}>{dailyMcq ? `${Object.keys(dailyMcq.answers).length}/10 answered` : '10 questions'}</Text></View>
+              <View style={styles.dailyMeta}><Ionicons name="flame-outline" size={12} color={colors.amber} /><Text style={styles.dailyMetaText}>{mcqStreak} day streak</Text></View>
+            </View>
+          </View>
+          <View style={[styles.dailyArrow, Boolean(dailyMcq?.completedAt) && styles.dailyArrowDone]}><Ionicons name="arrow-forward" size={18} color={dailyMcq?.completedAt ? colors.success : colors.primary} /></View>
         </Pressable>
 
         <SectionHeader title="Quick actions" />
@@ -364,14 +371,25 @@ const styles = StyleSheet.create({
   metricIcon: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.md },
   metricValue: { color: colors.ink, fontSize: 22, fontWeight: '900', letterSpacing: -0.5 },
   metricLabel: { color: colors.muted, fontSize: 12, marginTop: 2, fontWeight: '600' },
-  dailyChallenge: { borderRadius: radius.lg, overflow: 'hidden', marginBottom: spacing.xxl, borderWidth: 1, borderColor: 'rgba(255,255,255,0.95)' },
+  dailyChallenge: { minHeight: 104, flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.md, paddingHorizontal: spacing.lg, borderRadius: radius.lg, overflow: 'hidden', marginBottom: spacing.xxl, backgroundColor: '#F0F2FF', borderWidth: 1, borderColor: '#DDE3FF', shadowColor: colors.shadow, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.08, shadowRadius: 14, elevation: 3 },
+  dailyChallengeDone: { backgroundColor: '#EBF9F5', borderColor: '#CCEFE5' },
   dailyChallengePressed: { opacity: 0.8, transform: [{ scale: 0.995 }] },
-  dailyChallengeGradient: { minHeight: 88, flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.lg },
-  dailyChallengeIcon: { width: 49, height: 49, borderRadius: 16, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
-  dailyChallengeBody: { flex: 1 },
-  dailyChallengeEyebrow: { color: colors.primary, fontSize: 7, fontWeight: '900', letterSpacing: 1 },
-  dailyChallengeTitle: { color: colors.ink, fontSize: 13, fontWeight: '900', marginTop: 3 },
-  dailyChallengeText: { color: colors.muted, fontSize: 8, marginTop: 4 },
+  dailyAccent: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 5, backgroundColor: colors.primary },
+  dailyChallengeIcon: { width: 50, height: 50, borderRadius: 16, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E0E6FA', alignItems: 'center', justifyContent: 'center' },
+  dailyChallengeIconDone: { backgroundColor: '#FFFFFF', borderColor: '#C7EADF' },
+  dailyChallengeBody: { flex: 1, minWidth: 0 },
+  dailyChallengeTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  dailyChallengeEyebrow: { flex: 1, color: colors.primary, fontSize: 8, fontWeight: '900', letterSpacing: 1.1 },
+  dailyStatus: { borderRadius: radius.pill, backgroundColor: '#FFFFFF', paddingHorizontal: 7, paddingVertical: 4 },
+  dailyStatusDone: { backgroundColor: colors.tealSoft },
+  dailyStatusText: { color: colors.primary, fontSize: 6, fontWeight: '900', letterSpacing: 0.7 },
+  dailyStatusTextDone: { color: colors.success },
+  dailyChallengeTitle: { color: colors.ink, fontSize: 13, lineHeight: 18, fontWeight: '900', marginTop: 3 },
+  dailyMetaRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: spacing.md, marginTop: 6 },
+  dailyMeta: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  dailyMetaText: { color: colors.muted, fontSize: 8, fontWeight: '700' },
+  dailyArrow: { width: 35, height: 35, borderRadius: 12, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
+  dailyArrowDone: { backgroundColor: colors.tealSoft },
   actionsCard: { padding: 0, overflow: 'hidden', marginBottom: spacing.xxl, shadowOpacity: 0.04 },
   action: { minHeight: 64, flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, gap: spacing.md },
   actionPressed: { backgroundColor: colors.primarySoft },
