@@ -1833,11 +1833,34 @@ const APP_VERSION = "2.1.7";
   isCheckingNotifications = true;
 
   try {
+    // Sequential - ek ek karke
     const announcements = await safeFetch(
       () => api.getAnnouncements(),
       state.announcements
     );
 
+    await new Promise(r => setTimeout(r, 2000)); // 2 sec gap
+
+    const mentorNotes = await safeFetch(
+      () => api.getStudentMentorNotes(state.student.studentId),
+      state.mentorNotes
+    );
+
+    await new Promise(r => setTimeout(r, 2000)); // 2 sec gap
+
+    const studyNotes = await safeFetch(
+      () => api.getNotes(state.student.studentId),
+      state.studyNotes
+    );
+
+    await new Promise(r => setTimeout(r, 2000)); // 2 sec gap
+
+    const reports = await safeFetch(
+      () => api.getWeeklyReports(state.student.studentId),
+      state.reports
+    );
+
+    // Announcements check
     (announcements || []).forEach(a => {
       const k = annKey(a);
       if (!state.notifSeen.announcements.has(k)) {
@@ -1846,10 +1869,44 @@ const APP_VERSION = "2.1.7";
       }
     });
 
-    state.announcements = announcements;
+    // Mentor notes check
+    (mentorNotes || []).forEach(n => {
+      const k = noteMKey(n);
+      if (!state.notifSeen.mentorNotes.has(k)) {
+        state.notifSeen.mentorNotes.add(k);
+        pushNotif("fa-comment-dots", "New mentor note", n.note || "");
+      }
+    });
 
+    // Study notes check
+    (studyNotes || []).forEach(n => {
+      const k = noteNKey(n);
+      if (!state.notifSeen.notes.has(k)) {
+        state.notifSeen.notes.add(k);
+        pushNotif("fa-file-pdf", "New study material", n.title || "");
+      }
+    });
+
+    // Reports check
+    (reports || []).forEach(r => {
+      const k = repKey(r);
+      if (!state.notifSeen.reports.has(k)) {
+        state.notifSeen.reports.add(k);
+        pushNotif("fa-envelope-open-text", "Weekly report ready", r.weekOf || "");
+      }
+    });
+
+    // State update
+    state.announcements = announcements;
+    state.mentorNotes = mentorNotes;
+    state.studyNotes = studyNotes;
+    state.reports = reports;
+
+    // Re-render active view
     const activeView = (location.hash || "#dashboard").slice(1);
     if (activeView === "dashboard") renderMentorNotes(state.mentorNotes || []);
+    if (activeView === "reports") renderReports();
+    if (activeView === "notes") renderNotes();
 
     console.log('✅ Notification check complete');
 
