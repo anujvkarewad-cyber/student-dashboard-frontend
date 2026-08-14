@@ -18,6 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Card, ErrorBanner, InitialsAvatar, PrimaryButton, SectionHeader } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
+import { useNotifications } from '../context/NotificationsContext';
 import { useWeatherTheme } from '../hooks/useWeatherTheme';
 import { colors, radius, spacing } from '../theme';
 
@@ -43,6 +44,7 @@ export const DashboardScreen = () => {
   const navigation = useNavigation<any>();
   const { student } = useAuth();
   const { data, loading, refreshing, error, refreshAll, dismissFeedback } = useData();
+  const { unreadCount } = useNotifications();
   const { weather, theme, loading: weatherLoading, weatherError, refreshWeather, isLive } = useWeatherTheme();
   const [feedbackVisible, setFeedbackVisible] = useState(true);
   const heroTarget = useRef<View | null>(null);
@@ -76,6 +78,10 @@ export const DashboardScreen = () => {
             <Text style={styles.eyebrow}>UJJWAL PATHAK MENTORSHIP</Text>
             <Text style={styles.dashboardLabel}>Student dashboard</Text>
           </View>
+          <Pressable style={styles.notificationButton} onPress={() => navigation.navigate('Notifications')} accessibilityLabel="Open notifications">
+            <Ionicons name="notifications-outline" size={21} color={colors.inkSoft} />
+            {unreadCount ? <View style={styles.notificationBadge}><Text style={styles.notificationBadgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text></View> : null}
+          </Pressable>
           <Pressable style={styles.avatarButton} onPress={() => navigation.navigate('Profile')}>
             <InitialsAvatar name={student?.studentName || 'Student'} size={46} />
             <View style={styles.onlineDot} />
@@ -235,6 +241,9 @@ const styles = StyleSheet.create({
   headerCopy: { flex: 1 },
   eyebrow: { color: colors.primary, fontSize: 8, fontWeight: '900', letterSpacing: 1.1 },
   dashboardLabel: { color: colors.ink, fontSize: 16, fontWeight: '900', marginTop: 2 },
+  notificationButton: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.74)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.95)', position: 'relative' },
+  notificationBadge: { position: 'absolute', top: -4, right: -4, minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 4, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.red, borderWidth: 2, borderColor: colors.canvas },
+  notificationBadgeText: { color: '#FFFFFF', fontSize: 8, fontWeight: '900' },
   avatarButton: { position: 'relative' },
   onlineDot: { position: 'absolute', width: 12, height: 12, borderRadius: 6, backgroundColor: colors.teal, borderWidth: 2, borderColor: colors.canvas, right: 0, bottom: 1 },
   loader: { marginBottom: spacing.md },

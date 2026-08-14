@@ -1,14 +1,4 @@
-export type RootStackParamList = {
-  Login: undefined;
-  ForgotPassword: undefined;
-  Main: undefined;
-  Reports: undefined;
-  Leaderboard: undefined;
-  AddStudyLog: undefined;
-  NoteSubject: { subject: string };
-  NotePreview: { noteId: string };
-  ChangePassword: undefined;
-};
+import type { NavigatorScreenParams } from '@react-navigation/native';
 
 export type MainTabParamList = {
   Home: undefined;
@@ -16,4 +6,17 @@ export type MainTabParamList = {
   Focus: undefined;
   Notes: undefined;
   Profile: undefined;
+};
+
+export type RootStackParamList = {
+  Login: undefined;
+  ForgotPassword: undefined;
+  Main: NavigatorScreenParams<MainTabParamList> | undefined;
+  Notifications: undefined;
+  Reports: undefined;
+  Leaderboard: undefined;
+  AddStudyLog: undefined;
+  NoteSubject: { subject: string };
+  NotePreview: { noteId: string };
+  ChangePassword: undefined;
 };

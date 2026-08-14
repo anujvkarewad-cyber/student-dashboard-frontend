@@ -5,6 +5,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider } from './src/context/AuthContext';
 import { DataProvider } from './src/context/DataContext';
 import { FocusTimerProvider } from './src/context/FocusTimerContext';
+import { NotificationsProvider } from './src/context/NotificationsContext';
 import { AppNavigator } from './src/navigation/AppNavigator';
 
 export default function App() {
@@ -14,8 +15,10 @@ export default function App() {
         <AuthProvider>
           <DataProvider>
             <FocusTimerProvider>
-              <StatusBar style="dark" />
-              <AppNavigator />
+              <NotificationsProvider>
+                <StatusBar style="dark" />
+                <AppNavigator />
+              </NotificationsProvider>
             </FocusTimerProvider>
           </DataProvider>
         </AuthProvider>

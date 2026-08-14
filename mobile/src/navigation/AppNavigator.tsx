@@ -14,6 +14,7 @@ import { ForgotPasswordScreen } from '../screens/ForgotPasswordScreen';
 import { LeaderboardScreen } from '../screens/LeaderboardScreen';
 import { LoginScreen } from '../screens/LoginScreen';
 import { NotesScreen } from '../screens/NotesScreen';
+import { NotificationsScreen } from '../screens/NotificationsScreen';
 import { NotePreviewScreen } from '../screens/NotePreviewScreen';
 import { NoteSubjectScreen } from '../screens/NoteSubjectScreen';
 import { ProfileScreen } from '../screens/ProfileScreen';
@@ -95,6 +96,7 @@ export const AppNavigator = () => {
         {student ? (
           <>
             <RootStack.Screen name="Main" component={MainTabs} options={{ headerShown: false }} />
+            <RootStack.Screen name="Notifications" component={NotificationsScreen} options={{ title: 'Notifications' }} />
             <RootStack.Screen name="Reports" component={ReportsScreen} options={{ title: 'Weekly reports' }} />
             <RootStack.Screen name="Leaderboard" component={LeaderboardScreen} options={{ title: 'Leaderboard' }} />
             <RootStack.Screen name="AddStudyLog" component={AddStudyLogScreen} options={{ title: 'Log study hours', presentation: 'modal', animation: 'slide_from_bottom' }} />

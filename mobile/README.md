@@ -19,6 +19,7 @@ A separate React Native + Expo Android client for the existing student dashboard
 - Weekly reports
 - Subject-wise notes/study material with protected in-app Drive preview
 - YPT-style Focus Room timer with subject selection, pause/resume, daily totals and local history
+- In-app notification center with unread badge, filters and read state
 - Profile, password update and logout
 - Cached dashboard data plus pull-to-refresh
 - Time-aware hero with opt-in local weather, adaptive colors and glass surfaces
