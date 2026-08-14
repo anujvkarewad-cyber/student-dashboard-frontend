@@ -8,6 +8,7 @@ import { ActivityIndicator, Image, StyleSheet, Text, View } from 'react-native';
 import { useAuth } from '../context/AuthContext';
 import { AddStudyLogScreen } from '../screens/AddStudyLogScreen';
 import { ChangePasswordScreen } from '../screens/ChangePasswordScreen';
+import { DailyMcqScreen } from '../screens/DailyMcqScreen';
 import { DashboardScreen } from '../screens/DashboardScreen';
 import { FocusTimerScreen } from '../screens/FocusTimerScreen';
 import { ForgotPasswordScreen } from '../screens/ForgotPasswordScreen';
@@ -99,6 +100,7 @@ export const AppNavigator = () => {
             <RootStack.Screen name="Main" component={MainTabs} options={{ headerShown: false }} />
             <RootStack.Screen name="Notifications" component={NotificationsScreen} options={{ title: 'Notifications' }} />
             <RootStack.Screen name="StudyReceipt" component={StudyReceiptScreen} options={{ title: 'Study Receipt' }} />
+            <RootStack.Screen name="DailyMcq" component={DailyMcqScreen} options={{ title: 'Daily MCQ Challenge' }} />
             <RootStack.Screen name="Reports" component={ReportsScreen} options={{ title: 'Weekly reports' }} />
             <RootStack.Screen name="Leaderboard" component={LeaderboardScreen} options={{ title: 'Leaderboard' }} />
             <RootStack.Screen name="AddStudyLog" component={AddStudyLogScreen} options={{ title: 'Log study hours', presentation: 'modal', animation: 'slide_from_bottom' }} />

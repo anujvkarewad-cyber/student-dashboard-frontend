@@ -17,6 +17,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Card, ErrorBanner, InitialsAvatar, PrimaryButton, SectionHeader } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
+import { useDailyMcq } from '../context/DailyMcqContext';
 import { useData } from '../context/DataContext';
 import { AppNotification, NotificationType, useNotifications } from '../context/NotificationsContext';
 import { useWeatherTheme } from '../hooks/useWeatherTheme';
@@ -31,6 +32,7 @@ const notificationVisual: Record<NotificationType, { icon: keyof typeof Ionicons
   report: { icon: 'analytics', tint: colors.teal, soft: colors.tealSoft },
   feedback: { icon: 'mail-unread', tint: '#B36A16', soft: colors.amberSoft },
   memory: { icon: 'refresh-circle', tint: colors.purple, soft: colors.purpleSoft },
+  mcq: { icon: 'help-circle', tint: colors.primary, soft: colors.primarySoft },
 };
 
 const Metric = ({ icon, label, value, tint, soft }: { icon: keyof typeof Ionicons.glyphMap; label: string; value: string; tint: string; soft: string }) => (
@@ -53,6 +55,7 @@ export const DashboardScreen = () => {
   const navigation = useNavigation<any>();
   const { student } = useAuth();
   const { data, loading, refreshing, error, refreshAll, dismissFeedback } = useData();
+  const { todayAttempt: dailyMcq, streak: mcqStreak } = useDailyMcq();
   const { notifications, unreadCount, isRead, markRead, markAllRead } = useNotifications();
   const { weather, theme, loading: weatherLoading, weatherError, refreshWeather, isLive } = useWeatherTheme();
   const [feedbackVisible, setFeedbackVisible] = useState(true);
@@ -77,6 +80,7 @@ export const DashboardScreen = () => {
     await markRead(item.id);
     setNotificationsVisible(false);
     if (item.target === 'receipt' && item.sessionId) navigation.navigate('StudyReceipt', { sessionId: item.sessionId });
+    else if (item.target === 'mcq') navigation.navigate('DailyMcq');
     else if (item.target === 'reports') navigation.navigate('Reports');
     else if (item.target === 'notes') navigation.navigate('Notes');
   };
@@ -181,8 +185,22 @@ export const DashboardScreen = () => {
           <Metric icon="analytics-outline" label="Daily average" value={format(stats.averageHours, 'h')} tint={colors.amber} soft={colors.amberSoft} />
         </View>
 
+        <Pressable onPress={() => navigation.navigate('DailyMcq')} style={({ pressed }) => [styles.dailyChallenge, pressed && styles.dailyChallengePressed]}>
+          <LinearGradient colors={dailyMcq?.completedAt ? ['#E3F8F1', '#EDF9F6'] : ['#ECEFFF', '#F6F2FF']} style={styles.dailyChallengeGradient}>
+            <View style={[styles.dailyChallengeIcon, Boolean(dailyMcq?.completedAt) && { backgroundColor: colors.tealSoft }]}><Ionicons name={dailyMcq?.completedAt ? 'checkmark-done' : 'help-circle'} size={25} color={dailyMcq?.completedAt ? colors.success : colors.primary} /></View>
+            <View style={styles.dailyChallengeBody}>
+              <Text style={styles.dailyChallengeEyebrow}>DAILY MCQ CHALLENGE</Text>
+              <Text style={styles.dailyChallengeTitle}>{dailyMcq?.completedAt ? `${dailyMcq.score}/${dailyMcq.total} completed today` : dailyMcq ? 'Continue today’s attempt' : 'Your 10 questions are ready'}</Text>
+              <Text style={styles.dailyChallengeText}>{mcqStreak} day streak · explanations after submission</Text>
+            </View>
+            <Ionicons name="arrow-forward-circle" size={27} color={dailyMcq?.completedAt ? colors.success : colors.primary} />
+          </LinearGradient>
+        </Pressable>
+
         <SectionHeader title="Quick actions" />
         <Card style={styles.actionsCard}>
+          <Action icon="help-circle-outline" label="Start today's Daily MCQ" onPress={() => navigation.navigate('DailyMcq')} />
+          <View style={styles.actionDivider} />
           <Action icon="timer-outline" label="Start focus timer" onPress={() => navigation.navigate('Focus')} />
           <View style={styles.actionDivider} />
           <Action icon="add-circle-outline" label="Log study hours" onPress={() => navigation.navigate('Tracker')} />
@@ -346,6 +364,14 @@ const styles = StyleSheet.create({
   metricIcon: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.md },
   metricValue: { color: colors.ink, fontSize: 22, fontWeight: '900', letterSpacing: -0.5 },
   metricLabel: { color: colors.muted, fontSize: 12, marginTop: 2, fontWeight: '600' },
+  dailyChallenge: { borderRadius: radius.lg, overflow: 'hidden', marginBottom: spacing.xxl, borderWidth: 1, borderColor: 'rgba(255,255,255,0.95)' },
+  dailyChallengePressed: { opacity: 0.8, transform: [{ scale: 0.995 }] },
+  dailyChallengeGradient: { minHeight: 88, flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.lg },
+  dailyChallengeIcon: { width: 49, height: 49, borderRadius: 16, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
+  dailyChallengeBody: { flex: 1 },
+  dailyChallengeEyebrow: { color: colors.primary, fontSize: 7, fontWeight: '900', letterSpacing: 1 },
+  dailyChallengeTitle: { color: colors.ink, fontSize: 13, fontWeight: '900', marginTop: 3 },
+  dailyChallengeText: { color: colors.muted, fontSize: 8, marginTop: 4 },
   actionsCard: { padding: 0, overflow: 'hidden', marginBottom: spacing.xxl, shadowOpacity: 0.04 },
   action: { minHeight: 64, flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, gap: spacing.md },
   actionPressed: { backgroundColor: colors.primarySoft },

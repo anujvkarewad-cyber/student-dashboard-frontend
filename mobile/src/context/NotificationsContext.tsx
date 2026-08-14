@@ -1,11 +1,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useAuth } from './AuthContext';
+import { useDailyMcq } from './DailyMcqContext';
 import { useData } from './DataContext';
 import { useStudyReceipts } from './StudyReceiptContext';
 
-export type NotificationType = 'announcement' | 'mentor' | 'material' | 'report' | 'feedback' | 'memory';
-export type NotificationTarget = 'home' | 'notes' | 'reports' | 'receipt';
+export type NotificationType = 'announcement' | 'mentor' | 'material' | 'report' | 'feedback' | 'memory' | 'mcq';
+export type NotificationTarget = 'home' | 'notes' | 'reports' | 'receipt' | 'mcq';
 
 export type AppNotification = {
   id: string;
@@ -34,6 +35,7 @@ const stable = (value: unknown) => String(value || '').trim().replace(/\s+/g, ' 
 export const NotificationsProvider = ({ children }: PropsWithChildren) => {
   const { student } = useAuth();
   const { data } = useData();
+  const { dateKey: dailyMcqDate, todayAttempt: dailyMcqAttempt } = useDailyMcq();
   const { dueReceipts } = useStudyReceipts();
   const [readIds, setReadIds] = useState<Set<string>>(new Set());
 
@@ -55,6 +57,15 @@ export const NotificationsProvider = ({ children }: PropsWithChildren) => {
     const items: AppNotification[] = [];
     let order = 10_000;
 
+    if (!dailyMcqAttempt?.completedAt) items.push({
+      id: `mcq:${dailyMcqDate}`,
+      type: 'mcq',
+      title: dailyMcqAttempt ? 'Continue today’s Daily MCQ' : 'Today’s Daily MCQ is ready',
+      body: dailyMcqAttempt ? `${Object.keys(dailyMcqAttempt.answers).length}/10 answered · finish before the day ends` : '10 mixed-subject questions · 10 minute challenge',
+      date: 'Today',
+      target: 'mcq',
+      order: order--,
+    });
     dueReceipts.forEach((item) => items.push({
       id: `memory:${item.id}`,
       type: 'memory',
@@ -112,7 +123,7 @@ export const NotificationsProvider = ({ children }: PropsWithChildren) => {
     }));
 
     return items.sort((a, b) => b.order - a.order).slice(0, 50);
-  }, [data.announcements, data.feedback, data.mentorNotes, data.reports, data.studyNotes, dueReceipts]);
+  }, [dailyMcqAttempt, dailyMcqDate, data.announcements, data.feedback, data.mentorNotes, data.reports, data.studyNotes, dueReceipts]);
 
   const persist = useCallback(async (next: Set<string>) => {
     setReadIds(next);

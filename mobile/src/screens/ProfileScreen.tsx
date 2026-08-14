@@ -75,6 +75,8 @@ export const ProfileScreen = () => {
 
         <Text style={styles.sectionTitle}>Account & progress</Text>
         <Card style={styles.menuCard}>
+          <MenuRow icon="help-circle-outline" title="Daily MCQ Challenge" subtitle="Today’s 10-question knowledge check" onPress={() => navigation.navigate('DailyMcq')} />
+          <View style={styles.line} />
           <MenuRow icon="notifications-outline" title="Notifications" subtitle="Mentor updates and new material" onPress={() => navigation.navigate('Notifications')} />
           <View style={styles.line} />
           <MenuRow icon="trophy-outline" title="Leaderboard" subtitle="See your cohort position" onPress={() => navigation.navigate('Leaderboard')} />
@@ -85,7 +87,7 @@ export const ProfileScreen = () => {
         </Card>
 
         <PrimaryButton label="Sign out" icon="log-out-outline" variant="secondary" onPress={confirmLogout} style={styles.logout} />
-        <Text style={styles.version}>Ujjwal Pathak Mentorship · Mobile v1.2.0</Text>
+        <Text style={styles.version}>Ujjwal Pathak Mentorship · Mobile v1.3.0</Text>
       </ScrollView>
     </SafeAreaView>
   );

@@ -3,6 +3,7 @@ import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider } from './src/context/AuthContext';
+import { DailyMcqProvider } from './src/context/DailyMcqContext';
 import { DataProvider } from './src/context/DataContext';
 import { FocusTimerProvider } from './src/context/FocusTimerContext';
 import { NotificationsProvider } from './src/context/NotificationsContext';
@@ -17,10 +18,12 @@ export default function App() {
           <DataProvider>
             <FocusTimerProvider>
               <StudyReceiptsProvider>
-                <NotificationsProvider>
-                  <StatusBar style="dark" />
-                  <AppNavigator />
-                </NotificationsProvider>
+                <DailyMcqProvider>
+                  <NotificationsProvider>
+                    <StatusBar style="dark" />
+                    <AppNavigator />
+                  </NotificationsProvider>
+                </DailyMcqProvider>
               </StudyReceiptsProvider>
             </FocusTimerProvider>
           </DataProvider>
