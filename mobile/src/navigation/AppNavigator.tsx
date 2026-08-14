@@ -41,15 +41,15 @@ const MainTabs = () => (
       tabBarActiveTintColor: colors.primary,
       tabBarInactiveTintColor: '#8290A5',
       tabBarLabelPosition: 'below-icon',
-      tabBarLabelStyle: [styles.tabLabel, route.name === 'Focus' && styles.focusTabLabel],
+      tabBarLabelStyle: styles.tabLabel,
       tabBarStyle: styles.tabBar,
       tabBarBackground: () => <BlurView intensity={85} tint="light" style={[StyleSheet.absoluteFill, styles.tabBarBlur]} />,
       tabBarItemStyle: styles.tabItem,
       tabBarIcon: ({ focused, color }) => {
         const icons = tabIcons[route.name] || { active: 'ellipse', idle: 'ellipse-outline' };
         return (
-          <View style={[styles.tabIcon, focused && styles.tabIconActive, route.name === 'Focus' && styles.focusTabIcon]}>
-            <Ionicons name={focused ? icons.active : icons.idle} color={route.name === 'Focus' ? '#FFFFFF' : color} size={route.name === 'Focus' ? 23 : focused ? 21 : 20} />
+          <View style={[styles.tabIcon, focused && styles.tabIconActive]}>
+            <Ionicons name={focused ? icons.active : icons.idle} color={color} size={focused ? 21 : 20} />
           </View>
         );
       },
@@ -114,14 +114,12 @@ export const AppNavigator = () => {
 };
 
 const styles = StyleSheet.create({
-  tabBar: { position: 'absolute', height: 74, paddingTop: 9, paddingBottom: 7, marginHorizontal: 12, marginBottom: 10, borderTopWidth: 0, borderWidth: 1, borderColor: 'rgba(255,255,255,0.92)', borderRadius: radius.lg, backgroundColor: 'rgba(255,255,255,0.78)', overflow: 'visible', shadowColor: colors.shadow, shadowOffset: { width: 0, height: 7 }, shadowOpacity: 0.14, shadowRadius: 16, elevation: 9 },
+  tabBar: { position: 'absolute', height: 74, paddingTop: 9, paddingBottom: 7, marginHorizontal: 12, marginBottom: 10, borderTopWidth: 0, borderWidth: 1, borderColor: 'rgba(255,255,255,0.92)', borderRadius: radius.lg, backgroundColor: 'rgba(255,255,255,0.78)', overflow: 'hidden', shadowColor: colors.shadow, shadowOffset: { width: 0, height: 7 }, shadowOpacity: 0.14, shadowRadius: 16, elevation: 9 },
   tabBarBlur: { borderRadius: radius.lg, overflow: 'hidden' },
   tabItem: { paddingVertical: 0 },
   tabLabel: { fontSize: 9, lineHeight: 12, fontWeight: '800', marginTop: 2 },
-  focusTabLabel: { marginTop: 0, color: colors.primaryDark },
   tabIcon: { width: 38, height: 31, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   tabIconActive: { backgroundColor: colors.primarySoft },
-  focusTabIcon: { width: 48, height: 48, borderRadius: 17, marginTop: -15, backgroundColor: colors.primary, borderWidth: 3, borderColor: 'rgba(255,255,255,0.95)', shadowColor: colors.primaryDark, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.3, shadowRadius: 9, elevation: 7 },
   splash: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.canvas },
   splashLogo: { width: 84, height: 84, borderRadius: 25 },
   splashTitle: { color: colors.ink, fontSize: 16, fontWeight: '900', marginTop: 16 },
