@@ -45,11 +45,14 @@ const MainTabs = () => (
       tabBarStyle: styles.tabBar,
       tabBarBackground: () => <BlurView intensity={85} tint="light" style={[StyleSheet.absoluteFill, styles.tabBarBlur]} />,
       tabBarItemStyle: styles.tabItem,
-      tabBarIcon: ({ focused, color }) => (
-        <View style={[styles.tabIcon, focused && styles.tabIconActive, route.name === 'Focus' && styles.focusTabIcon]}>
-          <Ionicons name={focused ? tabIcons[route.name].active : tabIcons[route.name].idle} color={route.name === 'Focus' ? '#FFFFFF' : color} size={route.name === 'Focus' ? 23 : focused ? 21 : 20} />
-        </View>
-      ),
+      tabBarIcon: ({ focused, color }) => {
+        const icons = tabIcons[route.name] || { active: 'ellipse', idle: 'ellipse-outline' };
+        return (
+          <View style={[styles.tabIcon, focused && styles.tabIconActive, route.name === 'Focus' && styles.focusTabIcon]}>
+            <Ionicons name={focused ? icons.active : icons.idle} color={route.name === 'Focus' ? '#FFFFFF' : color} size={route.name === 'Focus' ? 23 : focused ? 21 : 20} />
+          </View>
+        );
+      },
     })}
   >
     <Tabs.Screen name="Home" component={DashboardScreen} options={{ title: 'Home' }} />
