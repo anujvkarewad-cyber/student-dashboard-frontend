@@ -6,6 +6,10 @@ export const config = {
   }
 };
 
+// Vercel Hobby plan ka default function timeout (~10s) tha, jo Apps Script
+// ke 5-15s wale notification calls ko beech mein cut kar raha tha.
+// Hobby plan ki max allowed limit (60s) tak badha rahe hain.
+export const maxDuration = 60;
 export default async function handler(req, res) {
   try {
 
@@ -40,11 +44,21 @@ export default async function handler(req, res) {
     try {
       data = JSON.parse(rawText);
     } catch (parseErr) {
-      console.error("Apps Script did not return valid JSON:", rawText.slice(0, 500));
-      return res.status(502).json({
-        error: "Apps Script returned a non-JSON response (often means the web app URL is wrong, redirected to a login page, or the script threw an uncaught error)."
-      });
-    }
+  const action = req.body?.action || "unknown";
+  const preview = rawText.slice(0, 500).replace(/\s+/g, " ");
+
+  console.error(
+    `[${action}] Apps Script did not return valid JSON:`,
+    preview
+  );
+
+  return res.status(502).json({
+    error: `[${action}] Apps Script returned a non-JSON response.`,
+    ...(process.env.NODE_ENV !== "production"
+      ? { upstreamPreview: preview }
+      : {})
+  });
+}
 
     return res.status(200).json(data);
 

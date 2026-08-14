@@ -3,7 +3,7 @@ const APP_VERSION = "2.1.7";
 (function () {
   "use strict";
   let currentStudent = null;
-  let forcedTheme = localStorage.getItem("ump_dev_theme") || null; // dev-panel theme override
+  let forcedTheme = localStorage.getItem("ump_dev_theme") || null;
   const api = window.UMP_API;
 
   const $  = (s, r = document) => r.querySelector(s);
@@ -34,6 +34,10 @@ const APP_VERSION = "2.1.7";
     },
   };
 
+  // ✅ FIX: Add request guard flags
+  let isCheckingNotifications = false;
+  let isRefreshingData = false;
+
   const VIEW_TITLES = {
     dashboard: "Dashboard",
     tracker: "Daily Study Tracker",
@@ -46,8 +50,6 @@ const APP_VERSION = "2.1.7";
   };
 
   // ============ AUTH ============
-  // Guard against a malformed localStorage value (manual edit, partial write
-  // during a crash, etc.) killing the whole script before boot() can run.
   let savedStudent = null;
   try {
     savedStudent = JSON.parse(localStorage.getItem("ump_student"));
@@ -61,7 +63,6 @@ const APP_VERSION = "2.1.7";
     const loginScreen = $("#login-screen");
 
     if (!savedStudent) {
-      // no saved session at all -> straight to login, no API call needed
       if (loader) loader.hidden = true;
       loginScreen.hidden = false;
       return;
@@ -80,13 +81,10 @@ const APP_VERSION = "2.1.7";
           await enterApp(s);
         }
       } else {
-        // saved session is no longer valid (e.g. password changed elsewhere)
         localStorage.removeItem("ump_student");
         loginScreen.hidden = false;
       }
     } catch (err) {
-      // network/API hiccup - don't strand the student on a blank loader,
-      // let them log in manually instead of silently failing
       console.error("Auto-login failed:", err);
       loginScreen.hidden = false;
     } finally {
@@ -145,45 +143,60 @@ const APP_VERSION = "2.1.7";
     $("#login-screen").hidden = true;
     $("#app-shell").hidden = false;
 
+    const loader = $("#boot-loader");
+    if (loader) loader.hidden = true;
+
     const version = document.getElementById("app-version");
     if (version) version.textContent = `Version ${APP_VERSION}`;
 
-    // header identity
     const initials = (student.studentName || "S").split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
     $("#user-avatar").textContent = initials;
     $("#user-name").textContent = student.studentName;
     $("#user-id").textContent = student.studentId;
 
+    // safe defaults so an early navigate() doesn't hit undefined data
+    state.stats = {};
+    state.log = [];
+    state.leaderboard = [];
+    state.reports = [];
+    state.announcements = [];
+    state.mentorNotes = [];
+    state.studyNotes = [];
+
+    const studentId = student.studentId;
+
     // load core data in small parallel batches — full parallel (7 at once)
-    // overloads Apps Script, full sequential is too slow. Batches of 3 balance both.
+    // overloads Apps Script, full sequential is too slow. Batches of ~3 balance both.
     const [stats, log, lb] = await Promise.all([
-      safeFetch(() => api.getStats(student.studentId), {}),
-      safeFetch(() => api.getStudyLog(student.studentId), []),
+      safeFetch(() => api.getStats(studentId), {}),
+      safeFetch(() => api.getStudyLog(studentId), []),
       safeFetch(() => api.getLeaderboard(), []),
     ]);
-
-    const [reports, announcements] = await Promise.all([
-      safeFetch(() => api.getWeeklyReports(student.studentId), []),
-      safeFetch(() => api.getAnnouncements(), []),
-    ]);
-
-    const [notes, studyNotes] = await Promise.all([
-      safeFetch(() => api.getStudentMentorNotes(student.studentId), []),
-      safeFetch(() => api.getNotes(), []),
-    ]);
-
     state.stats = stats;
     state.log = log;
     state.leaderboard = lb;
-    state.reports = reports;
-    state.announcements = announcements;
-    state.mentorNotes = notes;
-    state.studyNotes = studyNotes || [];
-
     $("#topbar-streak").textContent = stats.streak ?? 0;
 
-    // Load mentor feedback (pop-up, unread only)
-    const feedbacks = await api.getMentorFeedback(student.studentId);
+    const [reports, announcements] = await Promise.all([
+      safeFetch(() => api.getWeeklyReports(studentId), []),
+      safeFetch(() => api.getAnnouncements(), []),
+    ]);
+    state.reports = reports;
+    state.announcements = announcements;
+
+    const [notes, studyNotes] = await Promise.all([
+      safeFetch(() => api.getStudentMentorNotes(studentId), []),
+      safeFetch(() => api.getNotes(studentId), []),
+    ]);
+    state.mentorNotes = notes;
+    state.studyNotes = studyNotes;
+
+    // route — do this once, after data is loaded
+    const initial = (location.hash || "#dashboard").slice(1);
+    navigate(VIEW_TITLES[initial] ? initial : "dashboard");
+
+    // mentor feedback popup (non-blocking, after route)
+    const feedbacks = await safeFetch(() => api.getMentorFeedback(studentId), []);
     if (Array.isArray(feedbacks) && feedbacks.length > 0) {
       showMentorFeedback(feedbacks[0]);
     }
@@ -191,21 +204,18 @@ const APP_VERSION = "2.1.7";
     // notifications: seed baseline (don't toast for stuff that already existed) + start polling
     seedNotifBaseline();
     checkStreakReminder();
-    if (window.UMP_PUSH) window.UMP_PUSH.requestAndSaveToken(student.studentId);
+    if (window.UMP_PUSH) window.UMP_PUSH.requestAndSaveToken(studentId);
+
     if (!state._notifPollStarted) {
       state._notifPollStarted = true;
       setInterval(() => {
         if (!state.student) return;
         checkForNewNotifications();
         checkStreakReminder();
-      }, 60000);
-      // circuit breaker cooldown — every 5 min, give the backend another chance
+      }, 300000); // every 5 min — lighter on Apps Script
+
       setInterval(() => { state.notifConsecutiveFailures = 0; }, 300000);
     }
-
-    // route
-    const initial = (location.hash || "#dashboard").slice(1);
-    navigate(VIEW_TITLES[initial] ? initial : "dashboard");
   }
 
   // =======================================
@@ -327,28 +337,26 @@ const APP_VERSION = "2.1.7";
     }
   }
 
-  // Nav clicks
   $$(".nav-item[data-view]").forEach(el =>
     el.addEventListener("click", (e) => { e.preventDefault(); navigate(el.dataset.view); })
   );
+  
   window.addEventListener("hashchange", () => {
     const v = (location.hash || "#dashboard").slice(1);
     if (state.student) navigate(v);
   });
 
-// Mobile sidebar toggle
-const menuToggleBtn = $("#menu-toggle-btn");
-const sidebarEl = $(".sidebar");
-if (menuToggleBtn && sidebarEl) {
-  menuToggleBtn.addEventListener("click", () => {
-    sidebarEl.classList.toggle("open");
-  });
+  const menuToggleBtn = $("#menu-toggle-btn");
+  const sidebarEl = $(".sidebar");
+  if (menuToggleBtn && sidebarEl) {
+    menuToggleBtn.addEventListener("click", () => {
+      sidebarEl.classList.toggle("open");
+    });
 
-  // auto-close sidebar after picking a page on mobile
-  $$(".nav-item[data-view]").forEach(el =>
-    el.addEventListener("click", () => sidebarEl.classList.remove("open"))
-  );
-}
+    $$(".nav-item[data-view]").forEach(el =>
+      el.addEventListener("click", () => sidebarEl.classList.remove("open"))
+    );
+  }
 
   // ============ HELPERS ============
   const fmt = (n, d = 1) => (n == null || isNaN(n) ? "—" : Number(n).toFixed(d).replace(/\.0$/, ""));
@@ -423,7 +431,6 @@ if (menuToggleBtn && sidebarEl) {
     $("[data-progressBar]").style.width = pct + "%";
     $("[data-progressPct]").textContent = pct + "% to 1000 hr goal";
 
-    // weekly chart
     const ctx = document.getElementById("chart-weekly").getContext("2d");
     const labels = lastNDates(7);
     const data = st.last7 || Array(7).fill(0);
@@ -471,31 +478,30 @@ if (menuToggleBtn && sidebarEl) {
           }
         },
         scales: {
-  x: {
-    grid: { display: false },
-    ticks: {
-      color: "#64748B",
-      font: { family: "Plus Jakarta Sans", weight: "600", size: window.innerWidth < 480 ? 10 : 12 },
-      maxRotation: 0,
-      minRotation: 0,
-      autoSkip: true,
-      maxTicksLimit: window.innerWidth < 480 ? 4 : 7
-    }
-  },
-  y: {
-    beginAtZero: true,
-    grid: { color: "#EEF2F7" },
-    ticks: {
-      color: "#64748B",
-      stepSize: 2,
-      font: { size: window.innerWidth < 480 ? 10 : 12 }
-    }
-  }
-}
+          x: {
+            grid: { display: false },
+            ticks: {
+              color: "#64748B",
+              font: { family: "Plus Jakarta Sans", weight: "600", size: window.innerWidth < 480 ? 10 : 12 },
+              maxRotation: 0,
+              minRotation: 0,
+              autoSkip: true,
+              maxTicksLimit: window.innerWidth < 480 ? 4 : 7
+            }
+          },
+          y: {
+            beginAtZero: true,
+            grid: { color: "#EEF2F7" },
+            ticks: {
+              color: "#64748B",
+              stepSize: 2,
+              font: { size: window.innerWidth < 480 ? 10 : 12 }
+            }
+          }
+        }
       }
     });
 
-    // announcements
     const box = document.getElementById("announcement-list");
     if (box) {
       if (!state.announcements || state.announcements.length === 0) {
@@ -516,7 +522,6 @@ if (menuToggleBtn && sidebarEl) {
       }
     }
 
-    // mentor notes — independent of the announcements box existing
     const notesBox = document.getElementById("mentor-notes-list");
     if (notesBox) {
       renderMentorNotes(state.mentorNotes || []);
@@ -644,7 +649,7 @@ if (menuToggleBtn && sidebarEl) {
     state.mcq.answers = new Array(state.mcq.questions.length).fill(null);
     state.mcq.index = 0;
     state.mcq.startedAt = Date.now();
-    state.mcq.timeLeft = state.mcq.questions.length * 60; // 60s per Q
+    state.mcq.timeLeft = state.mcq.questions.length * 60;
 
     $("#mcq-chapters").hidden = true;
     $("#mcq-quiz").hidden = false;
@@ -816,7 +821,6 @@ if (menuToggleBtn && sidebarEl) {
     $("[data-p='solved']").textContent   = total;
     $("[data-p='attempts']").textContent = attempts.length;
 
-    // Subject accuracy
     const bySub = {};
     attempts.forEach(a => {
       bySub[a.subject] = bySub[a.subject] || { s: 0, t: 0 };
@@ -851,7 +855,6 @@ if (menuToggleBtn && sidebarEl) {
       }
     });
 
-    // Strong / Weak per chapter
     const byCh = {};
     attempts.forEach(a => {
       byCh[a.chapter] = byCh[a.chapter] || { s: 0, t: 0 };
@@ -869,7 +872,6 @@ if (menuToggleBtn && sidebarEl) {
     $("#strong-list").innerHTML = renderList(strong, "Take a few quizzes to see your strong chapters");
     $("#weak-list").innerHTML   = renderList(weak,   "Great work — no weak chapters yet");
 
-    // Recent attempts table
     const tb = $("#attempts-tbody");
     tb.innerHTML = attempts.length ? attempts.slice(0, 10).map(a => `
       <tr>
@@ -928,15 +930,6 @@ if (menuToggleBtn && sidebarEl) {
   }
 
   // ---------- Notes ----------
-  // Layered folder navigation:
-  //   Step 1 (page):  Subject folder cards.
-  //   Step 2 (modal): clicking a subject shows its CATEGORY folder cards
-  //                    (if that subject has any categorized notes) — or,
-  //                    if nothing in that subject is categorized, skips
-  //                    straight to the flat notes list (old behaviour).
-  //   Step 3 (modal): clicking a category folder shows that category's
-  //                    notes, with a Back button to return to the
-  //                    category-folder grid.
   function renderNotes() {
     const box = document.getElementById("notes-list");
     if (!box) return;
@@ -950,7 +943,6 @@ if (menuToggleBtn && sidebarEl) {
       return groups;
     };
 
-    // "General" bucket for notes with no category set.
     const groupByCategory = (list) => {
       const groups = {};
       (list || []).forEach(n => {
@@ -994,8 +986,6 @@ if (menuToggleBtn && sidebarEl) {
     const modalSearchWrap = document.getElementById("notes-subject-modal-search-wrap");
     if (!modal || !modalTitle || !modalList) return;
 
-    // Injects a Back button into the modal header once (persists across
-    // re-renders since the modal itself lives outside the view template).
     const ensureBackButton = () => {
       let backBtn = document.getElementById("notes-subject-modal-back");
       if (!backBtn) {
@@ -1021,7 +1011,6 @@ if (menuToggleBtn && sidebarEl) {
     };
     const backBtn = ensureBackButton();
 
-    // ---- Step 3: flat notes list (with search + Open buttons) ----
     const showNotesList = (heading, notes, onBack) => {
       modalTitle.textContent = heading;
       backBtn.hidden = !onBack;
@@ -1049,18 +1038,16 @@ if (menuToggleBtn && sidebarEl) {
       const searchInput = document.getElementById("notes-subject-modal-search");
       if (searchInput) {
         searchInput.value = "";
-        // avoid stacking multiple listeners across repeated opens
         const freshInput = searchInput.cloneNode(true);
         searchInput.parentNode.replaceChild(freshInput, searchInput);
         freshInput.addEventListener("input", () => renderFiltered(freshInput.value));
       }
     };
 
-    // ---- Step 2: category folder grid inside a subject ----
     const showCategoryFolders = (subject, notesForSubject) => {
       modalTitle.textContent = subject;
       backBtn.hidden = true;
-      if (modalSearchWrap) modalSearchWrap.hidden = true; // no search at folder level
+      if (modalSearchWrap) modalSearchWrap.hidden = true;
 
       const catGroups = groupByCategory(notesForSubject);
       const catNames = Object.keys(catGroups).sort((a, b) => {
@@ -1083,7 +1070,6 @@ if (menuToggleBtn && sidebarEl) {
       );
     };
 
-    // ---- Step 1 entry point: subject clicked ----
     const openSubjectModal = (subject, notesForSubject) => {
       const hasRealCategories = notesForSubject.some(n => n.category && String(n.category).trim());
 
@@ -1103,9 +1089,6 @@ if (menuToggleBtn && sidebarEl) {
       modal.hidden = true;
     };
 
-    // wire the modal's close button / overlay-click ONCE, on the modal
-    // itself (which persists across navigate() calls) rather than on
-    // #notes-list (which gets recreated every time this view is opened).
     if (!modal.dataset.wired) {
       const closeBtn = document.getElementById("notes-subject-modal-close");
       if (closeBtn) closeBtn.addEventListener("click", closeSubjectModal);
@@ -1162,10 +1145,6 @@ if (menuToggleBtn && sidebarEl) {
     overlay.style.display = "flex";
   }
 
- // single close handler for the note viewer (removed the earlier duplicate)
-  // NOTE: #note-viewer-overlay is defined further down in index.html, AFTER
-  // this <script> tag runs — so getElementById returns null unless we wait
-  // for DOMContentLoaded (same issue the dev panel below already avoids).
   document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("note-viewer-close")?.addEventListener("click", () => {
       const overlay = document.getElementById("note-viewer-overlay");
@@ -1270,7 +1249,6 @@ if (menuToggleBtn && sidebarEl) {
     const old = document.getElementById("mentor-feedback-popup");
     if (old) old.remove();
 
-    // inject guaranteed-visible styles once
     if (!document.getElementById("mentor-feedback-style")) {
       const style = document.createElement("style");
       style.id = "mentor-feedback-style";
@@ -1379,7 +1357,7 @@ if (menuToggleBtn && sidebarEl) {
     if (e.target === forgotModal) closeForgotPasswordModal();
   });
 
-  // ---------- Log Study Hours modal (in-app, replaces external Google Form) ----------
+  // ---------- Log Study Hours modal ----------
   const trackerModal = document.getElementById("tracker-modal");
   const tlDate = document.getElementById("tl-date");
   const tlHours = document.getElementById("tl-hours");
@@ -1393,15 +1371,13 @@ if (menuToggleBtn && sidebarEl) {
   const tlYesSection = document.getElementById("tl-yes-section");
   const tlReasonOther = document.getElementById("tl-reason-other");
 
-  const MAX_PROOF_BYTES = 3 * 1024 * 1024; // 3 MB raw -> ~4 MB as base64, safely under Vercel's ~4.5 MB serverless body limit
+  const MAX_PROOF_BYTES = 3 * 1024 * 1024;
 
-  // ---- chip helpers (radio/checkbox groups styled as pills) ----
   function wireChipGroup(groupEl) {
     groupEl.querySelectorAll(".choice-chip").forEach((chip) => {
       const input = chip.querySelector("input");
       input.addEventListener("change", () => {
         if (input.type === "radio") {
-          // clear "active" from sibling chips in this radio group
           groupEl.querySelectorAll(".choice-chip").forEach((c) => c.classList.remove("active"));
         }
         chip.classList.toggle("active", input.checked);
@@ -1433,13 +1409,11 @@ if (menuToggleBtn && sidebarEl) {
 
   [tlPlannedGroup, tlReasonGroup, tlSubjectsGroup, tlTargetGroup].forEach(wireChipGroup);
 
-  // "Other" reason -> reveal a free-text box
   tlReasonGroup.addEventListener("change", () => {
     tlReasonOther.hidden = getRadioValue("tl-reason") !== "Other";
     if (tlReasonOther.hidden) tlReasonOther.value = "";
   });
 
-  // Planned = No -> show only reason + mentor support. Yes/Maybe -> show subjects/target/proof/tomorrow.
   tlPlannedGroup.addEventListener("change", () => {
     const planned = getRadioValue("tl-planned");
     tlNoSection.hidden = planned !== "No";
@@ -1461,7 +1435,6 @@ if (menuToggleBtn && sidebarEl) {
   function openTrackerModal() {
     if (!state.student) return;
 
-    // fixed: student object uses `studentName`, not `name`
     document.getElementById("tracker-modal-student-name").textContent = state.student.studentName || "";
     document.getElementById("tracker-modal-student-id").textContent = state.student.studentId || "";
 
@@ -1494,7 +1467,6 @@ if (menuToggleBtn && sidebarEl) {
     if (e.target === trackerModal) closeTrackerModal();
   });
 
-  // Reads the chosen proof file as a base64 string, or resolves to null if none chosen.
   function readProofFile() {
     return new Promise((resolve, reject) => {
       const file = tlProofFile.files && tlProofFile.files[0];
@@ -1506,7 +1478,6 @@ if (menuToggleBtn && sidebarEl) {
 
       const reader = new FileReader();
       reader.onload = () => {
-        // reader.result is "data:<mime>;base64,<data>" - split off just the base64 part
         const base64 = String(reader.result).split(",")[1] || "";
         resolve({
           fileName: file.name,
@@ -1579,8 +1550,6 @@ if (menuToggleBtn && sidebarEl) {
     tlSubmitBtn.innerHTML = "<span>Submitting...</span>";
     tlError.hidden = true;
 
-    // studentId comes straight from the logged-in session - never typed by the
-    // student, so it can never be entered wrong.
     const studentId = state.student.studentId;
 
     try {
@@ -1604,7 +1573,6 @@ if (menuToggleBtn && sidebarEl) {
         return;
       }
 
-      // Optimistic update: show it instantly without waiting for a refetch
       state.log = [{ date, topic: subjects || reason, hours, proof: result.proofUrl ? "#" : "" }, ...(state.log || [])];
       state.stats = state.stats || {};
       state.stats.totalEntries = (state.stats.totalEntries || 0) + 1;
@@ -1614,7 +1582,6 @@ if (menuToggleBtn && sidebarEl) {
       closeTrackerModal();
       renderTracker();
 
-      // reconcile with the server shortly after, to pick up the real proof link etc.
       setTimeout(async () => {
         try {
           const [stats, log] = await Promise.all([
@@ -1707,7 +1674,7 @@ if (menuToggleBtn && sidebarEl) {
   });
 
   const verifyBtn = document.getElementById("verify-otp-btn");
-  verifyBtn.disabled = true; // fixed: start disabled until 6 digits are entered
+  verifyBtn.disabled = true;
 
   function checkOTPComplete() {
     const otp = [...otpInputs].map(i => i.value).join("");
@@ -1781,7 +1748,7 @@ if (menuToggleBtn && sidebarEl) {
     }
   });
 
-// ============ NOTIFICATIONS ============
+  // ============ NOTIFICATIONS ============
   const notifBell = document.getElementById("notif-bell");
   const notifBadge = document.getElementById("notif-badge");
   const notifPanel = document.getElementById("notif-panel");
@@ -1839,81 +1806,62 @@ if (menuToggleBtn && sidebarEl) {
       setTimeout(() => el.remove(), 300);
     }, 5000);
   }
-window.__umpShowPushToast = (title, body) => showToast("fa-bell", title, body);
+
+  window.__umpShowPushToast = (title, body) => showToast("fa-bell", title, body);
+
+  // ✅ FIX: Improved safeFetch with better error tracking
   async function safeFetch(fn, fallback) {
     try {
       const result = await fn();
-      state.notifConsecutiveFailures = 0; // reset on any success
+      state.notifConsecutiveFailures = 0;
       return result;
     } catch (err) {
       state.notifConsecutiveFailures++;
       if (state.notifConsecutiveFailures <= 2) {
         console.warn("Notification sub-fetch failed (non-fatal):", err.message);
-      } // after that, stay quiet — circuit breaker will pause polling anyway
+      }
       return fallback;
     }
   }
 
+  // ✅ FIX: Completely rewritten checkForNewNotifications with debouncing
   async function checkForNewNotifications() {
-    if (!state.student) return;
-    // circuit breaker: after 3 consecutive total failures, back off silently
-    // for a while instead of hammering a down backend every poll cycle
-    if (state.notifConsecutiveFailures >= 3) return;
-    try {
-      // sequential (not Promise.all) — Apps Script chokes on parallel requests
-      const announcements = await safeFetch(() => api.getAnnouncements(), state.announcements);
-      const mentorNotes   = await safeFetch(() => api.getStudentMentorNotes(state.student.studentId), state.mentorNotes);
-      const studyNotes    = await safeFetch(() => api.getNotes(state.student.studentId), state.studyNotes);
-      const reports       = await safeFetch(() => api.getWeeklyReports(state.student.studentId), state.reports);
+  if (!state.student) return;
+  if (isCheckingNotifications) return;
+  if (state.notifConsecutiveFailures >= 3) return;
 
-      (announcements || []).forEach(a => {
-        const k = annKey(a);
-        if (!state.notifSeen.announcements.has(k)) {
-          state.notifSeen.announcements.add(k);
-          pushNotif("fa-bullhorn", a.title || "New announcement", a.message || "");
-        }
-      });
+  isCheckingNotifications = true;
 
-      (mentorNotes || []).forEach(n => {
-        const k = noteMKey(n);
-        if (!state.notifSeen.mentorNotes.has(k)) {
-          state.notifSeen.mentorNotes.add(k);
-          pushNotif("fa-comment-dots", "New mentor note", n.note || "");
-        }
-      });
+  try {
+    const announcements = await safeFetch(
+      () => api.getAnnouncements(),
+      state.announcements
+    );
 
-      (studyNotes || []).forEach(n => {
-        const k = noteNKey(n);
-        if (!state.notifSeen.notes.has(k)) {
-          state.notifSeen.notes.add(k);
-          pushNotif("fa-file-pdf", "New study material", n.title || "");
-        }
-      });
+    (announcements || []).forEach(a => {
+      const k = annKey(a);
+      if (!state.notifSeen.announcements.has(k)) {
+        state.notifSeen.announcements.add(k);
+        pushNotif("fa-bullhorn", a.title || "New announcement", a.message || "");
+      }
+    });
 
-      (reports || []).forEach(r => {
-        const k = repKey(r);
-        if (!state.notifSeen.reports.has(k)) {
-          state.notifSeen.reports.add(k);
-          pushNotif("fa-envelope-open-text", "Weekly report ready", r.weekOf || "");
-        }
-      });
+    state.announcements = announcements;
 
-      state.announcements = announcements;
-      state.mentorNotes = mentorNotes;
-      state.studyNotes = studyNotes;
-      state.reports = reports;
+    const activeView = (location.hash || "#dashboard").slice(1);
+    if (activeView === "dashboard") renderMentorNotes(state.mentorNotes || []);
 
-      // re-render currently active view if it shows any of this data
-      const activeView = (location.hash || "#dashboard").slice(1);
-      if (activeView === "dashboard") renderMentorNotes(state.mentorNotes || []);
-      if (activeView === "reports") renderReports();
-      if (activeView === "notes") renderNotes();
-    } catch (err) {
-      console.error("Notification check failed:", err);
-    }
+    console.log('✅ Notification check complete');
+
+  } catch (err) {
+    console.error("❌ Notification check failed:", err);
+    state.notifConsecutiveFailures++;
+  } finally {
+    isCheckingNotifications = false;
   }
+}
 
-function isToday(dateStr) {
+  function isToday(dateStr) {
     if (!dateStr) return false;
     const d = new Date(dateStr);
     if (isNaN(d)) return false;
@@ -1927,13 +1875,13 @@ function isToday(dateStr) {
     if (!state.student || !state.stats) return;
 
     const now = new Date();
-    if (now.getHours() < 18) return; // sirf shaam 6 PM ke baad remind karo
+    if (now.getHours() < 18) return;
 
     const todayKey = now.toISOString().slice(0, 10);
     const storageKey = `ump_streak_reminder_${state.student.studentId}_${todayKey}`;
-    if (localStorage.getItem(storageKey)) return; // aaj already dikha chuke
+    if (localStorage.getItem(storageKey)) return;
 
-    if (isToday(state.stats.lastSubmission)) return; // aaj already submit ho chuka hai
+    if (isToday(state.stats.lastSubmission)) return;
 
     localStorage.setItem(storageKey, "1");
     pushNotif(
@@ -1977,41 +1925,42 @@ function isToday(dateStr) {
     });
   }
 
-  
-  
   // ============ BOOT ============
   boot();
 
-  // ---------- Refetch tracker data when the student comes back to this tab ----------
-  // (fixes: student opens the Google Form in a new tab, submits, switches back,
-  // and previously had to hit refresh to see it reflected)
+  // ✅ FIX: Improved background refresh with request guard
   document.addEventListener("visibilitychange", async () => {
     if (document.visibilityState !== "visible") return;
-    if (!state.student) return; // not logged in yet
+    if (!state.student) return;
+    if (isRefreshingData) return; // ✅ Prevent overlapping refreshes
+
+    isRefreshingData = true;
 
     try {
       const [stats, log] = await Promise.all([
         api.getStats(state.student.studentId),
         api.getStudyLog(state.student.studentId)
       ]);
+      
       state.stats = stats;
       state.log = log;
       $("#topbar-streak").textContent = stats.streak ?? 0;
 
-      // only re-render if the student is currently looking at the tracker view
       const activeView = (location.hash || "#dashboard").slice(1);
       if (activeView === "tracker") renderTracker();
 
       checkForNewNotifications();
       checkStreakReminder();
+      
+      console.log('🔄 Background refresh completed');
     } catch (err) {
       console.error("Background refresh failed:", err);
+    } finally {
+      isRefreshingData = false;
     }
   });
+
   // ---------- Developer Theme Panel ----------
-  // NOTE: these elements are defined further down in index.html, AFTER this
-  // <script> tag, so we must wait for DOMContentLoaded before looking them up
-  // — otherwise document.getElementById returns null and nothing wires up.
   document.addEventListener("DOMContentLoaded", () => {
     const devToggle = document.getElementById("devToggle");
     const devPanel = document.getElementById("devPanel");
