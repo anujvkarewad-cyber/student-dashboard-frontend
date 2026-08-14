@@ -29,7 +29,6 @@ const tabIcons: Record<keyof MainTabParamList, { active: keyof typeof Ionicons.g
   Home: { active: 'home', idle: 'home-outline' },
   Tracker: { active: 'time', idle: 'time-outline' },
   Focus: { active: 'timer', idle: 'timer-outline' },
-  Leaderboard: { active: 'trophy', idle: 'trophy-outline' },
   Notes: { active: 'folder-open', idle: 'folder-open-outline' },
   Profile: { active: 'person', idle: 'person-outline' },
 };
@@ -41,9 +40,10 @@ const MainTabs = () => (
       tabBarHideOnKeyboard: true,
       tabBarActiveTintColor: colors.primary,
       tabBarInactiveTintColor: '#8290A5',
-      tabBarLabelStyle: styles.tabLabel,
+      tabBarLabelPosition: 'below-icon',
+      tabBarLabelStyle: [styles.tabLabel, route.name === 'Focus' && styles.focusTabLabel],
       tabBarStyle: styles.tabBar,
-      tabBarBackground: () => <BlurView intensity={85} tint="light" style={StyleSheet.absoluteFill} />,
+      tabBarBackground: () => <BlurView intensity={85} tint="light" style={[StyleSheet.absoluteFill, styles.tabBarBlur]} />,
       tabBarItemStyle: styles.tabItem,
       tabBarIcon: ({ focused, color }) => (
         <View style={[styles.tabIcon, focused && styles.tabIconActive, route.name === 'Focus' && styles.focusTabIcon]}>
@@ -55,7 +55,6 @@ const MainTabs = () => (
     <Tabs.Screen name="Home" component={DashboardScreen} options={{ title: 'Home' }} />
     <Tabs.Screen name="Tracker" component={TrackerScreen} options={{ title: 'Tracker' }} />
     <Tabs.Screen name="Focus" component={FocusTimerScreen} options={{ title: 'Focus' }} />
-    <Tabs.Screen name="Leaderboard" component={LeaderboardScreen} options={{ title: 'Ranks' }} />
     <Tabs.Screen name="Notes" component={NotesScreen} options={{ title: 'Material' }} />
     <Tabs.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profile' }} />
   </Tabs.Navigator>
@@ -94,6 +93,7 @@ export const AppNavigator = () => {
           <>
             <RootStack.Screen name="Main" component={MainTabs} options={{ headerShown: false }} />
             <RootStack.Screen name="Reports" component={ReportsScreen} options={{ title: 'Weekly reports' }} />
+            <RootStack.Screen name="Leaderboard" component={LeaderboardScreen} options={{ title: 'Leaderboard' }} />
             <RootStack.Screen name="AddStudyLog" component={AddStudyLogScreen} options={{ title: 'Log study hours', presentation: 'modal', animation: 'slide_from_bottom' }} />
             <RootStack.Screen name="NoteSubject" component={NoteSubjectScreen} options={({ route }) => ({ title: route.params.subject })} />
             <RootStack.Screen name="NotePreview" component={NotePreviewScreen} options={{ title: 'Protected note preview' }} />
@@ -111,12 +111,14 @@ export const AppNavigator = () => {
 };
 
 const styles = StyleSheet.create({
-  tabBar: { position: 'absolute', height: 73, paddingTop: 7, paddingBottom: 8, marginHorizontal: 12, marginBottom: 10, borderTopWidth: 0, borderWidth: 1, borderColor: 'rgba(255,255,255,0.92)', borderRadius: radius.lg, backgroundColor: 'rgba(255,255,255,0.74)', overflow: 'hidden', shadowColor: colors.shadow, shadowOffset: { width: 0, height: 7 }, shadowOpacity: 0.14, shadowRadius: 16, elevation: 9 },
-  tabItem: { paddingVertical: 1 },
-  tabLabel: { fontSize: 8, fontWeight: '800', marginTop: 1 },
-  tabIcon: { width: 36, height: 31, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  tabBar: { position: 'absolute', height: 74, paddingTop: 9, paddingBottom: 7, marginHorizontal: 12, marginBottom: 10, borderTopWidth: 0, borderWidth: 1, borderColor: 'rgba(255,255,255,0.92)', borderRadius: radius.lg, backgroundColor: 'rgba(255,255,255,0.78)', overflow: 'visible', shadowColor: colors.shadow, shadowOffset: { width: 0, height: 7 }, shadowOpacity: 0.14, shadowRadius: 16, elevation: 9 },
+  tabBarBlur: { borderRadius: radius.lg, overflow: 'hidden' },
+  tabItem: { paddingVertical: 0 },
+  tabLabel: { fontSize: 9, lineHeight: 12, fontWeight: '800', marginTop: 2 },
+  focusTabLabel: { marginTop: 0, color: colors.primaryDark },
+  tabIcon: { width: 38, height: 31, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   tabIconActive: { backgroundColor: colors.primarySoft },
-  focusTabIcon: { width: 43, height: 38, borderRadius: 15, marginTop: -7, backgroundColor: colors.primary, shadowColor: colors.primaryDark, shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.28, shadowRadius: 8, elevation: 5 },
+  focusTabIcon: { width: 48, height: 48, borderRadius: 17, marginTop: -15, backgroundColor: colors.primary, borderWidth: 3, borderColor: 'rgba(255,255,255,0.95)', shadowColor: colors.primaryDark, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.3, shadowRadius: 9, elevation: 7 },
   splash: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.canvas },
   splashLogo: { width: 84, height: 84, borderRadius: 25 },
   splashTitle: { color: colors.ink, fontSize: 16, fontWeight: '900', marginTop: 16 },

@@ -75,6 +75,8 @@ export const ProfileScreen = () => {
 
         <Text style={styles.sectionTitle}>Account & progress</Text>
         <Card style={styles.menuCard}>
+          <MenuRow icon="trophy-outline" title="Leaderboard" subtitle="See your cohort position" onPress={() => navigation.navigate('Leaderboard')} />
+          <View style={styles.line} />
           <MenuRow icon="bar-chart-outline" title="Weekly reports" subtitle="Review progress and mentor rating" onPress={() => navigation.navigate('Reports')} />
           <View style={styles.line} />
           <MenuRow icon="key-outline" title="Change password" subtitle="Update your sign-in password" onPress={() => navigation.navigate('ChangePassword')} />
