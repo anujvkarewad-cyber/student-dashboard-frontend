@@ -1,4 +1,4 @@
-const APP_VERSION = "2.3.0";
+const APP_VERSION = "2.4.1";
 
 (function () {
   "use strict";
@@ -21,6 +21,7 @@ const APP_VERSION = "2.3.0";
     notifUnread: 0,
     notifFeed: [],
     notifConsecutiveFailures: 0,
+    notifCleared: new Set(), // ✅ Persistent cleared notifications (survives refresh/relogin)
     // MCQ
     mcq: {
       subject: null,
@@ -1918,7 +1919,41 @@ const APP_VERSION = "2.3.0";
   const noteNKey = (n) => `n:${n.id}`;
   const repKey  = (r) => `r:${r.weekOf}`;
 
+  const CLEARED_KEY = () => `ump_cleared_notifs_${state.student ? state.student.studentId : 'global'}`;
+
+  function loadClearedNotifs() {
+    try {
+      const raw = localStorage.getItem(CLEARED_KEY());
+      if (raw) {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) state.notifCleared = new Set(arr);
+      }
+    } catch (e) { console.warn("Failed to load cleared notifs:", e); }
+  }
+
+  function saveClearedNotifs() {
+    try {
+      localStorage.setItem(CLEARED_KEY(), JSON.stringify([...state.notifCleared]));
+    } catch (e) { console.warn("Failed to save cleared notifs:", e); }
+  }
+
+  function clearAllNotifications() {
+    // Persist cleared IDs so they don't come back after refresh/relogin
+    state.notifFeed.forEach(item => {
+      const key = item.raw ? (item.type + ':' + (item.raw.id || item.raw.weekOf || item.title)) : (item.type + ':' + item.title);
+      if (key) state.notifCleared.add(key);
+    });
+    saveClearedNotifs();
+    // Also clear feed for current session
+    state.notifFeed = [];
+    state.notifUnread = 0;
+    updateNotifBadge();
+    renderNotifPanel();
+    if (window.__umpShowPushToast) window.__umpShowPushToast("✅ Cleared", "All notifications cleared. They will not return.");
+  }
+
   function seedNotifBaseline() {
+    loadClearedNotifs();
     (state.announcements || []).forEach(a => state.notifSeen.announcements.add(annKey(a)));
     (state.mentorNotes || []).forEach(n => state.notifSeen.mentorNotes.add(noteMKey(n)));
     (state.studyNotes || []).forEach(n => state.notifSeen.notes.add(noteNKey(n)));
@@ -1941,6 +1976,18 @@ const APP_VERSION = "2.3.0";
   }
 
   function pushNotif(icon, title, sub, opts = {}) {
+    // Suppress duplicates: check feed and cleared set
+    const raw = opts.raw || null;
+    const dupKey = raw ? (opts.type + ':' + (raw.id || raw.weekOf || raw.title || sub)) : (opts.type + ':' + title);
+    const isDup = state.notifFeed.some(i => {
+      const r = i.raw || null;
+      const k = r ? (i.type + ':' + (r.id || r.weekOf || r.title || i.sub)) : (i.type + ':' + i.title);
+      return k === dupKey;
+    }) || (dupKey ? state.notifCleared.has(dupKey) : false);
+    if (isDup) {
+      console.log("🔕 Suppressed duplicate notification:", title);
+      return;
+    }
     const item = {
       icon,
       title: title || "Notification",
@@ -2034,6 +2081,8 @@ const APP_VERSION = "2.3.0";
       let newCount = 0;
       (announcements || []).forEach(a => {
         const k = annKey(a);
+        const clearedKey = 'announcement:' + k;
+        if (state.notifCleared.has(clearedKey)) return; // Suppress cleared notifications
         if (!state.notifSeen.announcements.has(k)) {
           state.notifSeen.announcements.add(k);
           newCount++;
@@ -2047,6 +2096,8 @@ const APP_VERSION = "2.3.0";
       });
       (mentorNotes || []).forEach(n => {
         const k = noteMKey(n);
+        const clearedKey = 'mentor:' + k;
+        if (state.notifCleared.has(clearedKey)) return;
         if (!state.notifSeen.mentorNotes.has(k)) {
           state.notifSeen.mentorNotes.add(k);
           newCount++;
@@ -2060,6 +2111,8 @@ const APP_VERSION = "2.3.0";
       });
       (studyNotes || []).forEach(n => {
         const k = noteNKey(n);
+        const clearedKey = 'notes:' + k;
+        if (state.notifCleared.has(clearedKey)) return;
         if (!state.notifSeen.notes.has(k)) {
           state.notifSeen.notes.add(k);
           newCount++;
@@ -2073,6 +2126,8 @@ const APP_VERSION = "2.3.0";
       });
       (reports || []).forEach(r => {
         const k = repKey(r);
+        const clearedKey = 'report:' + k;
+        if (state.notifCleared.has(clearedKey)) return;
         if (!state.notifSeen.reports.has(k)) {
           state.notifSeen.reports.add(k);
           newCount++;
@@ -2149,11 +2204,17 @@ const APP_VERSION = "2.3.0";
 
   function renderNotifPanel() {
     if (!notifPanelList) return;
-    if (!state.notifFeed.length) {
+    // Filter out cleared notifications (persistent across relogin/refresh)
+    const visibleFeed = state.notifFeed.filter(item => {
+      const raw = item.raw || null;
+      const key = raw ? (item.type + ':' + (raw.id || raw.weekOf || raw.title || item.sub)) : (item.type + ':' + item.title);
+      return !state.notifCleared.has(key);
+    });
+    if (!visibleFeed.length) {
       notifPanelList.innerHTML = `<div class="notif-empty">No notifications yet.<br><small style="color:#94A3B8">Pull down to refresh ↕️</small></div>`;
       return;
     }
-    notifPanelList.innerHTML = state.notifFeed.map((n, idx) => `
+    notifPanelList.innerHTML = visibleFeed.map((n, idx) => `
       <div class="notif-item ${n.type ? 'notif-type-'+n.type : ''}" data-idx="${idx}" data-nav="${n.nav || ''}" style="cursor:${n.nav ? 'pointer' : 'default'}">
         <div class="notif-item-icon"><i class="fa-solid ${n.icon}"></i></div>
         <div style="flex:1;min-width:0">
@@ -2213,6 +2274,20 @@ const APP_VERSION = "2.3.0";
       panelHead.style.alignItems = "center";
       panelHead.style.justifyContent = "space-between";
       panelHead.appendChild(refreshBtn);
+
+      // ✅ Persistent Clear All notifications button
+      const clearBtn = document.createElement("button");
+      clearBtn.id = "notif-clear-all-btn";
+      clearBtn.innerHTML = '<i class="fa-solid fa-trash-can"></i> Clear All';
+      clearBtn.title = "Clear all notifications permanently";
+      clearBtn.style.cssText = "background:none;border:none;cursor:pointer;color:#EF4444;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:700;margin-left:8px;";
+      clearBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (confirm("Clear all notifications? They will not return after refresh or relogin.")) {
+          clearAllNotifications();
+        }
+      });
+      panelHead.appendChild(clearBtn);
     }
   }
 

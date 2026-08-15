@@ -43,7 +43,7 @@ if (messaging) {
 }
 
 // ---------- PWA cache ----------
-const CACHE_VERSION = "2.3.0"; // FIX: bump to force update — duplicate notif fix
+const CACHE_VERSION = "2.4.1"; // FIX: bump to force update — notification improvements
 const CACHE_NAME = `upm-static-${CACHE_VERSION}`;
 const STATIC_FILES = ["/", "/style.css", "/manifest.json", "/icon/icon-192.png", "/icon/icon-512.png"];
 
