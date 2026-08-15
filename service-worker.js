@@ -43,19 +43,9 @@ if (messaging) {
 }
 
 // ---------- PWA cache ----------
-const CACHE_VERSION = "2.4.0";
+const CACHE_VERSION = "2.4.1"; // FIX: bump to force update — notification improvements
 const CACHE_NAME = `upm-static-${CACHE_VERSION}`;
-const STATIC_FILES = [
-  "/",
-  "/style.css",
-  "/api.js",
-  "/app.js",
-  "/learning-data.js",
-  "/learning-tools.js",
-  "/manifest.json",
-  "/icon/icon-192.png",
-  "/icon/icon-512.png",
-];
+const STATIC_FILES = ["/", "/style.css", "/manifest.json", "/icon/icon-192.png", "/icon/icon-512.png"];
 
 self.addEventListener("install", (event) => {
   console.log("[SW] install", CACHE_VERSION);

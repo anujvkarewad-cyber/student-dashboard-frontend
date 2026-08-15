@@ -364,12 +364,41 @@ function matchStudentsForNote_(ss, audience, group) {
 // Scheduled pushes — now pass link so notification click opens right page
 
 function sendWeeklyReportPushes() {
+  // ✅ Lock + LAST_WEEKLY_REPORT_PUSH_WEEK guard: only run once per week
+  const lock = LockService.getScriptLock();
+  try {
+    if (!lock.tryLock(30000)) {
+      Logger.log('⚠️ Weekly report trigger locked — another instance is running.');
+      return { sent: 0, reason: 'locked' };
+    }
+  } catch (e) {
+    Logger.log('⚠️ Lock service unavailable: ' + e.message);
+    return { sent: 0, reason: 'lock_error' };
+  }
+
+  const props = PropertiesService.getScriptProperties();
+  const lastWeekStr = props.getProperty('LAST_WEEKLY_REPORT_PUSH_WEEK');
+  const now = new Date();
+  const currentWeek = now.getFullYear() + '-' + String(Math.ceil((now.getDate() + new Date(now.getFullYear(), 0, 1).getDay() - 1) / 7)).padStart(2, '0');
+  if (lastWeekStr === currentWeek) {
+    Logger.log('✅ Weekly report already pushed for week ' + currentWeek + ' — skipping.');
+    lock.releaseLock();
+    return { sent: 0, reason: 'already_pushed_this_week', week: currentWeek };
+  }
+
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const students = readStudents_(ss);
+  let sent = 0;
   students.forEach(s => {
-    sendPushToStudent(s.id, '📊 Weekly report ready', 'Your weekly study report is ready — check it in Reports.', { link: '/#reports', tag: 'weekly-report' });
+    const res = sendPushToStudent(s.id, '📊 Weekly report ready', 'Your weekly study report is ready — check it in Reports.', { link: '/#reports', tag: 'weekly-report' });
+    if (res && res.sent > 0) sent += res.sent;
     Utilities.sleep(200);
   });
+
+  props.setProperty('LAST_WEEKLY_REPORT_PUSH_WEEK', currentWeek);
+  lock.releaseLock();
+  Logger.log('✅ Weekly report pushes completed: ' + sent + ' sent for week ' + currentWeek);
+  return { sent: sent, reason: 'completed', week: currentWeek };
 }
 
 function sendDailyStreakReminders() {

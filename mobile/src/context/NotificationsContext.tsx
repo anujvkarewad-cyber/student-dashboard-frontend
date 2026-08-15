@@ -30,10 +30,13 @@ type NotificationsValue = {
   isRead: (id: string) => boolean;
   markRead: (id: string) => Promise<void>;
   markAllRead: () => Promise<void>;
+  clearAll: () => Promise<void>;
+  isCleared: (id: string) => boolean;
 };
 
 const NotificationsContext = createContext<NotificationsValue | undefined>(undefined);
 const readKey = (studentId: string) => `ump_mobile_read_notifications_${studentId}`;
+const clearedKey = (studentId: string) => `ump_mobile_cleared_notifications_${studentId}`;
 
 const stable = (value: unknown) => String(value || '').trim().replace(/\s+/g, ' ').slice(0, 80);
 
@@ -43,18 +46,25 @@ export const NotificationsProvider = ({ children }: PropsWithChildren) => {
   const { dateKey: dailyMcqDate, todayAttempts: dailyMcqAttempts } = useDailyMcq();
   const { dueReceipts } = useStudyReceipts();
   const [readIds, setReadIds] = useState<Set<string>>(new Set());
+  const [clearedIds, setClearedIds] = useState<Set<string>>(new Set());
   const [pushStatus, setPushStatus] = useState<NativePushStatus>('idle');
 
   useEffect(() => {
     let mounted = true;
     if (!student) {
       setReadIds(new Set());
+      setClearedIds(new Set());
       return;
     }
     AsyncStorage.getItem(readKey(student.studentId)).then((saved) => {
       if (!mounted) return;
       try { setReadIds(new Set(saved ? JSON.parse(saved) as string[] : [])); }
       catch { setReadIds(new Set()); }
+    });
+    AsyncStorage.getItem(clearedKey(student.studentId)).then((saved) => {
+      if (!mounted) return;
+      try { setClearedIds(new Set(saved ? JSON.parse(saved) as string[] : [])); }
+      catch { setClearedIds(new Set()); }
     });
     return () => { mounted = false; };
   }, [student]);
@@ -86,10 +96,18 @@ export const NotificationsProvider = ({ children }: PropsWithChildren) => {
     const items: AppNotification[] = [];
     let order = 10_000;
 
+    // Suppress duplicates: only add if ID not already present
+    const existingIds = new Set(items.map(i => i.id));
+    const addIfUnique = (item: AppNotification) => {
+      if (existingIds.has(item.id) || clearedIds.has(item.id)) return;
+      existingIds.add(item.id);
+      items.push(item);
+    };
+
     groupsForStudent(student?.group).forEach((group) => {
       const attempt = dailyMcqAttempts.find((item) => item.group === group);
       if (attempt?.completedAt) return;
-      items.push({
+      addIfUnique({
         id: `mcq:${dailyMcqDate}:${group}`,
         type: 'mcq',
         title: attempt ? `Continue ${group} Daily MCQ` : `${group} Daily MCQ is ready`,
@@ -100,7 +118,7 @@ export const NotificationsProvider = ({ children }: PropsWithChildren) => {
         order: order--,
       });
     });
-    dueReceipts.forEach((item) => items.push({
+    dueReceipts.forEach((item) => addIfUnique({
       id: `memory:${item.id}`,
       type: 'memory',
       title: '24-hour memory check due',
@@ -110,7 +128,7 @@ export const NotificationsProvider = ({ children }: PropsWithChildren) => {
       sessionId: item.sessionId,
       order: order--,
     }));
-    data.feedback.forEach((item) => items.push({
+    data.feedback.forEach((item) => addIfUnique({
       id: `feedback:${item.id}`,
       type: 'feedback',
       title: `Message from ${item.mentor || 'your mentor'}`,
@@ -119,7 +137,7 @@ export const NotificationsProvider = ({ children }: PropsWithChildren) => {
       target: 'home',
       order: order--,
     }));
-    data.announcements.forEach((item) => items.push({
+    data.announcements.forEach((item) => addIfUnique({
       id: `announcement:${stable(item.title)}:${stable(item.date)}`,
       type: 'announcement',
       title: item.title || 'New announcement',
@@ -128,7 +146,7 @@ export const NotificationsProvider = ({ children }: PropsWithChildren) => {
       target: 'home',
       order: order--,
     }));
-    data.mentorNotes.forEach((item) => items.push({
+    data.mentorNotes.forEach((item) => addIfUnique({
       id: `mentor:${stable(item.date)}:${stable(item.note)}`,
       type: 'mentor',
       title: 'New mentor guidance',
@@ -137,7 +155,7 @@ export const NotificationsProvider = ({ children }: PropsWithChildren) => {
       target: 'home',
       order: order--,
     }));
-    data.studyNotes.forEach((item) => items.push({
+    data.studyNotes.forEach((item) => addIfUnique({
       id: `material:${item.id}`,
       type: 'material',
       title: item.title || 'New study material',
@@ -146,7 +164,7 @@ export const NotificationsProvider = ({ children }: PropsWithChildren) => {
       target: 'notes',
       order: order--,
     }));
-    data.reports.forEach((item) => items.push({
+    data.reports.forEach((item) => addIfUnique({
       id: `report:${stable(item.weekOf)}`,
       type: 'report',
       title: 'Weekly report is ready',
@@ -156,8 +174,8 @@ export const NotificationsProvider = ({ children }: PropsWithChildren) => {
       order: order--,
     }));
 
-    return items.sort((a, b) => b.order - a.order).slice(0, 50);
-  }, [dailyMcqAttempts, dailyMcqDate, data.announcements, data.feedback, data.mentorNotes, data.reports, data.studyNotes, dueReceipts, student?.group]);
+    return items.sort((a, b) => b.order - a.order).slice(0, 50).filter(i => !clearedIds.has(i.id));
+  }, [dailyMcqAttempts, dailyMcqDate, data.announcements, data.feedback, data.mentorNotes, data.reports, data.studyNotes, dueReceipts, student?.group, clearedIds]);
 
   const persist = useCallback(async (next: Set<string>) => {
     setReadIds(next);
@@ -177,6 +195,19 @@ export const NotificationsProvider = ({ children }: PropsWithChildren) => {
     await persist(next);
   }, [notifications, persist, readIds]);
 
+  const persistCleared = useCallback(async (next: Set<string>) => {
+    setClearedIds(next);
+    if (student) await AsyncStorage.setItem(clearedKey(student.studentId), JSON.stringify([...next].slice(-200)));
+  }, [student]);
+
+  const clearAll = useCallback(async () => {
+    const next = new Set(clearedIds);
+    notifications.forEach((item) => next.add(item.id));
+    await persistCleared(next);
+  }, [notifications, persistCleared, clearedIds]);
+
+  const isCleared = useCallback((id: string) => clearedIds.has(id), [clearedIds]);
+
   const value = useMemo<NotificationsValue>(() => ({
     notifications,
     unreadCount: notifications.reduce((total, item) => total + (readIds.has(item.id) ? 0 : 1), 0),
@@ -185,7 +216,9 @@ export const NotificationsProvider = ({ children }: PropsWithChildren) => {
     isRead: (id) => readIds.has(id),
     markRead,
     markAllRead,
-  }), [enablePush, markAllRead, markRead, notifications, pushStatus, readIds]);
+    clearAll,
+    isCleared,
+  }), [enablePush, markAllRead, markRead, notifications, pushStatus, readIds, clearAll, isCleared]);
 
   return <NotificationsContext.Provider value={value}>{children}</NotificationsContext.Provider>;
 };

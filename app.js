@@ -1,4 +1,4 @@
-const APP_VERSION = "2.4.0";
+const APP_VERSION = "2.4.1";
 
 (function () {
   "use strict";
@@ -21,6 +21,7 @@ const APP_VERSION = "2.4.0";
     notifUnread: 0,
     notifFeed: [],
     notifConsecutiveFailures: 0,
+    notifCleared: new Set(), // ✅ Persistent cleared notifications (survives refresh/relogin)
     // MCQ
     mcq: {
       subject: null,
@@ -41,8 +42,7 @@ const APP_VERSION = "2.4.0";
   const VIEW_TITLES = {
     dashboard: "Dashboard",
     tracker: "Daily Study Tracker",
-    focus: "Focus Room",
-    mcq: "Daily & Practice MCQ",
+    mcq: "MCQ Practice",
     performance: "Performance",
     leaderboard: "Leaderboard",
     reports: "Weekly Reports",
@@ -404,9 +404,6 @@ const APP_VERSION = "2.4.0";
       return;
     }
 
-    // Stop feature timers and release any screen wake lock before replacing a view.
-    if (window.UMP_LEARNING_TOOLS) window.UMP_LEARNING_TOOLS.cleanup();
-
     const node = tpl.content.cloneNode(true);
     const container = $("#view-container");
     container.innerHTML = "";
@@ -416,7 +413,6 @@ const APP_VERSION = "2.4.0";
       ({
         dashboard: renderDashboard,
         tracker: renderTracker,
-        focus: renderFocus,
         mcq: renderMCQ,
         performance: renderPerformance,
         leaderboard: renderLeaderboard,
@@ -678,30 +674,231 @@ const APP_VERSION = "2.4.0";
     }
   }
 
-  // ---------- APK-parity Focus + MCQ tools ----------
-  function renderFocus() {
-    const root = $("#focus-root");
-    if (!root || !window.UMP_LEARNING_TOOLS) {
-      if (root) root.innerHTML = "<div class='card'>Focus Room could not be loaded. Please refresh once.</div>";
-      return;
-    }
-    window.UMP_LEARNING_TOOLS.renderFocus(root, state.student);
+  // ---------- MCQ ----------
+  function renderMCQ() {
+    const grid = $("#mcq-subjects");
+    grid.innerHTML = api.getSubjects().map(s => `
+      <div class="subject-card" data-subject="${s.id}" data-testid="subject-${s.id}"
+        style="--sc-color:${s.color};--sc-bg:${s.bg}">
+        <div class="sc-icon"><i class="fa-solid ${s.icon}"></i></div>
+        <div class="sc-title">${escapeHtml(s.name)}</div>
+        <div class="sc-meta">${api.getChapters(s.id).length} chapters available</div>
+        <div class="sc-arrow"><i class="fa-solid fa-arrow-right"></i></div>
+      </div>
+    `).join("");
+
+    $$(".subject-card", grid).forEach(el => el.addEventListener("click", () => showChapters(el.dataset.subject)));
+    $$("[data-mcq-back]").forEach(el => el.addEventListener("click", () => showSubjectsPanel()));
   }
 
-  function renderMCQ() {
-    const root = $("#mcq-root");
-    if (!root || !window.UMP_LEARNING_TOOLS) {
-      if (root) root.innerHTML = "<div class='card'>MCQ Zone could not be loaded. Please refresh once.</div>";
-      return;
+  function showSubjectsPanel() {
+    $("#mcq-subjects").hidden = false;
+    $("#mcq-chapters").hidden = true;
+    $("#mcq-quiz").hidden = true;
+    $("#mcq-result").hidden = true;
+    stopTimer();
+  }
+
+  function showChapters(subjectId) {
+    const subject = api.getSubjects().find(s => s.id === subjectId);
+    state.mcq.subject = subject;
+    $("#mcq-subjects").hidden = true;
+    $("#mcq-chapters").hidden = false;
+    $("#mcq-subject-title").textContent = `${subject.name} · Chapters`;
+
+    const chapters = api.getChapters(subjectId);
+    const grid = $("#chapter-grid");
+    grid.innerHTML = chapters.map(c => `
+      <div class="chapter-card" data-testid="chapter-${c.id}">
+        <div class="chapter-name">${escapeHtml(c.name)}</div>
+        <div class="chapter-meta">
+          <span class="tag difficulty-${c.difficulty.toLowerCase()}">${c.difficulty}</span>
+          <span class="tag">${c.questions} Qs</span>
+        </div>
+        <div class="chapter-stats">
+          <span>Last score: <b>${c.lastScore != null ? c.lastScore + "%" : "—"}</b></span>
+          <span>${c.lastAttempt ? dayShort(c.lastAttempt) : "New"}</span>
+        </div>
+        <button class="btn-primary sm" data-start="${c.id}" data-testid="start-quiz-${c.id}">
+          <i class="fa-solid fa-play"></i> Start Quiz
+        </button>
+      </div>
+    `).join("");
+
+    $$("[data-start]", grid).forEach(btn =>
+      btn.addEventListener("click", () => startQuiz(subjectId, btn.dataset.start))
+    );
+  }
+
+  async function startQuiz(subjectId, chapterId) {
+    const chapter = api.getChapters(subjectId).find(c => c.id === chapterId);
+    state.mcq.chapter = chapter;
+    state.mcq.questions = await api.getQuestions(subjectId, chapterId, 10);
+    state.mcq.answers = new Array(state.mcq.questions.length).fill(null);
+    state.mcq.index = 0;
+    state.mcq.startedAt = Date.now();
+    state.mcq.timeLeft = state.mcq.questions.length * 60;
+
+    $("#mcq-chapters").hidden = true;
+    $("#mcq-quiz").hidden = false;
+    renderQuizStep();
+    startTimer();
+  }
+
+  function renderQuizStep() {
+    const { questions, index, answers, chapter } = state.mcq;
+    const q = questions[index];
+    const total = questions.length;
+    const answered = answers.filter(a => a != null).length;
+
+    $("#mcq-quiz").innerHTML = `
+      <div class="card">
+        <div class="quiz-topbar">
+          <div>
+            <div class="quiz-qnum">Question ${index + 1} / ${total}</div>
+            <h3 style="margin-top:4px">${escapeHtml(chapter.name)}</h3>
+          </div>
+          <div class="quiz-progress">
+            <div class="quiz-progress-bar"><div class="quiz-progress-fill" style="width:${(answered / total) * 100}%"></div></div>
+            <div class="quiz-progress-label">${answered} of ${total} answered</div>
+          </div>
+          <div id="quiz-timer" class="quiz-timer" data-testid="quiz-timer"><i class="fa-regular fa-clock"></i> <span></span></div>
+        </div>
+
+        <div class="quiz-question" data-testid="quiz-question">${escapeHtml(q.q)}</div>
+        <div class="quiz-options" data-testid="quiz-options">
+          ${q.options.map((opt, i) => `
+            <div class="quiz-option ${answers[index] === i ? "selected" : ""}" data-opt="${i}" data-testid="quiz-option-${i}">
+              <div class="qo-letter">${String.fromCharCode(65 + i)}</div>
+              <div>${escapeHtml(opt)}</div>
+            </div>
+          `).join("")}
+        </div>
+
+        <div class="quiz-actions">
+          <button class="btn-ghost" id="quiz-prev" ${index === 0 ? "disabled" : ""} data-testid="quiz-prev-btn">
+            <i class="fa-solid fa-arrow-left"></i> Previous
+          </button>
+          ${index < total - 1
+            ? `<button class="btn-primary sm" id="quiz-next" data-testid="quiz-next-btn">Next <i class="fa-solid fa-arrow-right"></i></button>`
+            : `<button class="btn-primary sm" id="quiz-submit" data-testid="quiz-submit-btn"><i class="fa-solid fa-check"></i> Submit Quiz</button>`
+          }
+        </div>
+      </div>
+    `;
+
+    $$("[data-opt]").forEach(el => el.addEventListener("click", () => {
+      state.mcq.answers[state.mcq.index] = Number(el.dataset.opt);
+      renderQuizStep();
+    }));
+    const prev = $("#quiz-prev");   if (prev) prev.addEventListener("click", () => { state.mcq.index--; renderQuizStep(); });
+    const next = $("#quiz-next");   if (next) next.addEventListener("click", () => { state.mcq.index++; renderQuizStep(); });
+    const sub  = $("#quiz-submit"); if (sub)  sub.addEventListener("click", submitQuiz);
+    updateTimerDisplay();
+  }
+
+  function startTimer() {
+    stopTimer();
+    updateTimerDisplay();
+    state.mcq.timerId = setInterval(() => {
+      state.mcq.timeLeft--;
+      if (state.mcq.timeLeft <= 0) {
+        stopTimer();
+        submitQuiz();
+        return;
+      }
+      updateTimerDisplay();
+    }, 1000);
+  }
+
+  function stopTimer() {
+    if (state.mcq.timerId) {
+      clearInterval(state.mcq.timerId);
+      state.mcq.timerId = null;
     }
-    window.UMP_LEARNING_TOOLS.renderMCQ(root, state.student);
+  }
+
+  function updateTimerDisplay() {
+    const el = $("#quiz-timer");
+    if (!el) return;
+    const t = state.mcq.timeLeft;
+    const m = Math.floor(t / 60), s = t % 60;
+    el.querySelector("span").textContent = `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    el.classList.toggle("warn", t <= 30);
+  }
+
+  async function submitQuiz() {
+    stopTimer();
+    const { questions, answers, chapter, startedAt } = state.mcq;
+    let correct = 0;
+    answers.forEach((a, i) => { if (a === questions[i].answer) correct++; });
+    const total = questions.length;
+    const pct = Math.round((correct / total) * 100);
+    const timeTaken = Math.round((Date.now() - startedAt) / 1000);
+    const level = pct >= 85 ? "Excellent" : pct >= 70 ? "Good" : pct >= 50 ? "Average" : "Needs work";
+
+    await api.saveQuizAttempt(state.student.studentId, {
+      subject: state.mcq.subject.name,
+      chapter: chapter.name,
+      chapterId: chapter.id,
+      score: correct,
+      total,
+      percentage: pct,
+      timeTaken
+    });
+
+    $("#mcq-quiz").hidden = true;
+    $("#mcq-result").hidden = false;
+    $("#mcq-result").innerHTML = `
+      <div class="card">
+        <div class="result-icon"><i class="fa-solid ${pct >= 70 ? "fa-trophy" : "fa-flag-checkered"}"></i></div>
+        <div class="result-title">${pct}%</div>
+        <div class="result-sub">${escapeHtml(chapter.name)} · ${level}</div>
+        <div class="result-grid">
+          <div><b>${correct}</b><span>Correct</span></div>
+          <div><b>${total - correct}</b><span>Wrong</span></div>
+          <div><b>${total}</b><span>Total</span></div>
+          <div><b>${Math.floor(timeTaken / 60)}:${String(timeTaken % 60).padStart(2, "0")}</b><span>Time taken</span></div>
+        </div>
+        <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
+          <button class="btn-ghost" id="review-btn" data-testid="review-answers-btn"><i class="fa-solid fa-list"></i> Review Answers</button>
+          <button class="btn-primary sm" id="mcq-done" data-testid="mcq-done-btn"><i class="fa-solid fa-arrow-right"></i> Back to Chapters</button>
+        </div>
+        <div id="review-panel" hidden style="margin-top:28px;text-align:left"></div>
+      </div>
+    `;
+    $("#mcq-done").addEventListener("click", () => { $("#mcq-result").hidden = true; showChapters(state.mcq.subject.id); });
+    $("#review-btn").addEventListener("click", () => renderReview());
+  }
+
+  function renderReview() {
+    const { questions, answers } = state.mcq;
+    const el = $("#review-panel");
+    el.hidden = false;
+    el.innerHTML = questions.map((q, i) => {
+      const ans = answers[i], correct = q.answer;
+      return `
+        <div class="card" style="margin-top:12px;text-align:left">
+          <div style="font-weight:700;margin-bottom:10px">Q${i + 1}. ${escapeHtml(q.q)}</div>
+          ${q.options.map((opt, j) => {
+            const isCorrect = j === correct;
+            const isChosen = j === ans;
+            const bg = isCorrect ? "background:#E7FBF3;color:#065F46;border-color:#10B981;" :
+                       isChosen ? "background:#FEE2E2;color:#B91C1C;border-color:#F87171;" : "";
+            return `<div class="quiz-option" style="cursor:default;${bg}">
+              <div class="qo-letter">${String.fromCharCode(65 + j)}</div>
+              <div>${escapeHtml(opt)} ${isCorrect ? '<b style="margin-left:6px">✓ Correct</b>' : isChosen ? '<b style="margin-left:6px">Your answer</b>' : ""}</div>
+            </div>`;
+          }).join("")}
+        </div>
+      `;
+    }).join("");
+    el.scrollIntoView({ behavior: "smooth" });
   }
 
   // ---------- Performance ----------
   function renderPerformance() {
-    const attempts = window.UMP_LEARNING_TOOLS
-      ? window.UMP_LEARNING_TOOLS.getPerformanceAttempts(state.student.studentId)
-      : [];
+    const attempts = api.getLocalAttempts(state.student.studentId);
     const total = attempts.reduce((a, x) => a + x.total, 0);
     const correct = attempts.reduce((a, x) => a + x.score, 0);
     const overall = total ? Math.round((correct / total) * 100) : 0;
@@ -1722,7 +1919,41 @@ const APP_VERSION = "2.4.0";
   const noteNKey = (n) => `n:${n.id}`;
   const repKey  = (r) => `r:${r.weekOf}`;
 
+  const CLEARED_KEY = () => `ump_cleared_notifs_${state.student ? state.student.studentId : 'global'}`;
+
+  function loadClearedNotifs() {
+    try {
+      const raw = localStorage.getItem(CLEARED_KEY());
+      if (raw) {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) state.notifCleared = new Set(arr);
+      }
+    } catch (e) { console.warn("Failed to load cleared notifs:", e); }
+  }
+
+  function saveClearedNotifs() {
+    try {
+      localStorage.setItem(CLEARED_KEY(), JSON.stringify([...state.notifCleared]));
+    } catch (e) { console.warn("Failed to save cleared notifs:", e); }
+  }
+
+  function clearAllNotifications() {
+    // Persist cleared IDs so they don't come back after refresh/relogin
+    state.notifFeed.forEach(item => {
+      const key = item.raw ? (item.type + ':' + (item.raw.id || item.raw.weekOf || item.title)) : (item.type + ':' + item.title);
+      if (key) state.notifCleared.add(key);
+    });
+    saveClearedNotifs();
+    // Also clear feed for current session
+    state.notifFeed = [];
+    state.notifUnread = 0;
+    updateNotifBadge();
+    renderNotifPanel();
+    if (window.__umpShowPushToast) window.__umpShowPushToast("✅ Cleared", "All notifications cleared. They will not return.");
+  }
+
   function seedNotifBaseline() {
+    loadClearedNotifs();
     (state.announcements || []).forEach(a => state.notifSeen.announcements.add(annKey(a)));
     (state.mentorNotes || []).forEach(n => state.notifSeen.mentorNotes.add(noteMKey(n)));
     (state.studyNotes || []).forEach(n => state.notifSeen.notes.add(noteNKey(n)));
@@ -1745,6 +1976,18 @@ const APP_VERSION = "2.4.0";
   }
 
   function pushNotif(icon, title, sub, opts = {}) {
+    // Suppress duplicates: check feed and cleared set
+    const raw = opts.raw || null;
+    const dupKey = raw ? (opts.type + ':' + (raw.id || raw.weekOf || raw.title || sub)) : (opts.type + ':' + title);
+    const isDup = state.notifFeed.some(i => {
+      const r = i.raw || null;
+      const k = r ? (i.type + ':' + (r.id || r.weekOf || r.title || i.sub)) : (i.type + ':' + i.title);
+      return k === dupKey;
+    }) || (dupKey ? state.notifCleared.has(dupKey) : false);
+    if (isDup) {
+      console.log("🔕 Suppressed duplicate notification:", title);
+      return;
+    }
     const item = {
       icon,
       title: title || "Notification",
@@ -1838,6 +2081,8 @@ const APP_VERSION = "2.4.0";
       let newCount = 0;
       (announcements || []).forEach(a => {
         const k = annKey(a);
+        const clearedKey = 'announcement:' + k;
+        if (state.notifCleared.has(clearedKey)) return; // Suppress cleared notifications
         if (!state.notifSeen.announcements.has(k)) {
           state.notifSeen.announcements.add(k);
           newCount++;
@@ -1851,6 +2096,8 @@ const APP_VERSION = "2.4.0";
       });
       (mentorNotes || []).forEach(n => {
         const k = noteMKey(n);
+        const clearedKey = 'mentor:' + k;
+        if (state.notifCleared.has(clearedKey)) return;
         if (!state.notifSeen.mentorNotes.has(k)) {
           state.notifSeen.mentorNotes.add(k);
           newCount++;
@@ -1864,6 +2111,8 @@ const APP_VERSION = "2.4.0";
       });
       (studyNotes || []).forEach(n => {
         const k = noteNKey(n);
+        const clearedKey = 'notes:' + k;
+        if (state.notifCleared.has(clearedKey)) return;
         if (!state.notifSeen.notes.has(k)) {
           state.notifSeen.notes.add(k);
           newCount++;
@@ -1877,6 +2126,8 @@ const APP_VERSION = "2.4.0";
       });
       (reports || []).forEach(r => {
         const k = repKey(r);
+        const clearedKey = 'report:' + k;
+        if (state.notifCleared.has(clearedKey)) return;
         if (!state.notifSeen.reports.has(k)) {
           state.notifSeen.reports.add(k);
           newCount++;
@@ -1953,11 +2204,17 @@ const APP_VERSION = "2.4.0";
 
   function renderNotifPanel() {
     if (!notifPanelList) return;
-    if (!state.notifFeed.length) {
+    // Filter out cleared notifications (persistent across relogin/refresh)
+    const visibleFeed = state.notifFeed.filter(item => {
+      const raw = item.raw || null;
+      const key = raw ? (item.type + ':' + (raw.id || raw.weekOf || raw.title || item.sub)) : (item.type + ':' + item.title);
+      return !state.notifCleared.has(key);
+    });
+    if (!visibleFeed.length) {
       notifPanelList.innerHTML = `<div class="notif-empty">No notifications yet.<br><small style="color:#94A3B8">Pull down to refresh ↕️</small></div>`;
       return;
     }
-    notifPanelList.innerHTML = state.notifFeed.map((n, idx) => `
+    notifPanelList.innerHTML = visibleFeed.map((n, idx) => `
       <div class="notif-item ${n.type ? 'notif-type-'+n.type : ''}" data-idx="${idx}" data-nav="${n.nav || ''}" style="cursor:${n.nav ? 'pointer' : 'default'}">
         <div class="notif-item-icon"><i class="fa-solid ${n.icon}"></i></div>
         <div style="flex:1;min-width:0">
@@ -2017,6 +2274,20 @@ const APP_VERSION = "2.4.0";
       panelHead.style.alignItems = "center";
       panelHead.style.justifyContent = "space-between";
       panelHead.appendChild(refreshBtn);
+
+      // ✅ Persistent Clear All notifications button
+      const clearBtn = document.createElement("button");
+      clearBtn.id = "notif-clear-all-btn";
+      clearBtn.innerHTML = '<i class="fa-solid fa-trash-can"></i> Clear All';
+      clearBtn.title = "Clear all notifications permanently";
+      clearBtn.style.cssText = "background:none;border:none;cursor:pointer;color:#EF4444;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:700;margin-left:8px;";
+      clearBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (confirm("Clear all notifications? They will not return after refresh or relogin.")) {
+          clearAllNotifications();
+        }
+      });
+      panelHead.appendChild(clearBtn);
     }
   }
 

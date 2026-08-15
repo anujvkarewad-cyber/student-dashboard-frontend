@@ -24,7 +24,7 @@ const typeStyle: Record<NotificationType, { icon: keyof typeof Ionicons.glyphMap
 
 export const NotificationsScreen = ({ navigation }: Props) => {
   const { refreshing, refreshAll } = useData();
-  const { notifications, unreadCount, pushStatus, isRead, markRead, markAllRead } = useNotifications();
+  const { notifications, unreadCount, pushStatus, isRead, markRead, markAllRead, clearAll, isCleared } = useNotifications();
   const [filter, setFilter] = useState<Filter>('all');
   const visible = useMemo(() => filter === 'unread' ? notifications.filter((item) => !isRead(item.id)) : notifications, [filter, isRead, notifications]);
 
@@ -51,6 +51,7 @@ export const NotificationsScreen = ({ navigation }: Props) => {
               <View style={styles.summaryIcon}><Ionicons name="notifications" size={25} color={colors.primary} /></View>
               <View style={styles.summaryBody}><Text style={styles.summaryValue}>{unreadCount ? `${unreadCount} unread` : 'You’re all caught up'}</Text><Text style={styles.summaryText}>Mentor updates, reports and new material</Text></View>
               {unreadCount ? <Pressable onPress={() => markAllRead()} style={styles.markAll}><Text style={styles.markAllText}>Mark all read</Text></Pressable> : null}
+              <Pressable onPress={() => { if (confirm('Clear all notifications? They will not return after refresh.')) clearAll(); }} style={[styles.markAll, { backgroundColor: '#FEE2E2' }]}><Text style={[styles.markAllText, { color: '#DC2626' }]}>Clear All</Text></Pressable>
             </View>
             <View style={styles.filters}>
               <Pressable onPress={() => setFilter('all')} style={[styles.filter, filter === 'all' && styles.filterActive]}><Text style={[styles.filterText, filter === 'all' && styles.filterTextActive]}>All</Text></Pressable>

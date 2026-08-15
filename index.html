@@ -201,14 +201,9 @@
                 <span>Daily Study Tracker</span>
             </a>
 
-            <a href="#focus" class="nav-item" data-view="focus" data-testid="nav-focus">
-                <i class="fa-solid fa-stopwatch"></i>
-                <span>Focus Room</span>
-            </a>
-
             <a href="#mcq" class="nav-item" data-view="mcq" data-testid="nav-mcq">
                 <i class="fa-solid fa-list-check"></i>
-                <span>Daily &amp; Practice MCQ</span>
+                <span>MCQ Practice</span>
             </a>
 
             <a href="#performance" class="nav-item" data-view="performance" data-testid="nav-performance">
@@ -538,15 +533,28 @@
   </div>
 </template>
 
-<template id="tpl-focus">
-  <div class="view" data-testid="view-focus">
-    <div id="focus-root"></div>
-  </div>
-</template>
-
 <template id="tpl-mcq">
   <div class="view" data-testid="view-mcq">
-    <div id="mcq-root"></div>
+    <div class="section-heading">
+      <h2>MCQ Practice</h2>
+      <p class="muted">Comming Soon</p>
+    </div>
+
+    <!-- Step 1: Subject -->
+    <section id="mcq-subjects" class="subject-grid" data-testid="mcq-subjects"></section>
+
+    <!-- Step 2: Chapters -->
+    <section id="mcq-chapters" class="chapters-panel" hidden data-testid="mcq-chapters">
+      <button class="back-link" data-mcq-back><i class="fa-solid fa-arrow-left"></i> Back to subjects</button>
+      <h3 id="mcq-subject-title"></h3>
+      <div class="chapter-grid" id="chapter-grid"></div>
+    </section>
+
+    <!-- Step 3: Quiz -->
+    <section id="mcq-quiz" class="quiz-panel" hidden data-testid="mcq-quiz"></section>
+
+    <!-- Step 4: Result -->
+    <section id="mcq-result" class="result-panel" hidden data-testid="mcq-result"></section>
   </div>
 </template>
 
@@ -1036,8 +1044,6 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js"></script>
 <script src="api.js"></script>
 <script src="firebase-init.js"></script>
-<script src="learning-data.js"></script>
-<script src="learning-tools.js"></script>
 <script src="app.js"></script>
 <script>
 
