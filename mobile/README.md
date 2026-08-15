@@ -22,6 +22,7 @@ A separate React Native + Expo Android client for the existing student dashboard
 - YPT-style Focus Room timer with subject selection, session targets, pause/resume, daily totals and local history
 - Study Receipts with closed-book self-recall, recall-effort score and 24-hour memory checks
 - Separate Group I and Group II Daily MCQ Challenges with a balanced 7 normal + 3 case-study format, timers, persistence, streaks and source-aware explanation review
+- Unlimited MCQ Practice Zone with Group I/II/Combined, subject, chapter, Normal/Case Study, Easy/Medium/Hard, configurable session size and incorrect-answer retry
 - In-app notification center with unread badge, MCQ/memory-review reminders, filters and read state
 - Profile, password update and logout
 - Cached dashboard data plus pull-to-refresh

@@ -214,6 +214,8 @@ export const DashboardScreen = () => {
         <Card style={styles.actionsCard}>
           <Action icon="help-circle-outline" label="Start today's Daily MCQ" onPress={() => navigation.navigate('DailyMcq')} />
           <View style={styles.actionDivider} />
+          <Action icon="infinite-outline" label="Unlimited MCQ practice" onPress={() => navigation.navigate('McqPractice')} />
+          <View style={styles.actionDivider} />
           <Action icon="timer-outline" label="Start focus timer" onPress={() => navigation.navigate('Focus')} />
           <View style={styles.actionDivider} />
           <Action icon={backendMode === 'mock' ? 'add-circle-outline' : 'eye-outline'} label={backendMode === 'mock' ? 'Log study hours' : 'View study history'} onPress={() => navigation.navigate('Tracker')} />

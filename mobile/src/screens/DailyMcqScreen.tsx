@@ -148,6 +148,12 @@ export const DailyMcqScreen = ({ navigation, route }: Props) => {
 
           <View style={styles.draftBanner}><Ionicons name="shield-outline" size={20} color="#A86B00" /><View style={{ flex: 1 }}><Text style={styles.draftTitle}>ICAI-mapped draft · {icaiContentManifest.targetAttempt}</Text><Text style={styles.draftText}>7 normal + 3 original case-study MCQs. Concepts are mapped to current official papers and updates checked {icaiContentManifest.lastReviewedOn}; mentor approval is still required before exam reliance.</Text></View></View>
 
+          <Pressable onPress={() => navigation.navigate('McqPractice')} style={({ pressed }) => [styles.practiceCard, pressed && { opacity: 0.78 }]}>
+            <View style={styles.practiceIcon}><Ionicons name="infinite" size={25} color={colors.purple} /></View>
+            <View style={{ flex: 1 }}><Text style={styles.practiceEyebrow}>NO DAILY LIMIT</Text><Text style={styles.practiceTitle}>Unlimited Practice Zone</Text><Text style={styles.practiceText}>Combined · chapter-wise · Easy/Medium/Hard · Normal/Case Study</Text></View>
+            <Ionicons name="arrow-forward-circle" size={26} color={colors.purple} />
+          </Pressable>
+
           <SectionHeader title="Today's mix" />
           <Card style={styles.mixCard}>
             <View style={styles.subjects}>{subjectMix.map((subject) => <View key={subject} style={styles.subjectChip}><Text style={styles.subjectText}>{subject}</Text></View>)}</View>
@@ -200,7 +206,8 @@ export const DailyMcqScreen = ({ navigation, route }: Props) => {
               </Card>
             );
           })}
-          <PrimaryButton label="Back to dashboard" icon="home-outline" onPress={() => navigation.navigate('Main', { screen: 'Home' })} />
+          <PrimaryButton label="Continue with unlimited practice" icon="infinite" onPress={() => navigation.navigate('McqPractice')} />
+          <PrimaryButton label="Back to dashboard" icon="home-outline" variant="secondary" onPress={() => navigation.navigate('Main', { screen: 'Home' })} style={{ marginTop: spacing.md }} />
         </ScrollView>
       </SafeAreaView>
     );
@@ -278,6 +285,11 @@ const styles = StyleSheet.create({
   draftBanner: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, backgroundColor: colors.amberSoft, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.xxl },
   draftTitle: { color: '#8D5C05', fontSize: 10, fontWeight: '900' },
   draftText: { flex: 1, color: '#7A5A22', fontSize: 8, lineHeight: 13, marginTop: 2 },
+  practiceCard: { minHeight: 83, flexDirection: 'row', alignItems: 'center', gap: spacing.md, backgroundColor: colors.purpleSoft, borderRadius: radius.lg, borderWidth: 1, borderColor: '#DDD4FA', padding: spacing.md, marginBottom: spacing.xxl },
+  practiceIcon: { width: 47, height: 47, borderRadius: 15, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
+  practiceEyebrow: { color: colors.purple, fontSize: 7, fontWeight: '900', letterSpacing: 1 },
+  practiceTitle: { color: colors.ink, fontSize: 13, fontWeight: '900', marginTop: 2 },
+  practiceText: { color: colors.muted, fontSize: 8, lineHeight: 12, marginTop: 3 },
   mixCard: { marginBottom: spacing.xxl },
   subjects: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   subjectChip: { backgroundColor: colors.primarySoft, borderRadius: radius.pill, paddingHorizontal: 11, paddingVertical: 7 },
