@@ -2,7 +2,7 @@
   "expo": {
     "name": "Ujjwal Pathak Mentorship",
     "slug": "ujjwal-pathak-mentorship",
-    "version": "1.7.0",
+    "version": "1.7.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "upmentorship",
@@ -24,7 +24,7 @@
     },
     "android": {
       "package": "com.ujjwalpathak.mentorship",
-      "versionCode": 9,
+      "versionCode": 10,
       "adaptiveIcon": {
         "backgroundColor": "#F9F5EF",
         "foregroundImage": "./assets/adaptive-icon.png"

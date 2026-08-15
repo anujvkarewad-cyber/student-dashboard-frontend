@@ -89,7 +89,7 @@ export const ProfileScreen = () => {
         </Card>
 
         <PrimaryButton label="Sign out" icon="log-out-outline" variant="secondary" onPress={confirmLogout} style={styles.logout} />
-        <Text style={styles.version}>Ujjwal Pathak Mentorship · Mobile v1.7.0</Text>
+        <Text style={styles.version}>Ujjwal Pathak Mentorship · Mobile v1.7.1</Text>
       </ScrollView>
     </SafeAreaView>
   );

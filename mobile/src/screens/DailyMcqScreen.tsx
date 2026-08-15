@@ -9,6 +9,7 @@ import { Card, PrimaryButton, SectionHeader } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useDailyMcq } from '../context/DailyMcqContext';
 import { icaiContentManifest } from '../data/icaiContentManifest';
+import { enrichMcqQuestion } from '../data/mcqMetadata';
 import type { RootStackParamList } from '../navigation/types';
 import { colors, radius, spacing } from '../theme';
 import { CaGroup, caGroupDetails, groupsForStudent } from '../utils/caGroups';
@@ -44,6 +45,7 @@ export const DailyMcqScreen = ({ navigation, route }: Props) => {
   const timeLeft = Math.max(0, QUIZ_SECONDS - elapsed);
   const answered = todayAttempt ? Object.keys(todayAttempt.answers).length : 0;
   const question = todayQuestions[index];
+  const questionChapter = question ? enrichMcqQuestion(question) : undefined;
   const percentage = todayAttempt?.completedAt && todayAttempt.total ? Math.round(((todayAttempt.score || 0) / todayAttempt.total) * 100) : 0;
 
   useEffect(() => {
@@ -146,7 +148,7 @@ export const DailyMcqScreen = ({ navigation, route }: Props) => {
             </View>
           </LinearGradient>
 
-          <View style={styles.draftBanner}><Ionicons name="shield-outline" size={20} color="#A86B00" /><View style={{ flex: 1 }}><Text style={styles.draftTitle}>ICAI-mapped draft · {icaiContentManifest.targetAttempt}</Text><Text style={styles.draftText}>7 normal + 3 original case-study MCQs. Concepts are mapped to current official papers and updates checked {icaiContentManifest.lastReviewedOn}; mentor approval is still required before exam reliance.</Text></View></View>
+          <View style={styles.draftBanner}><Ionicons name="shield-outline" size={20} color="#A86B00" /><View style={{ flex: 1 }}><Text style={styles.draftTitle}>ICAI-mapped draft · {icaiContentManifest.targetAttempt}</Text><Text style={styles.draftText}>Chapter names and numbers follow the official ICAI BoS May 2026 modules. The 7 normal + 3 case-study questions are original drafts; mentor approval and attempt-specific amendment review are still required.</Text></View></View>
 
           <Pressable onPress={() => navigation.navigate('McqPractice')} style={({ pressed }) => [styles.practiceCard, pressed && { opacity: 0.78 }]}>
             <View style={styles.practiceIcon}><Ionicons name="infinite" size={25} color={colors.purple} /></View>
@@ -195,6 +197,7 @@ export const DailyMcqScreen = ({ navigation, route }: Props) => {
           {todayQuestions.map((item, itemIndex) => {
             const selected = todayAttempt.answers[item.id];
             const correct = selected === item.answer;
+            const official = enrichMcqQuestion(item);
             return (
               <Card key={item.id} style={styles.reviewCard}>
                 <View style={styles.reviewTop}><View style={[styles.reviewStatus, correct ? styles.correctStatus : styles.wrongStatus]}><Ionicons name={correct ? 'checkmark' : 'close'} size={15} color={correct ? colors.success : colors.red} /></View><Text style={styles.reviewNumber}>Q{itemIndex + 1} · {item.subject} · {item.kind === 'case-study' ? 'CASE STUDY' : 'NORMAL'}</Text></View>
@@ -202,7 +205,7 @@ export const DailyMcqScreen = ({ navigation, route }: Props) => {
                 <Text style={styles.yourAnswer}>Your answer: <Text style={[styles.answerStrong, { color: correct ? colors.success : colors.red }]}>{selected == null ? 'Not answered' : item.options[selected]}</Text></Text>
                 {!correct ? <Text style={styles.correctAnswer}>Correct answer: {item.options[item.answer]}</Text> : null}
                 <View style={styles.explanation}><Ionicons name="bulb-outline" size={16} color={colors.primary} /><Text style={styles.explanationText}>{item.explanation}</Text></View>
-                <View style={styles.sourceRow}><Ionicons name="book-outline" size={13} color={colors.muted} /><Text style={styles.sourceText}>{item.sourceRef || `${item.subject} foundation concept`} · Applicable mapping: {item.applicableAttempt || icaiContentManifest.targetAttempt}</Text></View>
+                <View style={styles.sourceRow}><Ionicons name="book-outline" size={13} color={colors.muted} /><Text style={styles.sourceText}>Official chapter: {official.chapter}{item.sourceRef ? ` · ${item.sourceRef}` : ''} · Applicable mapping: {item.applicableAttempt || icaiContentManifest.studyMaterialApplicability}</Text></View>
               </Card>
             );
           })}
@@ -228,6 +231,7 @@ export const DailyMcqScreen = ({ navigation, route }: Props) => {
             <View style={styles.questionSubject}><Text style={styles.questionSubjectText}>{question?.subject}</Text></View>
             <View style={[styles.kindBadge, question?.kind === 'case-study' && styles.caseKindBadge]}><Text style={[styles.kindBadgeText, question?.kind === 'case-study' && styles.caseKindText]}>{question?.kind === 'case-study' ? 'CASE STUDY MCQ' : 'NORMAL MCQ'}</Text></View>
           </View>
+          {questionChapter ? <Text style={styles.officialChapter}>{questionChapter.chapter}</Text> : null}
           {question?.caseStudy ? <View style={styles.caseStudy}><View style={styles.caseStudyHeader}><Ionicons name="document-text-outline" size={17} color={colors.purple} /><Text style={styles.caseStudyTitle}>{question.caseStudy.title}</Text></View><Text style={styles.caseStudyPassage}>{question.caseStudy.passage}</Text></View> : null}
           <Text style={styles.questionText}>{question?.prompt}</Text>
           <View style={styles.options}>
@@ -319,6 +323,7 @@ const styles = StyleSheet.create({
   caseKindBadge: { backgroundColor: colors.amberSoft },
   kindBadgeText: { color: colors.primary, fontSize: 7, fontWeight: '900', letterSpacing: 0.5 },
   caseKindText: { color: '#98620A' },
+  officialChapter: { color: colors.muted, fontSize: 8, lineHeight: 13, fontWeight: '800', marginTop: spacing.md },
   caseStudy: { backgroundColor: '#F8F6FF', borderWidth: 1, borderColor: '#E3DCFA', borderRadius: radius.md, padding: spacing.md, marginTop: spacing.lg },
   caseStudyHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   caseStudyTitle: { color: colors.purple, fontSize: 10, fontWeight: '900' },

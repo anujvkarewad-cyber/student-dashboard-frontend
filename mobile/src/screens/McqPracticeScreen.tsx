@@ -47,10 +47,12 @@ export const McqPracticeScreen = ({ navigation }: Props) => {
 
   const availableSubjects = useMemo(() => ['All Subjects', ...Array.from(new Set(allQuestions
     .filter((item) => config.group === 'Combined' || subjectGroup(item.subject) === config.group)
-    .map((item) => item.subject))).sort()], [allQuestions, config.group]);
+    .sort((left, right) => left.chapterOrder - right.chapterOrder)
+    .map((item) => item.subject)))], [allQuestions, config.group]);
   const availableChapters = useMemo(() => ['All Chapters', ...Array.from(new Set(allQuestions
     .filter((item) => (config.group === 'Combined' || subjectGroup(item.subject) === config.group) && (config.subject === 'All Subjects' || item.subject === config.subject))
-    .map((item) => item.chapter))).sort()], [allQuestions, config.group, config.subject]);
+    .sort((left, right) => left.chapterOrder - right.chapterOrder)
+    .map((item) => item.chapter)))], [allQuestions, config.group, config.subject]);
 
   useEffect(() => {
     if (!session) return;
@@ -119,6 +121,7 @@ export const McqPracticeScreen = ({ navigation }: Props) => {
                 <Text style={styles.answerLine}>Your answer: <Text style={{ color: correct ? colors.success : colors.red, fontWeight: '900' }}>{selected == null ? 'Not answered' : item.options[selected]}</Text></Text>
                 {!correct ? <Text style={styles.correctLine}>Correct: {item.options[item.answer]}</Text> : null}
                 <View style={styles.explanation}><Ionicons name="bulb-outline" size={15} color={colors.primary} /><Text style={styles.explanationText}>{item.explanation}</Text></View>
+                <View style={styles.officialSource}><Ionicons name="book-outline" size={13} color={colors.muted} /><Text style={styles.officialSourceText}>ICAI BoS · {item.officialChapter.paper} · {item.chapter}</Text></View>
               </Card>
             );
           })}
@@ -140,7 +143,7 @@ export const McqPracticeScreen = ({ navigation }: Props) => {
 
           <Card style={styles.questionCard}>
             <View style={styles.badges}><View style={styles.subjectBadge}><Text style={styles.subjectBadgeText}>{question.subject}</Text></View><View style={[styles.kindBadge, question.kind === 'case-study' && styles.caseBadge]}><Text style={[styles.kindText, question.kind === 'case-study' && styles.caseText]}>{question.kind === 'case-study' ? 'CASE STUDY' : 'NORMAL'}</Text></View><View style={[styles.difficultyBadge, question.difficulty === 'Hard' && styles.hardBadge]}><Text style={styles.difficultyText}>{question.difficulty.toUpperCase()}</Text></View></View>
-            <Text style={styles.chapter}>{question.chapter}</Text>
+            <Text style={styles.chapter}>ICAI BoS · {question.chapter}</Text>
             {question.caseStudy ? <View style={styles.caseStudy}><Text style={styles.caseTitle}>{question.caseStudy.title}</Text><Text style={styles.casePassage}>{question.caseStudy.passage}</Text></View> : null}
             <Text style={styles.questionText}>{question.prompt}</Text>
             <View style={styles.options}>{question.options.map((option, optionIndex) => {
@@ -165,7 +168,7 @@ export const McqPracticeScreen = ({ navigation }: Props) => {
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <LinearGradient colors={['#172F61', '#3C58C5', '#7459D4']} style={styles.hero}><View style={styles.heroIcon}><Ionicons name="infinite" size={30} color={colors.primary} /></View><Text style={styles.heroEyebrow}>ICAI-PATTERN PRACTICE</Text><Text style={styles.heroTitle}>Unlimited MCQ Practice Zone</Text><Text style={styles.heroText}>Build a custom session by group, subject, chapter, type and difficulty. Practice sessions never change the Daily Challenge streak.</Text><View style={styles.heroStats}><Text style={styles.heroStat}>{completedCount} sessions</Text><Text style={styles.heroStat}>{average}% avg</Text><Text style={styles.heroStat}>{allQuestions.length} question pool</Text></View></LinearGradient>
 
-        <View style={styles.sourceBanner}><Ionicons name="shield-checkmark-outline" size={19} color="#9A6508" /><Text style={styles.sourceText}>Source framework: ICAI BoS · {icaiContentManifest.targetAttempt}. Original draft questions; mentor approval required.</Text></View>
+        <View style={styles.sourceBanner}><Ionicons name="shield-checkmark-outline" size={19} color="#9A6508" /><Text style={styles.sourceText}>Official chapter taxonomy: ICAI BoS May 2026 modules · Target attempt: {icaiContentManifest.targetAttempt}. Questions are original drafts; mentor approval and amendment review remain required.</Text></View>
 
         <SectionHeader title="Build your practice" />
         <Card style={styles.setupCard}>
@@ -206,4 +209,5 @@ const styles = StyleSheet.create({
   quizActions: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.lg }, dots: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: spacing.sm, marginTop: spacing.xl }, dot: { width: 30, height: 30, borderRadius: 9, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' }, dotCurrent: { borderColor: colors.primary, borderWidth: 2 }, dotAnswered: { backgroundColor: colors.primary }, dotText: { color: colors.muted, fontSize: 8, fontWeight: '900' }, abandon: { alignSelf: 'center', padding: spacing.lg }, abandonText: { color: colors.red, fontSize: 9, textDecorationLine: 'underline' },
   resultHero: { borderRadius: radius.xl, padding: spacing.xl, alignItems: 'center', marginBottom: spacing.xxl }, resultIcon: { width: 56, height: 56, borderRadius: 18, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' }, resultEyebrow: { color: 'rgba(255,255,255,0.62)', fontSize: 8, fontWeight: '900', letterSpacing: 1, marginTop: spacing.md }, resultScore: { color: '#FFFFFF', fontSize: 47, fontWeight: '900' }, resultSub: { color: 'rgba(255,255,255,0.75)', fontSize: 10 }, resultConfig: { color: '#FFFFFF', fontSize: 8, backgroundColor: 'rgba(8,20,50,0.2)', borderRadius: radius.pill, paddingHorizontal: 9, paddingVertical: 6, marginTop: spacing.md },
   reviewCard: { marginBottom: spacing.md }, reviewTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm }, resultMark: { width: 28, height: 28, borderRadius: 9, alignItems: 'center', justifyContent: 'center' }, reviewMeta: { flex: 1, color: colors.muted, fontSize: 7, fontWeight: '900' }, miniCase: { backgroundColor: colors.purpleSoft, borderRadius: radius.md, padding: spacing.md, marginTop: spacing.md }, miniCaseTitle: { color: colors.purple, fontSize: 9, fontWeight: '900' }, miniCaseText: { color: colors.inkSoft, fontSize: 9, lineHeight: 14, marginTop: 4 }, reviewQuestion: { color: colors.ink, fontSize: 13, lineHeight: 19, fontWeight: '900', marginTop: spacing.md }, answerLine: { color: colors.muted, fontSize: 9, marginTop: spacing.md }, correctLine: { color: colors.success, fontSize: 9, fontWeight: '900', marginTop: 4 }, explanation: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, backgroundColor: colors.primarySoft, borderRadius: radius.md, padding: spacing.md, marginTop: spacing.md }, explanationText: { flex: 1, color: colors.inkSoft, fontSize: 9, lineHeight: 14 },
+  officialSource: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.md, marginTop: spacing.md }, officialSourceText: { flex: 1, color: colors.muted, fontSize: 7, lineHeight: 12 },
 });

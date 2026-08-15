@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { dailyMcqBank } from '../data/dailyMcqBank';
-import { enrichMcqQuestion, EnrichedMcqQuestion, McqDifficulty } from '../data/mcqMetadata';
+import { EnrichedMcqQuestion, McqDifficulty, validateMcqChapterMappings } from '../data/mcqMetadata';
 import { CaGroup, subjectGroup } from '../utils/caGroups';
 import { useAuth } from './AuthContext';
 
@@ -20,6 +20,7 @@ export type PracticeConfig = {
 
 export type McqPracticeSession = {
   id: string;
+  bankRevision?: string;
   config: PracticeConfig;
   questionIds: string[];
   answers: Record<string, number>;
@@ -44,8 +45,9 @@ type McqPracticeValue = {
 };
 
 const McqPracticeContext = createContext<McqPracticeValue | undefined>(undefined);
+const MCQ_BANK_REVISION = 'icai-may-2026-v1';
 const storageKey = (studentId: string) => `ump_mcq_practice_${studentId}`;
-const allQuestions = dailyMcqBank.map(enrichMcqQuestion);
+const allQuestions = validateMcqChapterMappings(dailyMcqBank);
 
 const hash = (value: string) => {
   let result = 0;
@@ -92,11 +94,18 @@ export const McqPracticeProvider = ({ children }: PropsWithChildren) => {
       setHistory([]);
       return;
     }
-    AsyncStorage.getItem(storageKey(student.studentId)).then((saved) => {
+    AsyncStorage.getItem(storageKey(student.studentId)).then(async (saved) => {
       if (!mounted) return;
-      try { setHistory(saved ? JSON.parse(saved) as McqPracticeSession[] : []); }
-      catch { setHistory([]); }
-      setHydrated(true);
+      try {
+        const parsed = saved ? JSON.parse(saved) as McqPracticeSession[] : [];
+        // Completed legacy sessions can still contribute to aggregate history,
+        // but an unfinished session must never resume with changed question text.
+        const migrated = parsed.filter((session) => session.bankRevision === MCQ_BANK_REVISION || Boolean(session.completedAt));
+        if (migrated.length !== parsed.length) await AsyncStorage.setItem(storageKey(student.studentId), JSON.stringify(migrated));
+        if (!mounted) return;
+        setHistory(migrated);
+      } catch { if (mounted) setHistory([]); }
+      if (mounted) setHydrated(true);
     });
     return () => { mounted = false; };
   }, [student]);
@@ -119,6 +128,7 @@ export const McqPracticeProvider = ({ children }: PropsWithChildren) => {
     const selected = shuffled(pool, hash(`${student?.studentId}:${now}:${JSON.stringify(config)}`)).slice(0, questionIds?.length || Math.min(config.requestedCount, pool.length));
     const session: McqPracticeSession = {
       id: `practice:${now}`,
+      bankRevision: MCQ_BANK_REVISION,
       config,
       questionIds: selected.map((question) => question.id),
       answers: {},

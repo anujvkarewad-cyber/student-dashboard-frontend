@@ -5,6 +5,7 @@ import { CaGroup, subjectGroup } from '../utils/caGroups';
 import { useAuth } from './AuthContext';
 
 export type DailyMcqAttempt = {
+  bankRevision?: string;
   date: string;
   group: CaGroup;
   questionIds: string[];
@@ -30,6 +31,7 @@ type DailyMcqValue = {
 };
 
 const DailyMcqContext = createContext<DailyMcqValue | undefined>(undefined);
+const MCQ_BANK_REVISION = 'icai-may-2026-v1';
 const storageKey = (studentId: string) => `ump_daily_mcq_${studentId}`;
 
 const localDateKey = (date = new Date()) => {
@@ -99,11 +101,18 @@ export const DailyMcqProvider = ({ children }: PropsWithChildren) => {
       setHistory([]);
       return;
     }
-    AsyncStorage.getItem(storageKey(student.studentId)).then((saved) => {
+    AsyncStorage.getItem(storageKey(student.studentId)).then(async (saved) => {
       if (!mounted) return;
-      try { setHistory(saved ? JSON.parse(saved) as DailyMcqAttempt[] : []); }
-      catch { setHistory([]); }
-      setHydrated(true);
+      try {
+        const parsed = saved ? JSON.parse(saved) as DailyMcqAttempt[] : [];
+        // Preserve prior completed scores for streaks, but never resume or review
+        // an attempt created against the superseded generic-topic question bank.
+        const migrated = parsed.filter((attempt) => attempt.bankRevision === MCQ_BANK_REVISION || Boolean(attempt.completedAt && attempt.date < localDateKey()));
+        if (migrated.length !== parsed.length) await AsyncStorage.setItem(storageKey(student.studentId), JSON.stringify(migrated));
+        if (!mounted) return;
+        setHistory(migrated);
+      } catch { if (mounted) setHistory([]); }
+      if (mounted) setHydrated(true);
     });
     return () => { mounted = false; };
   }, [student]);
@@ -128,6 +137,7 @@ export const DailyMcqProvider = ({ children }: PropsWithChildren) => {
     const runningOtherGroup = history.find((attempt) => attempt.date === dateKey && attempt.group !== group && !attempt.completedAt);
     if (runningOtherGroup) throw new Error(`Finish the ${runningOtherGroup.group} attempt before starting ${group}.`);
     const attempt: DailyMcqAttempt = {
+      bankRevision: MCQ_BANK_REVISION,
       date: dateKey,
       group,
       questionIds: dailyQuestionIds(dateKey, student.studentId, group),

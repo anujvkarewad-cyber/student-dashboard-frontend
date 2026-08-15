@@ -22,7 +22,7 @@ A separate React Native + Expo Android client for the existing student dashboard
 - YPT-style Focus Room timer with subject selection, session targets, pause/resume, daily totals and local history
 - Study Receipts with closed-book self-recall, recall-effort score and 24-hour memory checks
 - Separate Group I and Group II Daily MCQ Challenges with a balanced 7 normal + 3 case-study format, timers, persistence, streaks and source-aware explanation review
-- Unlimited MCQ Practice Zone with Group I/II/Combined, subject, chapter, Normal/Case Study, Easy/Medium/Hard, configurable session size and incorrect-answer retry
+- Unlimited MCQ Practice Zone with Group I/II/Combined, subject, exact official ICAI module chapter, Normal/Case Study, Easy/Medium/Hard, configurable session size and incorrect-answer retry
 - In-app notification center with unread badge, MCQ/memory-review reminders, filters and read state
 - Profile, password update and logout
 - Cached dashboard data plus pull-to-refresh
@@ -42,7 +42,13 @@ On session completion, the app creates three closed-book recall prompts from the
 
 The preview APK includes separate deterministic 10-question challenges for CA Intermediate Group I and Group II. Each challenge deliberately mixes **7 normal MCQs + 3 original case-study MCQs**, and has its own daily attempt, 10-minute timer, result and streak. Attempts survive navigation/app restarts and store explanations locally.
 
-The source manifest targets ICAI BoS material applicable for the September 2026 examination (official study-material applicability notice, amendments/developments page, and MCQ/case-scenario portal), last reviewed on 15 August 2026. The app does not copy or mirror ICAI questions: the included questions are original practice content mapped to paper concepts. They remain visibly labelled **draft** until a mentor verifies chapter, source page, applicable attempt and amendments. Production needs a managed question-bank API that can deactivate stale questions when a newer amendment set is published.
+The source manifest targets ICAI BoS material applicable for the September 2026 examination (official study-material applicability notice, amendments/developments page, and MCQ/case-scenario portal), last reviewed on 15 August 2026. The app does not copy or mirror ICAI questions: the included questions are original practice content mapped to exact official module chapters. They remain visibly labelled **draft** until a mentor verifies chapter, source page, applicable attempt and amendments. Production needs a managed question-bank API that can deactivate stale questions when a newer amendment set is published.
+
+### Official chapter taxonomy
+
+`src/data/icaiChapterCatalog.ts` contains the canonical 94-chapter catalogue transcribed from the official ICAI BoS material applicable for May 2026 onwards: paper/section, module, chapter number, exact title, official source page and curriculum order. Both Daily MCQ and Unlimited Practice display this mapping. Chapter filters include only chapters currently represented in the draft bank and follow official paper/module/chapter order rather than alphabetical order.
+
+Every question ID has an explicit canonical chapter ID in `src/data/mcqMetadata.ts`. Validation fails closed for a missing, stale or cross-subject mapping; there is no generated “general” chapter fallback. Questions based on the Indian Contract Act and basic bookkeeping were replaced because those topics are not chapters in the current CA Intermediate Paper 2 / Advanced Accounting May 2026 module structure. On upgrade, completed legacy attempts remain available for aggregate history/streaks, while an unfinished legacy session (or a same-day legacy Daily Challenge) is safely refreshed so changed question text is never paired with an old answer.
 
 ## Location and weather privacy
 
