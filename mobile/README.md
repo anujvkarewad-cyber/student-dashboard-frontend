@@ -103,6 +103,12 @@ npm run validate
 
 `validate` type-checks the code and creates a production Android JavaScript bundle. It does not call the backend.
 
+## Direct APK updates outside Play Store
+
+Version 1.10.0 is the one-time manually installed updater baseline. In Full Live mode the app checks the existing API on startup and when returning to foreground. If `app.version` reports a higher Android version code, the app shows an optional or mandatory update modal, downloads the HTTPS APK into private cache and opens Android's installer. Android always asks the student to confirm the final installation.
+
+The release APK must be hosted at a permanent public HTTPS download URL; private/expiring GitHub Actions artifacts are not valid updater URLs. Firebase Storage plus Apps Script Properties is the configured publishing model. Backend and release instructions are in `docs/APP_UPDATE_BACKEND_SETUP.md`.
+
 ## APK profiles
 
 `eas.json` contains three direct-install APK profiles:

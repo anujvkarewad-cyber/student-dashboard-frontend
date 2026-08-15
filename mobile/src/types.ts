@@ -109,6 +109,16 @@ export type ApiSuccess = {
   proofUrl?: string;
 };
 
+export type AppRelease = {
+  version: string;
+  versionCode: number;
+  minimumVersionCode?: number;
+  apkUrl: string;
+  releaseNotes?: string;
+  forceUpdate?: boolean;
+  publishedAt?: string;
+};
+
 export type DashboardData = {
   stats: Stats;
   studyLog: StudyLog[];

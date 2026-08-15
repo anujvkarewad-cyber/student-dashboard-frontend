@@ -3,6 +3,7 @@ import { config } from '../config';
 import type {
   Announcement,
   ApiSuccess,
+  AppRelease,
   LeaderboardEntry,
   MentorFeedback,
   MentorNote,
@@ -108,6 +109,11 @@ class ApiClient {
     } finally {
       clearTimeout(timeout);
     }
+  }
+
+  async getAppRelease(): Promise<AppRelease> {
+    if (!this.isUsingMocks()) return this.call<AppRelease>('app.version');
+    return { version: '0.0.0', versionCode: 0, apkUrl: '' };
   }
 
   async validateLogin(studentId: string, password: string): Promise<Student> {

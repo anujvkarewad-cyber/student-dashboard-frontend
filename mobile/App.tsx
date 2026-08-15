@@ -2,6 +2,7 @@ import React from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { AppUpdateProvider } from './src/context/AppUpdateContext';
 import { AuthProvider } from './src/context/AuthContext';
 import { DailyMcqProvider } from './src/context/DailyMcqContext';
 import { DataProvider } from './src/context/DataContext';
@@ -16,20 +17,22 @@ export default function App() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <AuthProvider>
-          <DataProvider>
-            <FocusTimerProvider>
-              <StudyReceiptsProvider>
-                <DailyMcqProvider>
-                  <McqPracticeProvider>
-                    <NotificationsProvider>
-                      <StatusBar style="dark" />
-                      <AppNavigator />
-                    </NotificationsProvider>
-                  </McqPracticeProvider>
-                </DailyMcqProvider>
-              </StudyReceiptsProvider>
-            </FocusTimerProvider>
-          </DataProvider>
+          <AppUpdateProvider>
+            <DataProvider>
+              <FocusTimerProvider>
+                <StudyReceiptsProvider>
+                  <DailyMcqProvider>
+                    <McqPracticeProvider>
+                      <NotificationsProvider>
+                        <StatusBar style="dark" />
+                        <AppNavigator />
+                      </NotificationsProvider>
+                    </McqPracticeProvider>
+                  </DailyMcqProvider>
+                </StudyReceiptsProvider>
+              </FocusTimerProvider>
+            </DataProvider>
+          </AppUpdateProvider>
         </AuthProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
