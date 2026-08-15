@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "566076646952",
+    "project_id": "ump-dashboard",
+    "storage_bucket": "ump-dashboard.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:566076646952:android:0ac949df6bb70cc9ef771d",
+        "android_client_info": {
+          "package_name": "com.ujjwalpathak.mentorship"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCiQjs1bzcHAsuK-4zKb8jPyVxtiNs8aHU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,77 @@
+name: Build safe mobile preview APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - arena/01a0012a-student-dashboard-frontend
+    paths:
+      - "mobile/**"
+      - ".github/workflows/mobile-preview-apk.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-preview-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-apk:
+    name: Android preview APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      EXPO_PUBLIC_USE_MOCKS: "true"
+      NODE_ENV: production
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install required Android packages
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "ndk;27.1.12297006"
+
+      - name: Install mobile dependencies
+        working-directory: mobile
+        run: npm ci
+
+      - name: Validate TypeScript
+        working-directory: mobile
+        run: npm run typecheck
+
+      - name: Generate native Android project
+        working-directory: mobile
+        run: npx expo prebuild --platform android --clean --no-install
+
+      - name: Build standalone preview APK
+        working-directory: mobile/android
+        run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,armeabi-v7a --no-daemon
+
+      - name: Prepare friendly filename
+        run: cp mobile/android/app/build/outputs/apk/release/app-release.apk UPM-safe-preview.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: UPM-safe-preview-APK
+          path: UPM-safe-preview.apk
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
