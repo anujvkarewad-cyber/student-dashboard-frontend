@@ -20,7 +20,7 @@ A separate React Native + Expo Android client for the existing student dashboard
 - Daily tracker history and native study-log form with photo/PDF proof
 - Leaderboard and personal rank summary
 - Weekly reports
-- Group I/Group II → Subject → Category → File study-material hierarchy with protected in-app Drive preview
+- Group I/Group II → Subject → Category → File study-material hierarchy with protected in-app Drive preview; latest Drive/Sheet rows are fetched whenever Material or a subject folder is opened, with pull-to-refresh as fallback
 - YPT-style Focus Room timer with subject selection, session targets, pause/resume, daily totals and local history
 - Study Receipts with closed-book self-recall, recall-effort score and 24-hour memory checks
 - Separate Group I and Group II Daily MCQ Challenges with a balanced 7 normal + 3 case-study format, timers, persistence, streaks and source-aware explanation review

@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import React, { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api/client';
 import type { DashboardData, StudyLogPayload } from '../types';
 import { useAuth } from './AuthContext';
@@ -45,6 +45,7 @@ export const DataProvider = ({ children }: PropsWithChildren) => {
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const notesRefreshRef = useRef<Promise<void> | null>(null);
 
   const persist = useCallback(async (next: DashboardData) => {
     if (!student) return;
@@ -154,11 +155,17 @@ export const DataProvider = ({ children }: PropsWithChildren) => {
 
   const refreshNotes = useCallback(async () => {
     if (!student) return;
-    setRefreshing(true);
-    try {
-      const studyNotes = await api.getNotes(student.studentId);
-      updateAndPersist((current) => ({ ...current, studyNotes }));
-    } finally { setRefreshing(false); }
+    if (notesRefreshRef.current) return notesRefreshRef.current;
+    const request = (async () => {
+      setRefreshing(true);
+      try {
+        const studyNotes = await api.getNotes(student.studentId);
+        updateAndPersist((current) => ({ ...current, studyNotes }));
+      } finally { setRefreshing(false); }
+    })();
+    notesRefreshRef.current = request;
+    try { await request; }
+    finally { if (notesRefreshRef.current === request) notesRefreshRef.current = null; }
   }, [student, updateAndPersist]);
 
   const submitStudyLog = useCallback(async (entry: StudyLogPayload) => {

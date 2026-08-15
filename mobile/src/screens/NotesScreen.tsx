@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
-import React, { useEffect, useMemo, useState } from 'react';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { EmptyState } from '../components/ui';
@@ -18,7 +18,7 @@ const palette = [
 
 export const NotesScreen = () => {
   const navigation = useNavigation<any>();
-  const { student } = useAuth();
+  const { student, backendMode } = useAuth();
   const { data, refreshing, refreshNotes } = useData();
   const allowedGroups = useMemo(() => groupsForStudent(student?.group), [student?.group]);
   const [selectedGroup, setSelectedGroup] = useState<CaGroup>(allowedGroups[0]);
@@ -27,6 +27,12 @@ export const NotesScreen = () => {
   useEffect(() => {
     if (!allowedGroups.includes(selectedGroup)) setSelectedGroup(allowedGroups[0]);
   }, [allowedGroups, selectedGroup]);
+
+  // Match the web dashboard: entering Study Material always asks the existing
+  // backend for the latest Drive/Sheet rows, while pull-to-refresh remains available.
+  useFocusEffect(useCallback(() => {
+    if (backendMode !== 'mock') refreshNotes().catch(() => undefined);
+  }, [backendMode, refreshNotes]));
 
   const groupCounts = useMemo(() => ({
     'Group I': data.studyNotes.filter((note) => subjectGroup(note.subject) === 'Group I').length,

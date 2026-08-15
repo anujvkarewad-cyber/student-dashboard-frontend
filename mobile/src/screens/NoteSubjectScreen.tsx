@@ -1,9 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { EmptyState } from '../components/ui';
+import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import type { RootStackParamList } from '../navigation/types';
 import { colors, radius, spacing } from '../theme';
@@ -13,9 +15,14 @@ type Props = NativeStackScreenProps<RootStackParamList, 'NoteSubject'>;
 
 export const NoteSubjectScreen = ({ route, navigation }: Props) => {
   const { subject } = route.params;
-  const { data } = useData();
+  const { backendMode } = useAuth();
+  const { data, refreshNotes } = useData();
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [query, setQuery] = useState('');
+
+  useFocusEffect(useCallback(() => {
+    if (backendMode !== 'mock') refreshNotes().catch(() => undefined);
+  }, [backendMode, refreshNotes]));
 
   const allNotes = useMemo(() => data.studyNotes.filter((note) => (note.subject?.trim() || 'Other') === subject), [data.studyNotes, subject]);
   const categoryGroups = useMemo(() => {
