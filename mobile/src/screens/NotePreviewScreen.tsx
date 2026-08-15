@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import React, { ComponentType, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Platform, StyleSheet, Text, View } from 'react-native';
+import React, { ComponentType, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useData } from '../context/DataContext';
 import type { RootStackParamList } from '../navigation/types';
@@ -45,9 +45,25 @@ export const NotePreviewScreen = ({ route }: Props) => {
   const { data } = useData();
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
+  const [zoomPercent, setZoomPercent] = useState(100);
+  const webViewRef = useRef<any>(null);
   const note = data.studyNotes.find((item) => item.id === route.params.noteId);
   const driveId = getDriveFileId(note?.fileId, note?.url);
   const previewUrl = driveId ? `https://drive.google.com/file/d/${driveId}/preview` : '';
+
+  const zoomScript = (value: number) => `
+    (function applyProtectedPreviewZoom() {
+      var scale = ${value / 100};
+      document.documentElement.style.setProperty('zoom', String(scale), 'important');
+    })();
+    true;
+  `;
+
+  const applyZoom = (value: number) => {
+    const next = Math.max(75, Math.min(200, value));
+    setZoomPercent(next);
+    if (Platform.OS !== 'web') webViewRef.current?.injectJavaScript(zoomScript(next));
+  };
 
   useEffect(() => {
     if (Platform.OS === 'web') return;
@@ -60,11 +76,18 @@ export const NotePreviewScreen = ({ route }: Props) => {
     ? React.createElement('iframe', {
         src: previewUrl,
         title: note?.title || 'Protected note preview',
-        style: { width: '100%', height: '100%', border: 0, backgroundColor: '#FFFFFF' },
+        style: {
+          width: `${10000 / zoomPercent}%`,
+          height: `${10000 / zoomPercent}%`,
+          border: 0,
+          backgroundColor: '#FFFFFF',
+          transform: `scale(${zoomPercent / 100})`,
+          transformOrigin: 'top left',
+        },
         sandbox: 'allow-scripts allow-same-origin allow-forms',
         onLoad: () => setLoading(false),
       })
-    : null, [note?.title, previewUrl]);
+    : null, [note?.title, previewUrl, zoomPercent]);
 
   if (!note || !previewUrl) {
     return (
@@ -91,19 +114,29 @@ export const NotePreviewScreen = ({ route }: Props) => {
     <SafeAreaView style={styles.safe} edges={['bottom']}>
       <View style={styles.protectionBanner}>
         <View style={styles.shield}><Ionicons name="shield-checkmark" size={19} color={colors.success} /></View>
-        <View style={styles.bannerCopy}><Text style={styles.bannerTitle}>Protected in-app preview</Text><Text style={styles.bannerText}>Download, print, external opening and screen capture are restricted.</Text></View>
+        <View style={styles.bannerCopy}><Text style={styles.bannerTitle}>Protected in-app preview</Text><Text style={styles.bannerText}>Download and screen capture are restricted. Pinch with two fingers to zoom.</Text></View>
+      </View>
+      <View style={styles.zoomToolbar}>
+        <View style={styles.zoomHint}><Ionicons name="expand-outline" size={16} color={colors.primary} /><Text style={styles.zoomHintText}>Pinch or use controls</Text></View>
+        <View style={styles.zoomControls}>
+          <Pressable disabled={zoomPercent <= 75} onPress={() => applyZoom(zoomPercent - 25)} style={[styles.zoomButton, zoomPercent <= 75 && styles.zoomDisabled]} accessibilityLabel="Zoom out"><Ionicons name="remove" size={18} color={colors.primary} /></Pressable>
+          <View style={styles.zoomValue}><Text style={styles.zoomValueText}>{zoomPercent}%</Text></View>
+          <Pressable disabled={zoomPercent >= 200} onPress={() => applyZoom(zoomPercent + 25)} style={[styles.zoomButton, zoomPercent >= 200 && styles.zoomDisabled]} accessibilityLabel="Zoom in"><Ionicons name="add" size={18} color={colors.primary} /></Pressable>
+          <Pressable disabled={zoomPercent === 100} onPress={() => applyZoom(100)} style={[styles.resetButton, zoomPercent === 100 && styles.zoomDisabled]} accessibilityLabel="Reset zoom"><Ionicons name="refresh" size={15} color={colors.inkSoft} /></Pressable>
+        </View>
       </View>
       <View style={styles.viewer}>
         {loading ? <View style={styles.loader}><ActivityIndicator color={colors.primary} /><Text style={styles.loaderText}>Opening protected material…</Text></View> : null}
         {failed ? <View style={styles.loader}><Ionicons name="alert-circle-outline" size={27} color={colors.red} /><Text style={styles.loaderText}>Preview could not be loaded. Check the Drive sharing permission.</Text></View> : null}
         {Platform.OS === 'web' ? iframe : NativeWebView ? (
           <NativeWebView
+            ref={webViewRef}
             source={{ uri: previewUrl }}
             style={styles.webview}
             originWhitelist={['https://*']}
-            injectedJavaScript={hideDownloadControls}
-            injectedJavaScriptBeforeContentLoaded={hideDownloadControls}
-            onLoadEnd={() => setLoading(false)}
+            injectedJavaScript={`${hideDownloadControls}\n${zoomScript(zoomPercent)}`}
+            injectedJavaScriptBeforeContentLoaded={`${hideDownloadControls}\n${zoomScript(zoomPercent)}`}
+            onLoadEnd={() => { setLoading(false); webViewRef.current?.injectJavaScript(zoomScript(zoomPercent)); }}
             onError={() => { setLoading(false); setFailed(true); }}
             onHttpError={() => { setLoading(false); setFailed(true); }}
             onShouldStartLoadWithRequest={(request: { url: string }) => allowNavigation(request.url)}
@@ -111,6 +144,11 @@ export const NotePreviewScreen = ({ route }: Props) => {
             allowsLinkPreview={false}
             javaScriptCanOpenWindowsAutomatically={false}
             setSupportMultipleWindows={false}
+            setBuiltInZoomControls
+            setDisplayZoomControls={false}
+            scalesPageToFit
+            textZoom={zoomPercent}
+            nestedScrollEnabled
             allowFileAccess={false}
             allowUniversalAccessFromFileURLs={false}
             textInteractionEnabled={false}
@@ -129,6 +167,15 @@ const styles = StyleSheet.create({
   bannerCopy: { flex: 1 },
   bannerTitle: { color: colors.success, fontSize: 12, fontWeight: '900' },
   bannerText: { color: colors.inkSoft, fontSize: 9, lineHeight: 14, marginTop: 2 },
+  zoomToolbar: { minHeight: 49, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, backgroundColor: 'rgba(255,255,255,0.9)', borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.sm, marginBottom: spacing.sm },
+  zoomHint: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingLeft: 3 },
+  zoomHintText: { color: colors.muted, fontSize: 8, fontWeight: '700' },
+  zoomControls: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  zoomButton: { width: 34, height: 34, borderRadius: 10, backgroundColor: colors.primarySoft, alignItems: 'center', justifyContent: 'center' },
+  zoomDisabled: { opacity: 0.35 },
+  zoomValue: { minWidth: 48, height: 32, borderRadius: 9, backgroundColor: colors.canvas, alignItems: 'center', justifyContent: 'center' },
+  zoomValueText: { color: colors.ink, fontSize: 9, fontWeight: '900', fontVariant: ['tabular-nums'] },
+  resetButton: { width: 32, height: 32, borderRadius: 9, backgroundColor: colors.canvas, alignItems: 'center', justifyContent: 'center' },
   viewer: { flex: 1, overflow: 'hidden', backgroundColor: '#FFFFFF', borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border },
   webview: { flex: 1, backgroundColor: '#FFFFFF' },
   loader: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, zIndex: 2, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF', gap: spacing.md, padding: spacing.xl },
