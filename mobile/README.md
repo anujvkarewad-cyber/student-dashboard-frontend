@@ -18,10 +18,10 @@ A separate React Native + Expo Android client for the existing student dashboard
 - Daily tracker history and native study-log form with photo/PDF proof
 - Leaderboard and personal rank summary
 - Weekly reports
-- Group I/Group II and subject-wise study material with protected in-app Drive preview
+- Group I/Group II → Subject → Category → File study-material hierarchy with protected in-app Drive preview
 - YPT-style Focus Room timer with subject selection, session targets, pause/resume, daily totals and local history
 - Study Receipts with closed-book self-recall, recall-effort score and 24-hour memory checks
-- Separate Group I and Group II Daily MCQ Challenges with 10 deterministic questions each, timers, persistence, streaks and explanation review
+- Separate Group I and Group II Daily MCQ Challenges with a balanced 7 normal + 3 case-study format, timers, persistence, streaks and source-aware explanation review
 - In-app notification center with unread badge, MCQ/memory-review reminders, filters and read state
 - Profile, password update and logout
 - Cached dashboard data plus pull-to-refresh
@@ -39,7 +39,9 @@ On session completion, the app creates three closed-book recall prompts from the
 
 ## Daily MCQ content safety
 
-The preview APK includes separate deterministic 10-question challenges for CA Intermediate Group I and Group II, selected from a local foundation-question bank. Each group has its own daily attempt, 10-minute timer, result and streak. Attempts survive navigation/app restarts and store explanations locally. The bank is visibly labelled **demo draft** and must not be treated as mentor-approved exam preparation. Before the connected release, questions need mentor approval, syllabus/version metadata, source citations, and a managed question-bank API.
+The preview APK includes separate deterministic 10-question challenges for CA Intermediate Group I and Group II. Each challenge deliberately mixes **7 normal MCQs + 3 original case-study MCQs**, and has its own daily attempt, 10-minute timer, result and streak. Attempts survive navigation/app restarts and store explanations locally.
+
+The source manifest targets ICAI BoS material applicable for the September 2026 examination (official study-material applicability notice, amendments/developments page, and MCQ/case-scenario portal), last reviewed on 15 August 2026. The app does not copy or mirror ICAI questions: the included questions are original practice content mapped to paper concepts. They remain visibly labelled **draft** until a mentor verifies chapter, source page, applicable attempt and amendments. Production needs a managed question-bank API that can deactivate stale questions when a newer amendment set is published.
 
 ## Location and weather privacy
 

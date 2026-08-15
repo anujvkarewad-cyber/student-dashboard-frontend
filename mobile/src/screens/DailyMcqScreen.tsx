@@ -8,6 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Card, PrimaryButton, SectionHeader } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useDailyMcq } from '../context/DailyMcqContext';
+import { icaiContentManifest } from '../data/icaiContentManifest';
 import type { RootStackParamList } from '../navigation/types';
 import { colors, radius, spacing } from '../theme';
 import { CaGroup, caGroupDetails, groupsForStudent } from '../utils/caGroups';
@@ -137,7 +138,7 @@ export const DailyMcqScreen = ({ navigation, route }: Props) => {
             <Text style={styles.title}>10 {selectedGroup} questions.{`\n`}One focused attempt.</Text>
             <Text style={styles.subtitle}>Build recall consistency with a fresh mixed-subject challenge every day.</Text>
             <View style={styles.heroStats}>
-              <View style={styles.heroStat}><Text style={styles.heroStatValue}>10</Text><Text style={styles.heroStatLabel}>QUESTIONS</Text></View>
+              <View style={styles.heroStat}><Text style={styles.heroStatValue}>7 + 3</Text><Text style={styles.heroStatLabel}>NORMAL + CASE</Text></View>
               <View style={styles.heroDivider} />
               <View style={styles.heroStat}><Text style={styles.heroStatValue}>10m</Text><Text style={styles.heroStatLabel}>TIME LIMIT</Text></View>
               <View style={styles.heroDivider} />
@@ -145,7 +146,7 @@ export const DailyMcqScreen = ({ navigation, route }: Props) => {
             </View>
           </LinearGradient>
 
-          <View style={styles.draftBanner}><Ionicons name="shield-outline" size={20} color="#A86B00" /><View style={{ flex: 1 }}><Text style={styles.draftTitle}>Demo draft question bank</Text><Text style={styles.draftText}>Use this build to test the experience. Mentor approval and syllabus-version labels are required before exam reliance.</Text></View></View>
+          <View style={styles.draftBanner}><Ionicons name="shield-outline" size={20} color="#A86B00" /><View style={{ flex: 1 }}><Text style={styles.draftTitle}>ICAI-mapped draft · {icaiContentManifest.targetAttempt}</Text><Text style={styles.draftText}>7 normal + 3 original case-study MCQs. Concepts are mapped to current official papers and updates checked {icaiContentManifest.lastReviewedOn}; mentor approval is still required before exam reliance.</Text></View></View>
 
           <SectionHeader title="Today's mix" />
           <Card style={styles.mixCard}>
@@ -182,7 +183,7 @@ export const DailyMcqScreen = ({ navigation, route }: Props) => {
             <View style={styles.resultStreak}><Ionicons name="flame" size={17} color="#FFD36D" /><Text style={styles.resultStreakText}>{streak} day MCQ streak</Text></View>
           </LinearGradient>
 
-          <View style={styles.draftBanner}><Ionicons name="information-circle-outline" size={20} color="#A86B00" /><Text style={styles.draftText}>Preview result only—questions are not yet marked as mentor-approved exam content.</Text></View>
+          <View style={styles.draftBanner}><Ionicons name="information-circle-outline" size={20} color="#A86B00" /><Text style={styles.draftText}>Source mapping targets {icaiContentManifest.targetAttempt}. Questions are original practice content, not reproduced ICAI questions, and remain pending mentor approval.</Text></View>
 
           <SectionHeader title="Answer review" />
           {todayQuestions.map((item, itemIndex) => {
@@ -190,11 +191,12 @@ export const DailyMcqScreen = ({ navigation, route }: Props) => {
             const correct = selected === item.answer;
             return (
               <Card key={item.id} style={styles.reviewCard}>
-                <View style={styles.reviewTop}><View style={[styles.reviewStatus, correct ? styles.correctStatus : styles.wrongStatus]}><Ionicons name={correct ? 'checkmark' : 'close'} size={15} color={correct ? colors.success : colors.red} /></View><Text style={styles.reviewNumber}>Q{itemIndex + 1} · {item.subject}</Text></View>
+                <View style={styles.reviewTop}><View style={[styles.reviewStatus, correct ? styles.correctStatus : styles.wrongStatus]}><Ionicons name={correct ? 'checkmark' : 'close'} size={15} color={correct ? colors.success : colors.red} /></View><Text style={styles.reviewNumber}>Q{itemIndex + 1} · {item.subject} · {item.kind === 'case-study' ? 'CASE STUDY' : 'NORMAL'}</Text></View>
                 <Text style={styles.reviewQuestion}>{item.prompt}</Text>
                 <Text style={styles.yourAnswer}>Your answer: <Text style={[styles.answerStrong, { color: correct ? colors.success : colors.red }]}>{selected == null ? 'Not answered' : item.options[selected]}</Text></Text>
                 {!correct ? <Text style={styles.correctAnswer}>Correct answer: {item.options[item.answer]}</Text> : null}
                 <View style={styles.explanation}><Ionicons name="bulb-outline" size={16} color={colors.primary} /><Text style={styles.explanationText}>{item.explanation}</Text></View>
+                <View style={styles.sourceRow}><Ionicons name="book-outline" size={13} color={colors.muted} /><Text style={styles.sourceText}>{item.sourceRef || `${item.subject} foundation concept`} · Applicable mapping: {item.applicableAttempt || icaiContentManifest.targetAttempt}</Text></View>
               </Card>
             );
           })}
@@ -215,7 +217,11 @@ export const DailyMcqScreen = ({ navigation, route }: Props) => {
         <Text style={styles.answered}>{answered} of {todayQuestions.length} answered</Text>
 
         <Card style={styles.questionCard}>
-          <View style={styles.questionSubject}><Text style={styles.questionSubjectText}>{question?.subject}</Text></View>
+          <View style={styles.questionBadges}>
+            <View style={styles.questionSubject}><Text style={styles.questionSubjectText}>{question?.subject}</Text></View>
+            <View style={[styles.kindBadge, question?.kind === 'case-study' && styles.caseKindBadge]}><Text style={[styles.kindBadgeText, question?.kind === 'case-study' && styles.caseKindText]}>{question?.kind === 'case-study' ? 'CASE STUDY MCQ' : 'NORMAL MCQ'}</Text></View>
+          </View>
+          {question?.caseStudy ? <View style={styles.caseStudy}><View style={styles.caseStudyHeader}><Ionicons name="document-text-outline" size={17} color={colors.purple} /><Text style={styles.caseStudyTitle}>{question.caseStudy.title}</Text></View><Text style={styles.caseStudyPassage}>{question.caseStudy.passage}</Text></View> : null}
           <Text style={styles.questionText}>{question?.prompt}</Text>
           <View style={styles.options}>
             {question?.options.map((option, optionIndex) => {
@@ -294,8 +300,17 @@ const styles = StyleSheet.create({
   progressFill: { height: 7, borderRadius: 4, backgroundColor: colors.primary },
   answered: { color: colors.muted, fontSize: 8, textAlign: 'right', marginTop: 5, marginBottom: spacing.lg },
   questionCard: { padding: spacing.lg, shadowOpacity: 0.05 },
+  questionBadges: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: spacing.sm },
   questionSubject: { alignSelf: 'flex-start', backgroundColor: colors.purpleSoft, borderRadius: radius.pill, paddingHorizontal: 9, paddingVertical: 5 },
   questionSubjectText: { color: colors.purple, fontSize: 8, fontWeight: '900' },
+  kindBadge: { backgroundColor: colors.primarySoft, borderRadius: radius.pill, paddingHorizontal: 9, paddingVertical: 5 },
+  caseKindBadge: { backgroundColor: colors.amberSoft },
+  kindBadgeText: { color: colors.primary, fontSize: 7, fontWeight: '900', letterSpacing: 0.5 },
+  caseKindText: { color: '#98620A' },
+  caseStudy: { backgroundColor: '#F8F6FF', borderWidth: 1, borderColor: '#E3DCFA', borderRadius: radius.md, padding: spacing.md, marginTop: spacing.lg },
+  caseStudyHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  caseStudyTitle: { color: colors.purple, fontSize: 10, fontWeight: '900' },
+  caseStudyPassage: { color: colors.inkSoft, fontSize: 11, lineHeight: 18, marginTop: spacing.sm },
   questionText: { color: colors.ink, fontSize: 18, lineHeight: 26, fontWeight: '900', marginTop: spacing.lg },
   options: { gap: spacing.md, marginTop: spacing.xl },
   option: { minHeight: 60, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.canvas, padding: spacing.md, flexDirection: 'row', alignItems: 'center', gap: spacing.md },
@@ -333,4 +348,6 @@ const styles = StyleSheet.create({
   correctAnswer: { color: colors.success, fontSize: 10, fontWeight: '800', marginTop: 5 },
   explanation: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, backgroundColor: colors.primarySoft, borderRadius: radius.md, padding: spacing.md, marginTop: spacing.md },
   explanationText: { flex: 1, color: colors.inkSoft, fontSize: 9, lineHeight: 14 },
+  sourceRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, marginTop: spacing.md, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.border },
+  sourceText: { flex: 1, color: colors.muted, fontSize: 7, lineHeight: 12 },
 });

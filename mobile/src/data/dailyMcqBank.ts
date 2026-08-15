@@ -5,6 +5,13 @@ export type DailyMcqQuestion = {
   options: [string, string, string, string];
   answer: number;
   explanation: string;
+  kind?: 'normal' | 'case-study';
+  caseStudy?: {
+    title: string;
+    passage: string;
+  };
+  sourceRef?: string;
+  applicableAttempt?: string;
 };
 
 // Safe preview content only. These stable foundation questions demonstrate the
@@ -206,5 +213,152 @@ export const dailyMcqBank: DailyMcqQuestion[] = [
     options: ['Long-term direction and allocation of resources', 'Only recording past transactions', 'Only daily attendance', 'Eliminating every uncertainty'],
     answer: 0,
     explanation: 'Strategy addresses long-term direction, choices and resource allocation in a changing environment.',
+  },
+
+  // Original case-study practice mapped to the current ICAI paper structure.
+  // These are not copied ICAI questions and remain draft until mentor review.
+  {
+    id: 'case-g1-asset-ready', subject: 'Accounts', kind: 'case-study',
+    caseStudy: {
+      title: 'Case: Production machinery',
+      passage: 'A company purchases machinery on 1 April. Installation and testing finish on 30 June, and the machine is ready for production on 1 July. Commercial production starts on 15 July.',
+    },
+    prompt: 'For accounting purposes, depreciation should generally begin when the machinery is:',
+    options: ['Purchased on 1 April', 'Available for its intended use on 1 July', 'First used on 15 July only', 'Fully paid for'],
+    answer: 1,
+    explanation: 'Depreciation generally begins when an asset is available for use in the manner intended by management, not merely when purchased or paid for.',
+    sourceRef: 'Paper 1 · Advanced Accounting · Property, Plant and Equipment concepts', applicableAttempt: 'September 2026',
+  },
+  {
+    id: 'case-g1-trial-error', subject: 'Accounts', kind: 'case-study',
+    caseStudy: {
+      title: 'Case: Balanced trial balance',
+      passage: 'The accountant’s trial balance agrees, but a credit purchase was completely omitted from both the purchases account and the supplier’s account.',
+    },
+    prompt: 'Does agreement of the trial balance detect this complete omission?',
+    options: ['Yes, always', 'No, because both debit and credit were omitted', 'Only if cash was paid', 'Only after depreciation'],
+    answer: 1,
+    explanation: 'A complete omission leaves both debit and credit totals unchanged, so the trial balance may still agree.',
+    sourceRef: 'Paper 1 · Advanced Accounting · Accounting process and errors', applicableAttempt: 'September 2026',
+  },
+  {
+    id: 'case-g1-counter-offer', subject: 'Law', kind: 'case-study',
+    caseStudy: {
+      title: 'Case: Conditional response',
+      passage: 'A offers to sell equipment to B for ₹2,00,000, payment on delivery. B replies, “I accept, provided payment can be made after 60 days.”',
+    },
+    prompt: 'B’s response is best characterised as:',
+    options: ['Absolute acceptance', 'A counter-offer', 'Completed performance', 'A void document only because it is written'],
+    answer: 1,
+    explanation: 'Adding a new payment condition makes the response qualified rather than absolute, so it operates as a counter-offer.',
+    sourceRef: 'Paper 2 · Corporate and Other Laws · Indian Contract Act concepts', applicableAttempt: 'September 2026',
+  },
+  {
+    id: 'case-g1-free-consent', subject: 'Law', kind: 'case-study',
+    caseStudy: {
+      title: 'Case: Pressure to contract',
+      passage: 'P threatens to unlawfully detain Q’s property unless Q signs an agreement immediately. Q signs because of that threat.',
+    },
+    prompt: 'Which element of a valid contract is most directly affected?',
+    options: ['Free consent', 'Writing material', 'Accounting consideration', 'Place of delivery only'],
+    answer: 0,
+    explanation: 'Consent caused by prohibited pressure may not be free; the precise legal consequence depends on the governing facts and provisions.',
+    sourceRef: 'Paper 2 · Corporate and Other Laws · Free consent concepts', applicableAttempt: 'September 2026',
+  },
+  {
+    id: 'case-g1-itc', subject: 'Taxation', kind: 'case-study',
+    caseStudy: {
+      title: 'Case: Tax paid on inputs',
+      passage: 'A registered manufacturer pays GST on eligible raw materials and later charges GST on taxable finished goods, supported by valid documents and subject to applicable conditions.',
+    },
+    prompt: 'What mechanism is intended to reduce cascading in this situation?',
+    options: ['Input Tax Credit', 'Depreciation reserve', 'Cost audit', 'Dividend distribution'],
+    answer: 0,
+    explanation: 'Eligible input tax credit can offset tax paid on inputs against output tax, subject to statutory conditions and attempt-specific updates.',
+    sourceRef: 'Paper 3B · Goods and Services Tax · Input Tax Credit concepts', applicableAttempt: 'September 2026 · verify statutory update',
+  },
+  {
+    id: 'case-g1-destination', subject: 'Taxation', kind: 'case-study',
+    caseStudy: {
+      title: 'Case: Place of consumption',
+      passage: 'Goods move from a supplier in one State to a customer for consumption in another State. Assume it is an inter-State taxable supply under the applicable provisions.',
+    },
+    prompt: 'The destination-based nature of GST broadly links revenue to the:',
+    options: ['Place of consumption', 'Supplier’s incorporation date only', 'Auditor’s location', 'Place where accounts are printed'],
+    answer: 0,
+    explanation: 'GST is destination-based, so the place of consumption is central, subject to the detailed place-of-supply provisions.',
+    sourceRef: 'Paper 3B · Goods and Services Tax · GST fundamentals', applicableAttempt: 'September 2026 · verify statutory update',
+  },
+  {
+    id: 'case-g2-contribution', subject: 'Costing', kind: 'case-study',
+    caseStudy: {
+      title: 'Case: Product contribution',
+      passage: 'A product sells for ₹100 per unit and has variable cost of ₹60 per unit. Fixed cost for the period is ₹2,00,000.',
+    },
+    prompt: 'What is contribution per unit?',
+    options: ['₹20', '₹40', '₹60', '₹100'],
+    answer: 1,
+    explanation: 'Contribution per unit = selling price ₹100 − variable cost ₹60 = ₹40.',
+    sourceRef: 'Paper 4 · Cost and Management Accounting · Marginal costing', applicableAttempt: 'September 2026',
+  },
+  {
+    id: 'case-g2-break-even', subject: 'Costing', kind: 'case-study',
+    caseStudy: {
+      title: 'Case: Break-even planning',
+      passage: 'A product sells for ₹100 per unit, variable cost is ₹60 per unit, and total fixed cost is ₹2,00,000.',
+    },
+    prompt: 'What is the break-even point in units?',
+    options: ['2,000 units', '3,333 units', '5,000 units', '8,000 units'],
+    answer: 2,
+    explanation: 'Contribution is ₹40 per unit; break-even units = ₹2,00,000 ÷ ₹40 = 5,000 units.',
+    sourceRef: 'Paper 4 · Cost and Management Accounting · CVP analysis', applicableAttempt: 'September 2026',
+  },
+  {
+    id: 'case-g2-evidence', subject: 'Audit', kind: 'case-study',
+    caseStudy: {
+      title: 'Case: Conflicting audit evidence',
+      passage: 'Management provides an oral explanation for a material receivable, while a reliable external confirmation shows a different balance.',
+    },
+    prompt: 'Which evidence would ordinarily carry greater reliability for this balance?',
+    options: ['The external confirmation', 'The oral explanation automatically', 'Neither can ever be considered', 'The larger numerical amount'],
+    answer: 0,
+    explanation: 'Evidence from an independent external source is generally more reliable, though the auditor must investigate the inconsistency.',
+    sourceRef: 'Paper 5 · Auditing and Ethics · Audit evidence', applicableAttempt: 'September 2026',
+  },
+  {
+    id: 'case-g2-representation', subject: 'Audit', kind: 'case-study',
+    caseStudy: {
+      title: 'Case: Written representation',
+      passage: 'For a material area, the audit team plans to obtain only a written management representation and perform no other available audit procedure.',
+    },
+    prompt: 'Is a written representation ordinarily a substitute for other necessary audit evidence?',
+    options: ['Yes, in every audit area', 'No, it does not replace other necessary evidence', 'Yes, whenever signed in blue ink', 'Only when audit fees are paid'],
+    answer: 1,
+    explanation: 'Written representations are audit evidence but do not replace other audit evidence that the auditor expects to be available.',
+    sourceRef: 'Paper 5 · Auditing and Ethics · Written representations', applicableAttempt: 'September 2026',
+  },
+  {
+    id: 'case-g2-npv', subject: 'FM', kind: 'case-study',
+    caseStudy: {
+      title: 'Case: Investment evaluation',
+      passage: 'A project requires an immediate outflow of ₹10 lakh. At the required discount rate, the present value of expected future inflows is ₹12 lakh.',
+    },
+    prompt: 'What is the project’s NPV and the general decision for an independent project?',
+    options: ['−₹2 lakh; accept', '+₹2 lakh; generally accept', '+₹22 lakh; reject', 'Zero; always reject'],
+    answer: 1,
+    explanation: 'NPV = ₹12 lakh − ₹10 lakh = +₹2 lakh; a positive-NPV independent project is generally acceptable, subject to other constraints.',
+    sourceRef: 'Paper 6A · Financial Management · Investment decisions', applicableAttempt: 'September 2026',
+  },
+  {
+    id: 'case-g2-swot', subject: 'SM', kind: 'case-study',
+    caseStudy: {
+      title: 'Case: Strategic diagnosis',
+      passage: 'A company has a strong distribution network, but a new regulation may significantly increase compliance cost across the industry.',
+    },
+    prompt: 'In SWOT terms, the strong network and new regulation are respectively a:',
+    options: ['Threat and strength', 'Strength and threat', 'Weakness and opportunity', 'Opportunity and weakness'],
+    answer: 1,
+    explanation: 'The internal strong distribution network is a strength; an adverse external regulatory change is a threat.',
+    sourceRef: 'Paper 6B · Strategic Management · Strategic analysis', applicableAttempt: 'September 2026',
   },
 ];

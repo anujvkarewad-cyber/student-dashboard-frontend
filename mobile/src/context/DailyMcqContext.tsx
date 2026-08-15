@@ -59,12 +59,18 @@ const seededRandom = (seedValue: number) => {
 
 const dailyQuestionIds = (date: string, studentId: string, group: CaGroup) => {
   const random = seededRandom(hash(`${date}:${studentId}:${group}`));
-  return dailyMcqBank
-    .filter((question) => subjectGroup(question.subject) === group)
+  const pool = dailyMcqBank.filter((question) => subjectGroup(question.subject) === group);
+  const pick = (questions: typeof pool, count: number) => questions
     .map((question) => ({ question, sort: random() }))
     .sort((a, b) => a.sort - b.sort)
-    .slice(0, 10)
+    .slice(0, count)
     .map(({ question }) => question.id);
+  // Balanced daily paper: seven direct-concept questions and three
+  // original case-study questions.
+  return [...pick(pool.filter((question) => question.kind !== 'case-study'), 7), ...pick(pool.filter((question) => question.kind === 'case-study'), 3)]
+    .map((id) => ({ id, sort: random() }))
+    .sort((a, b) => a.sort - b.sort)
+    .map(({ id }) => id);
 };
 
 const calculateStreak = (attempts: DailyMcqAttempt[], group: CaGroup) => {
