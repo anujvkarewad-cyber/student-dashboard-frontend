@@ -1,11 +1,13 @@
 import React, { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { api } from '../api/client';
+import { api, ApiMode } from '../api/client';
 import { clearSavedSession, getSavedSession, saveSession } from '../storage/session';
 import type { Student } from '../types';
 
 type AuthContextValue = {
   student: Student | null;
   booting: boolean;
+  backendMode: ApiMode;
+  switchBackendMode: (mode: ApiMode) => Promise<void>;
   login: (studentId: string, password: string) => Promise<Student>;
   logout: () => Promise<void>;
   updateSavedPassword: (newPassword: string) => Promise<void>;
@@ -16,10 +18,13 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 export const AuthProvider = ({ children }: PropsWithChildren) => {
   const [student, setStudent] = useState<Student | null>(null);
   const [booting, setBooting] = useState(true);
+  const [backendMode, setBackendMode] = useState<ApiMode>(api.getMode());
 
   useEffect(() => {
     let mounted = true;
     const restore = async () => {
+      const mode = await api.initializeMode();
+      if (mounted) setBackendMode(mode);
       const saved = await getSavedSession();
       if (!saved) {
         if (mounted) setBooting(false);
@@ -43,6 +48,13 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
     return () => { mounted = false; };
   }, []);
 
+  const switchBackendMode = useCallback(async (mode: ApiMode) => {
+    if (student) throw new Error('Sign out before changing data mode.');
+    await clearSavedSession();
+    await api.setMode(mode);
+    setBackendMode(mode);
+  }, [student]);
+
   const login = useCallback(async (studentId: string, password: string) => {
     const normalizedId = studentId.trim().toUpperCase();
     const result = await api.validateLogin(normalizedId, password);
@@ -65,8 +77,8 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
   }, [student]);
 
   const value = useMemo(
-    () => ({ student, booting, login, logout, updateSavedPassword }),
-    [student, booting, login, logout, updateSavedPassword],
+    () => ({ student, booting, backendMode, switchBackendMode, login, logout, updateSavedPassword }),
+    [student, booting, backendMode, switchBackendMode, login, logout, updateSavedPassword],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

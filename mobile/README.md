@@ -8,6 +8,7 @@ A separate React Native + Expo Android client for the existing student dashboard
 - The existing Apps Script, Sheets and Vercel proxy are not modified.
 - Mock mode is the default, so local development cannot write production data accidentally.
 - Live mode only consumes the same existing `POST /api/proxy` action/payload contract used by `api.js`.
+- The login screen provides a persisted **Live read-only** mode. It can authenticate and fetch real data, while every backend mutation is blocked in the API client. Local-only Focus, Study Receipt and Daily MCQ data continue to work.
 
 ## Current native flows
 
@@ -68,12 +69,13 @@ Create `mobile/.env.local` (ignored by Git):
 
 ```env
 EXPO_PUBLIC_USE_MOCKS=false
+EXPO_PUBLIC_READ_ONLY=true
 EXPO_PUBLIC_API_BASE_URL=https://student-dashboard-frontend-iota.vercel.app
 ```
 
 `EXPO_PUBLIC_API_BASE_URL` can be either the deployment origin or a complete `/api/proxy` URL. No backend change is required.
 
-Use only a designated test student for write-flow testing (`addStudyLog`, password changes) because a connected build sends real actions to the existing backend.
+Use a designated test student for login validation. The current connected mode is deliberately read-only: `addStudyLog`, password recovery/reset/change, and feedback-read updates throw before any backend request is sent.
 
 ## Validate
 

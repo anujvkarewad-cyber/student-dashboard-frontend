@@ -4,6 +4,7 @@ import React from 'react';
 import { FlatList, Linking, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Card, EmptyState, ErrorBanner } from '../components/ui';
+import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import { colors, radius, spacing } from '../theme';
 import type { StudyLog } from '../types';
@@ -41,6 +42,7 @@ const LogRow = ({ item }: { item: StudyLog }) => (
 
 export const TrackerScreen = () => {
   const navigation = useNavigation<any>();
+  const { backendMode } = useAuth();
   const { data, error, refreshing, refreshTracker } = useData();
   const stats = data.stats;
 
@@ -57,11 +59,12 @@ export const TrackerScreen = () => {
           <>
             <View style={styles.header}>
               <View><Text style={styles.eyebrow}>CONSISTENCY HUB</Text><Text style={styles.title}>Study tracker</Text></View>
-              <Pressable style={styles.addTop} onPress={() => navigation.navigate('AddStudyLog')}>
+              {backendMode === 'mock' ? <Pressable style={styles.addTop} onPress={() => navigation.navigate('AddStudyLog')}>
                 <Ionicons name="add" size={25} color={colors.surface} />
-              </Pressable>
+              </Pressable> : <View style={styles.readOnlyPill}><Ionicons name="lock-closed" size={12} color={colors.success} /><Text style={styles.readOnlyPillText}>READ ONLY</Text></View>}
             </View>
             {error ? <ErrorBanner message={error} onRetry={() => refreshTracker().catch(() => undefined)} /> : null}
+            {backendMode === 'live-readonly' ? <View style={styles.readOnlyBanner}><Ionicons name="shield-checkmark-outline" size={18} color={colors.success} /><Text style={styles.readOnlyBannerText}>Real tracker history is visible, but adding or changing backend records is disabled.</Text></View> : null}
             <Card style={styles.summaryCard}>
               <Summary icon="checkmark-done-outline" label="Sessions" value={String(stats.totalEntries ?? '—')} />
               <View style={styles.divider} />
@@ -75,9 +78,9 @@ export const TrackerScreen = () => {
         ListEmptyComponent={<EmptyState icon="book-outline" title="No study sessions yet" message="Log your first focused session and start building your consistency streak." />}
         ListFooterComponent={<View style={styles.footerSpace} />}
       />
-      <Pressable style={({ pressed }) => [styles.fab, pressed && { transform: [{ scale: 0.96 }] }]} onPress={() => navigation.navigate('AddStudyLog')}>
+      {backendMode === 'mock' ? <Pressable style={({ pressed }) => [styles.fab, pressed && { transform: [{ scale: 0.96 }] }]} onPress={() => navigation.navigate('AddStudyLog')}>
         <Ionicons name="add" size={25} color={colors.surface} /><Text style={styles.fabText}>Log hours</Text>
-      </Pressable>
+      </Pressable> : null}
     </SafeAreaView>
   );
 };
@@ -89,6 +92,10 @@ const styles = StyleSheet.create({
   eyebrow: { color: colors.primary, fontSize: 10, fontWeight: '900', letterSpacing: 1.3 },
   title: { color: colors.ink, fontSize: 27, fontWeight: '900', letterSpacing: -0.7, marginTop: 3 },
   addTop: { width: 43, height: 43, borderRadius: 15, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
+  readOnlyPill: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.tealSoft, borderRadius: radius.pill, paddingHorizontal: 9, paddingVertical: 7 },
+  readOnlyPillText: { color: colors.success, fontSize: 7, fontWeight: '900', letterSpacing: 0.7 },
+  readOnlyBanner: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.tealSoft, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.lg },
+  readOnlyBannerText: { flex: 1, color: colors.inkSoft, fontSize: 9, lineHeight: 14 },
   summaryCard: { paddingVertical: spacing.lg, paddingHorizontal: spacing.sm, flexDirection: 'row', marginBottom: spacing.xxl, shadowOpacity: 0.05 },
   summaryItem: { flex: 1, alignItems: 'center' },
   summaryIcon: { width: 35, height: 35, borderRadius: 12, backgroundColor: colors.primarySoft, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.sm },

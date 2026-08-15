@@ -4,7 +4,6 @@ import React from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Card, InitialsAvatar, PrimaryButton } from '../components/ui';
-import { config } from '../config';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import { colors, radius, spacing } from '../theme';
@@ -26,7 +25,7 @@ const MenuRow = ({ icon, title, subtitle, onPress }: { icon: keyof typeof Ionico
 
 export const ProfileScreen = () => {
   const navigation = useNavigation<any>();
-  const { student, logout } = useAuth();
+  const { student, logout, backendMode } = useAuth();
   const { data } = useData();
 
   const confirmLogout = () => Alert.alert('Sign out?', 'You will need your Student ID and password to sign in again.', [
@@ -56,9 +55,11 @@ export const ProfileScreen = () => {
           </View>
         </Card>
 
-        {config.useMocks ? (
-          <View style={styles.safeMode}><Ionicons name="shield-checkmark" size={20} color={colors.success} /><View style={{ flex: 1 }}><Text style={styles.safeTitle}>Safe preview mode</Text><Text style={styles.safeText}>Live backend reads and writes are disabled in this development build.</Text></View></View>
-        ) : null}
+        {backendMode === 'mock' ? (
+          <View style={styles.safeMode}><Ionicons name="shield-checkmark" size={20} color={colors.success} /><View style={{ flex: 1 }}><Text style={styles.safeTitle}>Safe demo mode</Text><Text style={styles.safeText}>Live backend reads and writes are disabled. All dashboard data is local sample data.</Text></View></View>
+        ) : (
+          <View style={styles.readOnlyMode}><Ionicons name="cloud-done-outline" size={20} color={colors.primary} /><View style={{ flex: 1 }}><Text style={styles.readOnlyTitle}>Live read-only mode</Text><Text style={styles.safeText}>Displaying real backend data. Every server-side write action is blocked by the mobile API client.</Text></View></View>
+        )}
 
         <Text style={styles.sectionTitle}>Student details</Text>
         <Card style={styles.infoCard}>
@@ -82,12 +83,11 @@ export const ProfileScreen = () => {
           <MenuRow icon="trophy-outline" title="Leaderboard" subtitle="See your cohort position" onPress={() => navigation.navigate('Leaderboard')} />
           <View style={styles.line} />
           <MenuRow icon="bar-chart-outline" title="Weekly reports" subtitle="Review progress and mentor rating" onPress={() => navigation.navigate('Reports')} />
-          <View style={styles.line} />
-          <MenuRow icon="key-outline" title="Change password" subtitle="Update your sign-in password" onPress={() => navigation.navigate('ChangePassword')} />
+          {backendMode === 'mock' ? <><View style={styles.line} /><MenuRow icon="key-outline" title="Change password" subtitle="Test the password-change UI safely" onPress={() => navigation.navigate('ChangePassword')} /></> : null}
         </Card>
 
         <PrimaryButton label="Sign out" icon="log-out-outline" variant="secondary" onPress={confirmLogout} style={styles.logout} />
-        <Text style={styles.version}>Ujjwal Pathak Mentorship · Mobile v1.4.0</Text>
+        <Text style={styles.version}>Ujjwal Pathak Mentorship · Mobile v1.5.0</Text>
       </ScrollView>
     </SafeAreaView>
   );
@@ -115,6 +115,8 @@ const styles = StyleSheet.create({
   safeMode: { flexDirection: 'row', gap: spacing.md, alignItems: 'flex-start', backgroundColor: colors.tealSoft, borderRadius: radius.md, padding: spacing.md, marginTop: spacing.lg },
   safeTitle: { color: colors.success, fontSize: 12, fontWeight: '900' },
   safeText: { color: colors.inkSoft, fontSize: 10, lineHeight: 15, marginTop: 2 },
+  readOnlyMode: { flexDirection: 'row', gap: spacing.md, alignItems: 'flex-start', backgroundColor: colors.primarySoft, borderRadius: radius.md, padding: spacing.md, marginTop: spacing.lg },
+  readOnlyTitle: { color: colors.primary, fontSize: 12, fontWeight: '900' },
   sectionTitle: { color: colors.ink, fontSize: 17, fontWeight: '900', marginTop: spacing.xxl, marginBottom: spacing.md },
   infoCard: { paddingVertical: 3, shadowOpacity: 0.03 },
   infoRow: { flexDirection: 'row', alignItems: 'center', minHeight: 63, gap: spacing.md },

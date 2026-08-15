@@ -5,7 +5,6 @@ import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, Vi
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../api/client';
 import { FormInput, PrimaryButton } from '../components/ui';
-import { config } from '../config';
 import { useAuth } from '../context/AuthContext';
 import type { RootStackParamList } from '../navigation/types';
 import { colors, radius, spacing } from '../theme';
@@ -13,7 +12,7 @@ import { colors, radius, spacing } from '../theme';
 type Props = NativeStackScreenProps<RootStackParamList, 'ChangePassword'>;
 
 export const ChangePasswordScreen = ({ navigation }: Props) => {
-  const { student, updateSavedPassword } = useAuth();
+  const { student, updateSavedPassword, backendMode } = useAuth();
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -31,8 +30,8 @@ export const ChangePasswordScreen = ({ navigation }: Props) => {
     try {
       const result = await api.changePassword(student.studentId, current, next);
       if (!result?.success) throw new Error(result?.message || 'Password could not be updated.');
-      if (!config.useMocks) await updateSavedPassword(next);
-      Alert.alert('Password updated', config.useMocks ? 'Demo completed safely. Your live account was not changed.' : 'Your encrypted sign-in session has also been updated.', [
+      if (backendMode !== 'mock') await updateSavedPassword(next);
+      Alert.alert('Password updated', backendMode === 'mock' ? 'Demo completed safely. Your live account was not changed.' : 'Your encrypted sign-in session has also been updated.', [
         { text: 'Done', onPress: () => navigation.goBack() },
       ]);
     } catch (e) {

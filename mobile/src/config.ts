@@ -7,8 +7,8 @@ const normalizeApiUrl = (value: string) => {
 
 export const config = {
   apiUrl: normalizeApiUrl(process.env.EXPO_PUBLIC_API_BASE_URL || defaultBaseUrl),
-  // Safe by default: development never writes into the production backend unless
-  // EXPO_PUBLIC_USE_MOCKS=false is explicitly supplied at build/run time.
+  // Controls the initial mode. Safe-preview builds start with mock data and may
+  // opt into a runtime Live read-only mode; server-side writes remain blocked.
   useMocks: process.env.EXPO_PUBLIC_USE_MOCKS !== 'false',
   requestTimeoutMs: 30_000,
 };

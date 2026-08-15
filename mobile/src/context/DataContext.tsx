@@ -31,7 +31,7 @@ type DataContextValue = {
 
 const DataContext = createContext<DataContextValue | undefined>(undefined);
 
-const cacheKey = (studentId: string) => `ump_mobile_cache_${studentId}`;
+const cacheKey = (studentId: string) => `ump_mobile_cache_${api.getMode()}_${studentId}`;
 const messageOf = (error: unknown) => error instanceof Error ? error.message : 'Something went wrong.';
 
 export const DataProvider = ({ children }: PropsWithChildren) => {
@@ -159,7 +159,8 @@ export const DataProvider = ({ children }: PropsWithChildren) => {
   }, [refreshTracker, student]);
 
   const dismissFeedback = useCallback(async (id: string) => {
-    await api.markMentorFeedbackRead(id);
+    try { await api.markMentorFeedbackRead(id); }
+    catch (error) { if (!api.isReadOnlyMode()) throw error; }
     updateAndPersist((current) => ({
       ...current,
       feedback: current.feedback.filter((item) => item.id !== id),

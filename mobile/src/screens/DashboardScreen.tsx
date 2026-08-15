@@ -54,7 +54,7 @@ const Action = ({ icon, label, onPress }: { icon: keyof typeof Ionicons.glyphMap
 
 export const DashboardScreen = () => {
   const navigation = useNavigation<any>();
-  const { student } = useAuth();
+  const { student, backendMode } = useAuth();
   const { data, loading, refreshing, error, refreshAll, dismissFeedback } = useData();
   const { todayAttempts: dailyMcqAttempts, streakForGroup } = useDailyMcq();
   const mcqGroups = groupsForStudent(student?.group);
@@ -216,7 +216,7 @@ export const DashboardScreen = () => {
           <View style={styles.actionDivider} />
           <Action icon="timer-outline" label="Start focus timer" onPress={() => navigation.navigate('Focus')} />
           <View style={styles.actionDivider} />
-          <Action icon="add-circle-outline" label="Log study hours" onPress={() => navigation.navigate('Tracker')} />
+          <Action icon={backendMode === 'mock' ? 'add-circle-outline' : 'eye-outline'} label={backendMode === 'mock' ? 'Log study hours' : 'View study history'} onPress={() => navigation.navigate('Tracker')} />
           <View style={styles.actionDivider} />
           <Action icon="trophy-outline" label="View leaderboard" onPress={() => navigation.navigate('Leaderboard')} />
           <View style={styles.actionDivider} />
