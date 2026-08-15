@@ -11,6 +11,7 @@ type AuthContextValue = {
   login: (studentId: string, password: string) => Promise<Student>;
   logout: () => Promise<void>;
   updateSavedPassword: (newPassword: string) => Promise<void>;
+  completeRequiredPasswordChange: () => void;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -32,7 +33,7 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
       }
       try {
         const result = await api.validateLogin(saved.studentId, saved.password);
-        if (result.success === false) {
+        if (result.success === false || (result.forcePasswordChange && mode === 'live-readonly')) {
           await clearSavedSession();
         } else if (mounted) {
           setStudent(result);
@@ -61,10 +62,13 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
     if (result.success === false) {
       throw new Error(result.message || 'Student ID or password is incorrect.');
     }
+    if (result.forcePasswordChange && backendMode === 'live-readonly') {
+      throw new Error('Your account requires a password change. Select Full live to complete it securely.');
+    }
     await saveSession({ studentId: normalizedId, password });
     setStudent(result);
     return result;
-  }, []);
+  }, [backendMode]);
 
   const logout = useCallback(async () => {
     await clearSavedSession();
@@ -76,9 +80,13 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
     await saveSession({ studentId: student.studentId, password: newPassword });
   }, [student]);
 
+  const completeRequiredPasswordChange = useCallback(() => {
+    setStudent((current) => current ? { ...current, forcePasswordChange: false } : current);
+  }, []);
+
   const value = useMemo(
-    () => ({ student, booting, backendMode, switchBackendMode, login, logout, updateSavedPassword }),
-    [student, booting, backendMode, switchBackendMode, login, logout, updateSavedPassword],
+    () => ({ student, booting, backendMode, switchBackendMode, login, logout, updateSavedPassword, completeRequiredPasswordChange }),
+    [student, booting, backendMode, switchBackendMode, login, logout, updateSavedPassword, completeRequiredPasswordChange],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -26,9 +26,9 @@ import {
 } from './mockData';
 
 type ApiEnvelope<T> = { result?: T; error?: string };
-export type ApiMode = 'mock' | 'live-readonly';
+export type ApiMode = 'mock' | 'live-readonly' | 'live';
 
-const MODE_STORAGE_KEY = 'ump_api_mode_v1';
+const MODE_STORAGE_KEY = 'ump_api_mode_v2';
 const wait = (ms = 350) => new Promise((resolve) => setTimeout(resolve, ms));
 const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
@@ -36,24 +36,27 @@ let demoStats = clone(mockStats);
 let demoLog = clone(mockStudyLog);
 
 class ApiClient {
-  private mode: ApiMode = config.useMocks ? 'mock' : 'live-readonly';
+  private mode: ApiMode = config.defaultApiMode;
   private initialized = false;
 
   async initializeMode() {
     if (this.initialized) return this.mode;
     this.initialized = true;
-    if (!this.isUsingMocks()) {
-      this.mode = 'live-readonly';
+    if (!config.allowModeSelection) {
+      this.mode = config.defaultApiMode;
       return this.mode;
     }
     try {
       const saved = await AsyncStorage.getItem(MODE_STORAGE_KEY);
-      if (saved === 'mock' || saved === 'live-readonly') this.mode = saved;
-    } catch { /* safe default remains mock */ }
+      if (saved === 'mock' || saved === 'live-readonly' || saved === 'live') this.mode = saved;
+    } catch { /* retain the build's safe default */ }
     return this.mode;
   }
 
   async setMode(mode: ApiMode) {
+    if (!config.allowModeSelection && mode !== config.defaultApiMode) {
+      throw new Error('Data mode is locked for this app build.');
+    }
     this.mode = mode;
     this.initialized = true;
     await AsyncStorage.setItem(MODE_STORAGE_KEY, mode);
@@ -62,10 +65,11 @@ class ApiClient {
   getMode() { return this.mode; }
   isUsingMocks() { return this.mode === 'mock'; }
   isReadOnlyMode() { return this.mode === 'live-readonly'; }
+  isLiveMode() { return this.mode === 'live'; }
 
   private blockBackendWrite(action: string) {
     if (this.isReadOnlyMode()) {
-      throw new Error(`${action} is disabled in Live read-only mode. Switch to Safe demo for UI testing.`);
+      throw new Error(`${action} is disabled in Live read-only mode. Select Full live to send backend updates.`);
     }
   }
 
@@ -113,6 +117,12 @@ class ApiClient {
       return { ...clone(mockStudent), success: false, message: 'Use UMP2407 and demo123 in safe demo mode.' };
     }
     return clone(mockStudent);
+  }
+
+  async validateStudent(studentId: string): Promise<ApiSuccess> {
+    if (!this.isUsingMocks()) return this.call<ApiSuccess>('validateStudent', { studentId });
+    await wait();
+    return { success: studentId.toUpperCase() === 'UMP2407' };
   }
 
   async forgotPassword(studentId: string, email: string): Promise<ApiSuccess> {
@@ -221,6 +231,12 @@ class ApiClient {
   async markMentorFeedbackRead(id: string): Promise<ApiSuccess> {
     this.blockBackendWrite('Feedback read updates');
     if (!this.isUsingMocks()) return this.call<ApiSuccess>('feedback.read', { id });
+    return { success: true };
+  }
+
+  async saveDeviceToken(studentId: string, token: string): Promise<ApiSuccess> {
+    this.blockBackendWrite('Device-token registration');
+    if (!this.isUsingMocks()) return this.call<ApiSuccess>('saveDeviceToken', { studentId, token });
     return { success: true };
   }
 }

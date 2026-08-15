@@ -81,8 +81,9 @@ const navigationTheme = {
 };
 
 export const AppNavigator = () => {
-  const { student, booting } = useAuth();
+  const { student, booting, backendMode } = useAuth();
   if (booting) return <Splash />;
+  const requiresPasswordChange = Boolean(student?.forcePasswordChange && backendMode === 'live');
 
   return (
     <NavigationContainer theme={navigationTheme}>
@@ -96,7 +97,9 @@ export const AppNavigator = () => {
           animation: 'slide_from_right',
         }}
       >
-        {student ? (
+        {student ? requiresPasswordChange ? (
+          <RootStack.Screen name="ChangePassword" component={ChangePasswordScreen} options={{ title: 'Required password change', headerBackVisible: false, gestureEnabled: false }} />
+        ) : (
           <>
             <RootStack.Screen name="Main" component={MainTabs} options={{ headerShown: false }} />
             <RootStack.Screen name="Notifications" component={NotificationsScreen} options={{ title: 'Notifications' }} />

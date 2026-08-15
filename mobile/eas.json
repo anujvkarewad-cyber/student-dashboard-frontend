@@ -10,7 +10,20 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_USE_MOCKS": "true"
+        "EXPO_PUBLIC_BACKEND_MODE": "mock",
+        "EXPO_PUBLIC_ALLOW_MODE_SWITCH": "true",
+        "EXPO_PUBLIC_API_BASE_URL": "https://student-dashboard-frontend-iota.vercel.app"
+      }
+    },
+    "apk-readonly": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_BACKEND_MODE": "live-readonly",
+        "EXPO_PUBLIC_ALLOW_MODE_SWITCH": "false",
+        "EXPO_PUBLIC_API_BASE_URL": "https://student-dashboard-frontend-iota.vercel.app"
       }
     },
     "apk": {
@@ -19,8 +32,8 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_USE_MOCKS": "false",
-        "EXPO_PUBLIC_READ_ONLY": "true",
+        "EXPO_PUBLIC_BACKEND_MODE": "live",
+        "EXPO_PUBLIC_ALLOW_MODE_SWITCH": "false",
         "EXPO_PUBLIC_API_BASE_URL": "https://student-dashboard-frontend-iota.vercel.app"
       }
     }

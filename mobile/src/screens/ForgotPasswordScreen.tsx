@@ -5,7 +5,7 @@ import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } fr
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '../api/client';
 import { FormInput, PrimaryButton } from '../components/ui';
-import { config } from '../config';
+import { useAuth } from '../context/AuthContext';
 import type { RootStackParamList } from '../navigation/types';
 import { colors, radius, spacing } from '../theme';
 
@@ -13,6 +13,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'ForgotPassword'>;
 type Stage = 'identity' | 'otp' | 'reset' | 'done';
 
 export const ForgotPasswordScreen = ({ navigation }: Props) => {
+  const { backendMode } = useAuth();
   const [stage, setStage] = useState<Stage>('identity');
   const [studentId, setStudentId] = useState('');
   const [email, setEmail] = useState('');
@@ -67,7 +68,7 @@ export const ForgotPasswordScreen = ({ navigation }: Props) => {
           <Text style={styles.title}>{copy[stage].title}</Text>
           <Text style={styles.subtitle}>{copy[stage].subtitle}</Text>
 
-          {config.useMocks && stage === 'otp' ? <Text style={styles.demoHint}>Safe demo OTP: 123456</Text> : null}
+          {backendMode === 'mock' && stage === 'otp' ? <Text style={styles.demoHint}>Safe demo OTP: 123456</Text> : null}
 
           <View style={styles.form}>
             {stage === 'identity' ? (

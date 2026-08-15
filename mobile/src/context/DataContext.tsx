@@ -33,6 +33,11 @@ const DataContext = createContext<DataContextValue | undefined>(undefined);
 
 const cacheKey = (studentId: string) => `ump_mobile_cache_${api.getMode()}_${studentId}`;
 const messageOf = (error: unknown) => error instanceof Error ? error.message : 'Something went wrong.';
+type Settled<T> = { ok: true; value: T } | { ok: false; error: unknown };
+const settle = async <T,>(request: Promise<T>): Promise<Settled<T>> => {
+  try { return { ok: true, value: await request }; }
+  catch (error) { return { ok: false, error }; }
+};
 
 export const DataProvider = ({ children }: PropsWithChildren) => {
   const { student } = useAuth();
@@ -53,27 +58,32 @@ export const DataProvider = ({ children }: PropsWithChildren) => {
     const id = student.studentId;
     try {
       const values = await Promise.all([
-        api.getStats(id),
-        api.getStudyLog(id),
-        api.getLeaderboard(),
-        api.getWeeklyReports(id),
-        api.getAnnouncements(),
-        api.getStudentMentorNotes(id),
-        api.getNotes(id),
-        api.getMentorFeedback(id),
+        settle(api.getStats(id)),
+        settle(api.getStudyLog(id)),
+        settle(api.getLeaderboard()),
+        settle(api.getWeeklyReports(id)),
+        settle(api.getAnnouncements()),
+        settle(api.getStudentMentorNotes(id)),
+        settle(api.getNotes(id)),
+        settle(api.getMentorFeedback(id)),
       ]);
-      const next: DashboardData = {
-        stats: values[0] || {},
-        studyLog: values[1] || [],
-        leaderboard: values[2] || [],
-        reports: values[3] || [],
-        announcements: values[4] || [],
-        mentorNotes: values[5] || [],
-        studyNotes: values[6] || [],
-        feedback: values[7] || [],
-      };
-      setData(next);
-      await persist(next);
+      const failures = values.filter((result) => !result.ok);
+      if (failures.length === values.length) throw failures[0].error;
+      setData((current) => {
+        const next: DashboardData = {
+          stats: values[0].ok ? values[0].value || {} : current.stats,
+          studyLog: values[1].ok ? values[1].value || [] : current.studyLog,
+          leaderboard: values[2].ok ? values[2].value || [] : current.leaderboard,
+          reports: values[3].ok ? values[3].value || [] : current.reports,
+          announcements: values[4].ok ? values[4].value || [] : current.announcements,
+          mentorNotes: values[5].ok ? values[5].value || [] : current.mentorNotes,
+          studyNotes: values[6].ok ? values[6].value || [] : current.studyNotes,
+          feedback: values[7].ok ? values[7].value || [] : current.feedback,
+        };
+        persist(next);
+        return next;
+      });
+      if (failures.length) setError(`${failures.length} dashboard section${failures.length === 1 ? '' : 's'} could not refresh. Cached data is shown where available.`);
     } catch (e) {
       setError(messageOf(e));
       throw e;

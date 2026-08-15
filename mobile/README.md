@@ -6,9 +6,11 @@ A separate React Native + Expo Android client for the existing student dashboard
 
 - The original web app files are not imported or modified by this app.
 - The existing Apps Script, Sheets and Vercel proxy are not modified.
-- Mock mode is the default, so local development cannot write production data accidentally.
-- Live mode only consumes the same existing `POST /api/proxy` action/payload contract used by `api.js`.
-- The login screen provides a persisted **Live read-only** mode. It can authenticate and fetch real data, while every backend mutation is blocked in the API client. Local-only Focus, Study Receipt and Daily MCQ data continue to work.
+- Mock mode remains the local-development default, so development cannot write production data accidentally.
+- Connected modes consume the same existing `POST /api/proxy` action/payload contract used by `api.js`; no Apps Script, Sheet or proxy change is required.
+- **Live preview** authenticates and reads real data while the API client blocks every mutation.
+- **Full live** enables the existing backend’s study-log, proof, password-recovery/change and feedback-read writes after an explicit runtime warning. The production APK profile starts directly in Full live and locks out mode switching.
+- Focus, Study Receipt and Daily MCQ remain intentionally device-local because the current backend has no corresponding endpoints.
 
 ## Current native flows
 
@@ -70,21 +72,27 @@ Password:   demo123
 OTP:        123456
 ```
 
-Mock mode is used when `EXPO_PUBLIC_USE_MOCKS` is absent or not equal to `false`.
+Mock mode is used when `EXPO_PUBLIC_BACKEND_MODE` is absent. A safe build can explicitly switch between Mock, Live preview and Full live from the login screen.
 
 ## Run against the existing API
 
-Create `mobile/.env.local` (ignored by Git):
+Create `mobile/.env.local` (ignored by Git). Start with read-only validation:
 
 ```env
-EXPO_PUBLIC_USE_MOCKS=false
-EXPO_PUBLIC_READ_ONLY=true
+EXPO_PUBLIC_BACKEND_MODE=live-readonly
+EXPO_PUBLIC_ALLOW_MODE_SWITCH=false
 EXPO_PUBLIC_API_BASE_URL=https://student-dashboard-frontend-iota.vercel.app
 ```
 
-`EXPO_PUBLIC_API_BASE_URL` can be either the deployment origin or a complete `/api/proxy` URL. No backend change is required.
+After read validation with a designated test student, enable the full existing contract:
 
-Use a designated test student for login validation. The current connected mode is deliberately read-only: `addStudyLog`, password recovery/reset/change, and feedback-read updates throw before any backend request is sent.
+```env
+EXPO_PUBLIC_BACKEND_MODE=live
+EXPO_PUBLIC_ALLOW_MODE_SWITCH=false
+EXPO_PUBLIC_API_BASE_URL=https://student-dashboard-frontend-iota.vercel.app
+```
+
+`EXPO_PUBLIC_API_BASE_URL` can be either the deployment origin or a complete `/api/proxy` URL. Full live supports the existing login, dashboard, tracker, proof upload, leaderboard, reports, announcements, mentor notes, study material, feedback-read, OTP reset and password-change actions. Test mutations only with the dedicated test student before wider distribution.
 
 ## Validate
 
@@ -97,17 +105,20 @@ npm run validate
 
 ## APK profiles
 
-`eas.json` contains two direct-install APK profiles:
+`eas.json` contains three direct-install APK profiles:
 
 ```bash
-# Safe sample-data APK
+# Safe sample-data APK; login screen can explicitly opt into connected modes
 npx eas-cli build --platform android --profile preview
 
-# Existing-backend-connected APK
+# Locked real-data/no-write validation APK
+npx eas-cli build --platform android --profile apk-readonly
+
+# Locked Full live APK with the complete existing backend contract
 npx eas-cli build --platform android --profile apk
 ```
 
-Both profiles produce an APK rather than a Play Store AAB. The final connected APK must be tested with a dedicated student account before wider sharing. Preserve the generated Android signing key so future APK updates install over the current version.
+All profiles produce APKs rather than Play Store AABs. Validate the Full live build with the dedicated test student—including exactly one small study-log submission and its proof—before wider distribution. Preserve the generated Android signing key so future APK updates install over the current version.
 
 ## Native push notifications
 

@@ -57,8 +57,10 @@ export const ProfileScreen = () => {
 
         {backendMode === 'mock' ? (
           <View style={styles.safeMode}><Ionicons name="shield-checkmark" size={20} color={colors.success} /><View style={{ flex: 1 }}><Text style={styles.safeTitle}>Safe demo mode</Text><Text style={styles.safeText}>Live backend reads and writes are disabled. All dashboard data is local sample data.</Text></View></View>
+        ) : backendMode === 'live-readonly' ? (
+          <View style={styles.readOnlyMode}><Ionicons name="eye-outline" size={20} color={colors.primary} /><View style={{ flex: 1 }}><Text style={styles.readOnlyTitle}>Live preview mode</Text><Text style={styles.safeText}>Displaying real backend data. Every server-side write action is blocked by the mobile API client.</Text></View></View>
         ) : (
-          <View style={styles.readOnlyMode}><Ionicons name="cloud-done-outline" size={20} color={colors.primary} /><View style={{ flex: 1 }}><Text style={styles.readOnlyTitle}>Live read-only mode</Text><Text style={styles.safeText}>Displaying real backend data. Every server-side write action is blocked by the mobile API client.</Text></View></View>
+          <View style={styles.fullLiveMode}><Ionicons name="cloud-done" size={20} color={colors.success} /><View style={{ flex: 1 }}><Text style={styles.fullLiveTitle}>Full live connection</Text><Text style={styles.safeText}>Real dashboard data is connected. Study submissions and account updates sync with the existing backend.</Text></View></View>
         )}
 
         <Text style={styles.sectionTitle}>Student details</Text>
@@ -85,11 +87,11 @@ export const ProfileScreen = () => {
           <MenuRow icon="trophy-outline" title="Leaderboard" subtitle="See your cohort position" onPress={() => navigation.navigate('Leaderboard')} />
           <View style={styles.line} />
           <MenuRow icon="bar-chart-outline" title="Weekly reports" subtitle="Review progress and mentor rating" onPress={() => navigation.navigate('Reports')} />
-          {backendMode === 'mock' ? <><View style={styles.line} /><MenuRow icon="key-outline" title="Change password" subtitle="Test the password-change UI safely" onPress={() => navigation.navigate('ChangePassword')} /></> : null}
+          {backendMode !== 'live-readonly' ? <><View style={styles.line} /><MenuRow icon="key-outline" title="Change password" subtitle={backendMode === 'live' ? 'Update your live account password' : 'Test the password-change UI safely'} onPress={() => navigation.navigate('ChangePassword')} /></> : null}
         </Card>
 
         <PrimaryButton label="Sign out" icon="log-out-outline" variant="secondary" onPress={confirmLogout} style={styles.logout} />
-        <Text style={styles.version}>Ujjwal Pathak Mentorship · Mobile v1.7.1</Text>
+        <Text style={styles.version}>Ujjwal Pathak Mentorship · Mobile v1.8.0</Text>
       </ScrollView>
     </SafeAreaView>
   );
@@ -119,6 +121,8 @@ const styles = StyleSheet.create({
   safeText: { color: colors.inkSoft, fontSize: 10, lineHeight: 15, marginTop: 2 },
   readOnlyMode: { flexDirection: 'row', gap: spacing.md, alignItems: 'flex-start', backgroundColor: colors.primarySoft, borderRadius: radius.md, padding: spacing.md, marginTop: spacing.lg },
   readOnlyTitle: { color: colors.primary, fontSize: 12, fontWeight: '900' },
+  fullLiveMode: { flexDirection: 'row', gap: spacing.md, alignItems: 'flex-start', backgroundColor: colors.tealSoft, borderRadius: radius.md, borderWidth: 1, borderColor: '#BFE5DB', padding: spacing.md, marginTop: spacing.lg },
+  fullLiveTitle: { color: colors.success, fontSize: 12, fontWeight: '900' },
   sectionTitle: { color: colors.ink, fontSize: 17, fontWeight: '900', marginTop: spacing.xxl, marginBottom: spacing.md },
   infoCard: { paddingVertical: 3, shadowOpacity: 0.03 },
   infoRow: { flexDirection: 'row', alignItems: 'center', minHeight: 63, gap: spacing.md },

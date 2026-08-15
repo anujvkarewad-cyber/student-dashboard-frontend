@@ -6,6 +6,7 @@ import React, { useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Chip, FormInput, PrimaryButton } from '../components/ui';
+import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import type { RootStackParamList } from '../navigation/types';
 import { colors, radius, spacing } from '../theme';
@@ -19,7 +20,13 @@ type PickedProof = { uri: string; name: string; mimeType: string; size: number }
 const subjectsList = ['Accounts', 'Law', 'Taxation', 'Costing', 'Audit', 'FM', 'SM', 'Revision', 'Mock Test', 'Question Bank Practice'];
 const reasons = ['Health Issue', 'Family Function', 'Office / Job', 'College', 'Travelling', 'Power / Internet Issue', 'Personal Work', 'Low Motivation', 'Other'];
 const supportOptions = ['No', 'Subject Doubt', 'Time Management', 'Motivation', 'Study Planning', 'Personal Discussion'];
-const MAX_PROOF_BYTES = 3 * 1024 * 1024;
+// Base64 expands files by roughly one third; 2.75 MB stays below the
+// existing proxy's 4 MB JSON body limit without changing the backend.
+const MAX_PROOF_BYTES = 2.75 * 1024 * 1024;
+const localDateKey = () => {
+  const date = new Date();
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+};
 
 const Field = ({ title, required = false, children }: React.PropsWithChildren<{ title: string; required?: boolean }>) => (
   <View style={styles.field}>
@@ -33,8 +40,9 @@ const ChipList = ({ values, selected, toggle }: { values: string[]; selected: st
 );
 
 export const AddStudyLogScreen = ({ navigation }: Props) => {
+  const { backendMode } = useAuth();
   const { submitStudyLog } = useData();
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(localDateKey());
   const [hours, setHours] = useState('');
   const [planned, setPlanned] = useState<Planned>('');
   const [reason, setReason] = useState('');
@@ -58,7 +66,7 @@ export const AddStudyLogScreen = ({ navigation }: Props) => {
     const asset = result.assets[0];
     const size = asset.size || 0;
     if (size > MAX_PROOF_BYTES) {
-      setError('Study proof must be smaller than 3 MB.');
+      setError('Study proof must be 2.75 MB or smaller.');
       return;
     }
     setProof({ uri: asset.uri, name: asset.name, mimeType: asset.mimeType || 'application/octet-stream', size });
@@ -117,6 +125,7 @@ export const AddStudyLogScreen = ({ navigation }: Props) => {
             <View style={styles.introIcon}><Ionicons name="sparkles" size={24} color={colors.primary} /></View>
             <View style={styles.introBody}><Text style={styles.introTitle}>Show up for yourself</Text><Text style={styles.introText}>A quick daily check-in keeps your plan visible and your mentor informed.</Text></View>
           </View>
+          {backendMode === 'live' ? <View style={styles.liveBanner}><Ionicons name="cloud-upload-outline" size={18} color={colors.success} /><Text style={styles.liveBannerText}>Full live sync is on. This entry and its proof will be submitted to your existing mentorship dashboard.</Text></View> : null}
 
           <FormInput label="Study date" value={date} onChangeText={setDate} placeholder="YYYY-MM-DD" autoCapitalize="none" />
           <FormInput label="Total study hours" value={hours} onChangeText={setHours} placeholder="e.g. 5.5" keyboardType="decimal-pad" />
@@ -145,7 +154,7 @@ export const AddStudyLogScreen = ({ navigation }: Props) => {
                   <View style={styles.uploadIcon}><Ionicons name={proof ? 'checkmark' : 'cloud-upload-outline'} size={24} color={proof ? colors.success : colors.primary} /></View>
                   <View style={styles.uploadBody}>
                     <Text style={styles.uploadTitle} numberOfLines={1}>{proof?.name || 'Choose a photo or PDF'}</Text>
-                    <Text style={styles.uploadText}>{proof ? `${(proof.size / 1024 / 1024).toFixed(2)} MB selected` : 'Maximum file size: 3 MB'}</Text>
+                    <Text style={styles.uploadText}>{proof ? `${(proof.size / 1024 / 1024).toFixed(2)} MB selected` : 'Maximum file size: 2.75 MB'}</Text>
                   </View>
                   <Ionicons name="chevron-forward" size={19} color={colors.muted} />
                 </Pressable>
@@ -159,7 +168,7 @@ export const AddStudyLogScreen = ({ navigation }: Props) => {
           </Field>
 
           {error ? <View style={styles.error}><Ionicons name="alert-circle" size={20} color={colors.red} /><Text style={styles.errorText}>{error}</Text></View> : null}
-          <PrimaryButton label="Save study log" icon="checkmark-circle-outline" onPress={submit} loading={loading} />
+          <PrimaryButton label={backendMode === 'live' ? 'Submit to mentorship' : 'Save demo study log'} icon="checkmark-circle-outline" onPress={submit} loading={loading} />
           <Text style={styles.privacy}>Your entry is shared only with your mentorship team.</Text>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -176,6 +185,8 @@ const styles = StyleSheet.create({
   introBody: { flex: 1 },
   introTitle: { color: colors.ink, fontSize: 15, fontWeight: '900' },
   introText: { color: colors.inkSoft, fontSize: 12, lineHeight: 18, marginTop: 4 },
+  liveBanner: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, backgroundColor: colors.tealSoft, borderRadius: radius.md, borderWidth: 1, borderColor: '#BFE5DB', padding: spacing.md },
+  liveBannerText: { flex: 1, color: colors.inkSoft, fontSize: 10, lineHeight: 15 },
   field: { gap: spacing.md },
   fieldTitle: { color: colors.inkSoft, fontSize: 13, fontWeight: '800' },
   required: { color: colors.red },

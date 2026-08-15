@@ -45,6 +45,7 @@ export const TrackerScreen = () => {
   const { backendMode } = useAuth();
   const { data, error, refreshing, refreshTracker } = useData();
   const stats = data.stats;
+  const canSubmit = backendMode !== 'live-readonly';
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -59,7 +60,7 @@ export const TrackerScreen = () => {
           <>
             <View style={styles.header}>
               <View><Text style={styles.eyebrow}>CONSISTENCY HUB</Text><Text style={styles.title}>Study tracker</Text></View>
-              {backendMode === 'mock' ? <Pressable style={styles.addTop} onPress={() => navigation.navigate('AddStudyLog')}>
+              {canSubmit ? <Pressable style={styles.addTop} onPress={() => navigation.navigate('AddStudyLog')}>
                 <Ionicons name="add" size={25} color={colors.surface} />
               </Pressable> : <View style={styles.readOnlyPill}><Ionicons name="lock-closed" size={12} color={colors.success} /><Text style={styles.readOnlyPillText}>READ ONLY</Text></View>}
             </View>
@@ -78,7 +79,7 @@ export const TrackerScreen = () => {
         ListEmptyComponent={<EmptyState icon="book-outline" title="No study sessions yet" message="Log your first focused session and start building your consistency streak." />}
         ListFooterComponent={<View style={styles.footerSpace} />}
       />
-      {backendMode === 'mock' ? <Pressable style={({ pressed }) => [styles.fab, pressed && { transform: [{ scale: 0.96 }] }]} onPress={() => navigation.navigate('AddStudyLog')}>
+      {canSubmit ? <Pressable style={({ pressed }) => [styles.fab, pressed && { transform: [{ scale: 0.96 }] }]} onPress={() => navigation.navigate('AddStudyLog')}>
         <Ionicons name="add" size={25} color={colors.surface} /><Text style={styles.fabText}>Log hours</Text>
       </Pressable> : null}
     </SafeAreaView>

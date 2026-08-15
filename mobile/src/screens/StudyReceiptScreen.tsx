@@ -5,7 +5,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Card, Chip, PrimaryButton, SectionHeader } from '../components/ui';
-import { config } from '../config';
+import { useAuth } from '../context/AuthContext';
 import { useFocusTimer } from '../context/FocusTimerContext';
 import { RecallAnswer, RecallConfidence, useStudyReceipts } from '../context/StudyReceiptContext';
 import type { RootStackParamList } from '../navigation/types';
@@ -24,6 +24,7 @@ const formatDuration = (seconds: number) => {
 };
 
 export const StudyReceiptScreen = ({ route, navigation }: Props) => {
+  const { backendMode } = useAuth();
   const { sessions } = useFocusTimer();
   const { buildQuestions, createReceipt, completeReview, receiptForSession } = useStudyReceipts();
   const session = sessions.find((item) => item.id === route.params.sessionId);
@@ -122,7 +123,7 @@ export const StudyReceiptScreen = ({ route, navigation }: Props) => {
                 <PrimaryButton label="Complete memory check" loading={saving} onPress={saveReview} />
               </View>
             ) : (
-              <PrimaryButton label={reviewDue ? 'Start memory check' : config.useMocks ? 'Preview memory check now' : 'Available after 24 hours'} variant="secondary" icon="refresh-outline" disabled={!reviewDue && !config.useMocks} onPress={() => setReviewOpen(true)} />
+              <PrimaryButton label={reviewDue ? 'Start memory check' : backendMode === 'mock' ? 'Preview memory check now' : 'Available after 24 hours'} variant="secondary" icon="refresh-outline" disabled={!reviewDue && backendMode !== 'mock'} onPress={() => setReviewOpen(true)} />
             )}
           </Card>
 

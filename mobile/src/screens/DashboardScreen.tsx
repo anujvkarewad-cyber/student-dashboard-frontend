@@ -218,7 +218,7 @@ export const DashboardScreen = () => {
           <View style={styles.actionDivider} />
           <Action icon="timer-outline" label="Start focus timer" onPress={() => navigation.navigate('Focus')} />
           <View style={styles.actionDivider} />
-          <Action icon={backendMode === 'mock' ? 'add-circle-outline' : 'eye-outline'} label={backendMode === 'mock' ? 'Log study hours' : 'View study history'} onPress={() => navigation.navigate('Tracker')} />
+          <Action icon={backendMode === 'live-readonly' ? 'eye-outline' : 'add-circle-outline'} label={backendMode === 'live-readonly' ? 'View study history' : 'Log study hours'} onPress={() => navigation.navigate('Tracker')} />
           <View style={styles.actionDivider} />
           <Action icon="trophy-outline" label="View leaderboard" onPress={() => navigation.navigate('Leaderboard')} />
           <View style={styles.actionDivider} />
