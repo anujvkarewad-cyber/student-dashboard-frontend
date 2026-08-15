@@ -122,4 +122,6 @@ All profiles produce APKs rather than Play Store AABs. Validate the Full live bu
 
 ## Native push notifications
 
-Native FCM is intentionally not enabled yet. It requires adding an Android app in Firebase and the matching `google-services.json`. That is additive and does not alter the existing web Firebase app. It should be configured after the core APK has passed real-device tests.
+The Android app is registered in the existing `ump-dashboard` Firebase project. On a physical Full Live device, the app requests Android notification permission, obtains the raw FCM token and stores it through the existing `saveDeviceToken` backend action. Foreground alerts, token rotation, background notification taps and deep links to Material, Tracker, Reports and Daily MCQ are handled natively.
+
+The Apps Script must also include the Android-specific `android.notification` payload and re-enable one summary push after manual Drive-note sync; exact instructions are in `docs/NATIVE_PUSH_SETUP.md`. Keep `FCM_PRIVATE_KEY` only in Apps Script Properties—never in the APK or repository.

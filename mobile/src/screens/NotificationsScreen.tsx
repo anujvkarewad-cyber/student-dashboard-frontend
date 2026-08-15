@@ -24,7 +24,7 @@ const typeStyle: Record<NotificationType, { icon: keyof typeof Ionicons.glyphMap
 
 export const NotificationsScreen = ({ navigation }: Props) => {
   const { refreshing, refreshAll } = useData();
-  const { notifications, unreadCount, isRead, markRead, markAllRead } = useNotifications();
+  const { notifications, unreadCount, pushStatus, isRead, markRead, markAllRead } = useNotifications();
   const [filter, setFilter] = useState<Filter>('all');
   const visible = useMemo(() => filter === 'unread' ? notifications.filter((item) => !isRead(item.id)) : notifications, [filter, isRead, notifications]);
 
@@ -74,7 +74,7 @@ export const NotificationsScreen = ({ navigation }: Props) => {
           );
         }}
         ListEmptyComponent={<View style={styles.empty}><EmptyState icon={filter === 'unread' ? 'checkmark-done-circle-outline' : 'notifications-off-outline'} title={filter === 'unread' ? 'No unread notifications' : 'No notifications yet'} message={filter === 'unread' ? 'You have seen every update.' : 'New mentorship updates will appear here.'} /></View>}
-        ListFooterComponent={<View style={styles.footer}><Ionicons name="phone-portrait-outline" size={16} color={colors.muted} /><Text style={styles.footerText}>This is your in-app inbox. Native background push delivery will be enabled with the Firebase Android setup.</Text></View>}
+        ListFooterComponent={<View style={styles.footer}><Ionicons name={pushStatus === 'enabled' ? 'notifications' : 'phone-portrait-outline'} size={16} color={pushStatus === 'enabled' ? colors.success : colors.muted} /><Text style={styles.footerText}>{pushStatus === 'enabled' ? 'Native background alerts are active on this device.' : 'In-app alerts are active. Enable native background alerts from Profile after Firebase setup.'}</Text></View>}
       />
     </SafeAreaView>
   );

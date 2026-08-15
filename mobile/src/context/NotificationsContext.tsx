@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { NativePushStatus, registerNativePush, subscribeToNativeTokenChanges } from '../services/pushNotifications';
 import { CaGroup, groupsForStudent } from '../utils/caGroups';
 import { useAuth } from './AuthContext';
 import { useDailyMcq } from './DailyMcqContext';
@@ -24,6 +25,8 @@ export type AppNotification = {
 type NotificationsValue = {
   notifications: AppNotification[];
   unreadCount: number;
+  pushStatus: NativePushStatus;
+  enablePush: () => Promise<void>;
   isRead: (id: string) => boolean;
   markRead: (id: string) => Promise<void>;
   markAllRead: () => Promise<void>;
@@ -35,11 +38,12 @@ const readKey = (studentId: string) => `ump_mobile_read_notifications_${studentI
 const stable = (value: unknown) => String(value || '').trim().replace(/\s+/g, ' ').slice(0, 80);
 
 export const NotificationsProvider = ({ children }: PropsWithChildren) => {
-  const { student } = useAuth();
+  const { student, backendMode } = useAuth();
   const { data } = useData();
   const { dateKey: dailyMcqDate, todayAttempts: dailyMcqAttempts } = useDailyMcq();
   const { dueReceipts } = useStudyReceipts();
   const [readIds, setReadIds] = useState<Set<string>>(new Set());
+  const [pushStatus, setPushStatus] = useState<NativePushStatus>('idle');
 
   useEffect(() => {
     let mounted = true;
@@ -54,6 +58,29 @@ export const NotificationsProvider = ({ children }: PropsWithChildren) => {
     });
     return () => { mounted = false; };
   }, [student]);
+
+  useEffect(() => {
+    if (!student || backendMode !== 'live') {
+      setPushStatus('idle');
+      return;
+    }
+    let mounted = true;
+    setPushStatus('requesting');
+    registerNativePush(student.studentId).then((status) => {
+      if (mounted) setPushStatus(status);
+    });
+    const tokenSubscription = subscribeToNativeTokenChanges(student.studentId);
+    return () => {
+      mounted = false;
+      tokenSubscription.remove();
+    };
+  }, [backendMode, student]);
+
+  const enablePush = useCallback(async () => {
+    if (!student || backendMode !== 'live') return;
+    setPushStatus('requesting');
+    setPushStatus(await registerNativePush(student.studentId, true));
+  }, [backendMode, student]);
 
   const notifications = useMemo<AppNotification[]>(() => {
     const items: AppNotification[] = [];
@@ -153,10 +180,12 @@ export const NotificationsProvider = ({ children }: PropsWithChildren) => {
   const value = useMemo<NotificationsValue>(() => ({
     notifications,
     unreadCount: notifications.reduce((total, item) => total + (readIds.has(item.id) ? 0 : 1), 0),
+    pushStatus,
+    enablePush,
     isRead: (id) => readIds.has(id),
     markRead,
     markAllRead,
-  }), [markAllRead, markRead, notifications, readIds]);
+  }), [enablePush, markAllRead, markRead, notifications, pushStatus, readIds]);
 
   return <NotificationsContext.Provider value={value}>{children}</NotificationsContext.Provider>;
 };

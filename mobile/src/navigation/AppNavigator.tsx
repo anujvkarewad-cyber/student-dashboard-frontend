@@ -1,11 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
+import { NavigationContainer, DefaultTheme, useNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { BlurView } from 'expo-blur';
-import React from 'react';
+import * as Notifications from 'expo-notifications';
+import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Image, StyleSheet, Text, View } from 'react-native';
 import { useAuth } from '../context/AuthContext';
+import { useData } from '../context/DataContext';
 import { AddStudyLogScreen } from '../screens/AddStudyLogScreen';
 import { ChangePasswordScreen } from '../screens/ChangePasswordScreen';
 import { DailyMcqScreen } from '../screens/DailyMcqScreen';
@@ -23,6 +25,7 @@ import { ProfileScreen } from '../screens/ProfileScreen';
 import { ReportsScreen } from '../screens/ReportsScreen';
 import { StudyReceiptScreen } from '../screens/StudyReceiptScreen';
 import { TrackerScreen } from '../screens/TrackerScreen';
+import { notificationLink } from '../services/pushNotifications';
 import { colors, radius } from '../theme';
 import type { MainTabParamList, RootStackParamList } from './types';
 
@@ -82,11 +85,51 @@ const navigationTheme = {
 
 export const AppNavigator = () => {
   const { student, booting, backendMode } = useAuth();
-  if (booting) return <Splash />;
+  const { refreshAll, refreshNotes } = useData();
+  const navigationRef = useNavigationContainerRef<RootStackParamList>();
+  const [navigationReady, setNavigationReady] = useState(false);
   const requiresPasswordChange = Boolean(student?.forcePasswordChange && backendMode === 'live');
 
+  const openPush = useCallback((notification: Notifications.Notification) => {
+    if (!student || !navigationReady || !navigationRef.isReady()) return;
+    const link = notificationLink(notification);
+    if (link.includes('notes') || link.includes('material')) {
+      refreshNotes().catch(() => undefined);
+      navigationRef.navigate('Main', { screen: 'Notes' });
+    } else if (link.includes('report')) {
+      navigationRef.navigate('Reports');
+    } else if (link.includes('tracker')) {
+      navigationRef.navigate('Main', { screen: 'Tracker' });
+    } else if (link.includes('mcq')) {
+      navigationRef.navigate('DailyMcq');
+    } else {
+      navigationRef.navigate('Main', { screen: 'Home' });
+    }
+  }, [navigationReady, navigationRef, refreshNotes, student]);
+
+  useEffect(() => {
+    if (!student || backendMode !== 'live' || !navigationReady) return;
+    const received = Notifications.addNotificationReceivedListener((notification) => {
+      const link = notificationLink(notification);
+      if (link.includes('notes') || link.includes('material')) refreshNotes().catch(() => undefined);
+      else refreshAll().catch(() => undefined);
+    });
+    const responded = Notifications.addNotificationResponseReceivedListener((response) => openPush(response.notification));
+    Notifications.getLastNotificationResponseAsync().then((response) => {
+      if (!response) return;
+      openPush(response.notification);
+      Notifications.clearLastNotificationResponseAsync().catch(() => undefined);
+    });
+    return () => {
+      received.remove();
+      responded.remove();
+    };
+  }, [backendMode, navigationReady, openPush, refreshAll, refreshNotes, student]);
+
+  if (booting) return <Splash />;
+
   return (
-    <NavigationContainer theme={navigationTheme}>
+    <NavigationContainer ref={navigationRef} theme={navigationTheme} onReady={() => setNavigationReady(true)}>
       <RootStack.Navigator
         screenOptions={{
           headerTitleStyle: { color: colors.ink, fontWeight: '800', fontSize: 17 },

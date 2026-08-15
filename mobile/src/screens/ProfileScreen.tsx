@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Card, InitialsAvatar, PrimaryButton } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
+import { useNotifications } from '../context/NotificationsContext';
 import { colors, radius, spacing } from '../theme';
 
 const InfoRow = ({ icon, label, value }: { icon: keyof typeof Ionicons.glyphMap; label: string; value?: string }) => (
@@ -27,6 +28,13 @@ export const ProfileScreen = () => {
   const navigation = useNavigation<any>();
   const { student, logout, backendMode } = useAuth();
   const { data } = useData();
+  const { pushStatus, enablePush } = useNotifications();
+  const pushEnabled = pushStatus === 'enabled';
+  const pushMessage = pushEnabled ? 'Background alerts are active on this device.'
+    : pushStatus === 'denied' ? 'Permission is blocked. Enable notifications from Android app settings.'
+      : pushStatus === 'configuration-required' ? 'Firebase Android configuration is required in this build.'
+        : pushStatus === 'requesting' ? 'Registering this device for mentorship alerts…'
+          : 'Enable alerts for new material and mentor updates.';
 
   const confirmLogout = () => Alert.alert('Sign out?', 'You will need your Student ID and password to sign in again.', [
     { text: 'Cancel', style: 'cancel' },
@@ -63,6 +71,8 @@ export const ProfileScreen = () => {
           <View style={styles.fullLiveMode}><Ionicons name="cloud-done" size={20} color={colors.success} /><View style={{ flex: 1 }}><Text style={styles.fullLiveTitle}>Full live connection</Text><Text style={styles.safeText}>Real dashboard data is connected. Study submissions and account updates sync with the existing backend.</Text></View></View>
         )}
 
+        {backendMode === 'live' ? <View style={[styles.pushCard, pushEnabled && styles.pushCardEnabled]}><View style={[styles.pushIcon, pushEnabled && styles.pushIconEnabled]}><Ionicons name={pushEnabled ? 'notifications' : 'notifications-outline'} size={20} color={pushEnabled ? colors.success : colors.primary} /></View><View style={{ flex: 1 }}><Text style={[styles.pushTitle, pushEnabled && { color: colors.success }]}>{pushEnabled ? 'Live notifications enabled' : 'Live notifications'}</Text><Text style={styles.pushText}>{pushMessage}</Text></View>{!pushEnabled && pushStatus !== 'requesting' ? <Pressable onPress={() => enablePush()} style={styles.pushButton}><Text style={styles.pushButtonText}>Enable</Text></Pressable> : null}</View> : null}
+
         <Text style={styles.sectionTitle}>Student details</Text>
         <Card style={styles.infoCard}>
           <InfoRow icon="mail-outline" label="Email" value={student?.email} />
@@ -91,7 +101,7 @@ export const ProfileScreen = () => {
         </Card>
 
         <PrimaryButton label="Sign out" icon="log-out-outline" variant="secondary" onPress={confirmLogout} style={styles.logout} />
-        <Text style={styles.version}>Ujjwal Pathak Mentorship · Mobile v1.8.1</Text>
+        <Text style={styles.version}>Ujjwal Pathak Mentorship · Mobile v1.9.0</Text>
       </ScrollView>
     </SafeAreaView>
   );
@@ -123,6 +133,14 @@ const styles = StyleSheet.create({
   readOnlyTitle: { color: colors.primary, fontSize: 12, fontWeight: '900' },
   fullLiveMode: { flexDirection: 'row', gap: spacing.md, alignItems: 'flex-start', backgroundColor: colors.tealSoft, borderRadius: radius.md, borderWidth: 1, borderColor: '#BFE5DB', padding: spacing.md, marginTop: spacing.lg },
   fullLiveTitle: { color: colors.success, fontSize: 12, fontWeight: '900' },
+  pushCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, backgroundColor: colors.primarySoft, borderRadius: radius.md, borderWidth: 1, borderColor: '#D7E0FF', padding: spacing.md, marginTop: spacing.md },
+  pushCardEnabled: { backgroundColor: colors.tealSoft, borderColor: '#BFE5DB' },
+  pushIcon: { width: 40, height: 40, borderRadius: 13, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
+  pushIconEnabled: { backgroundColor: '#FFFFFF' },
+  pushTitle: { color: colors.primary, fontSize: 11, fontWeight: '900' },
+  pushText: { color: colors.inkSoft, fontSize: 8, lineHeight: 13, marginTop: 2 },
+  pushButton: { borderRadius: radius.pill, backgroundColor: colors.primary, paddingHorizontal: 11, paddingVertical: 8 },
+  pushButtonText: { color: '#FFFFFF', fontSize: 8, fontWeight: '900' },
   sectionTitle: { color: colors.ink, fontSize: 17, fontWeight: '900', marginTop: spacing.xxl, marginBottom: spacing.md },
   infoCard: { paddingVertical: 3, shadowOpacity: 0.03 },
   infoRow: { flexDirection: 'row', alignItems: 'center', minHeight: 63, gap: spacing.md },
