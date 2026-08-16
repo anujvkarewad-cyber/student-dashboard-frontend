@@ -92,7 +92,8 @@
     "strategic-management-2",
     "strategic-management-3",
     "strategic-management-4",
-    "strategic-management-5"
+    "strategic-management-5",
+    "income-tax-3"
   ],
   "quarantined": {
     "income-tax-3": {
@@ -101,5 +102,5 @@
       "at": "2026-08-16T14:21:01.087Z"
     }
   },
-  "updatedAt": "2026-08-16T15:02:16.398Z"
+  "updatedAt": "2026-08-16T15:28:56.564Z"
 }
