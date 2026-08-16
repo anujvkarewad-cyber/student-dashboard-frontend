@@ -368,4 +368,25 @@ async function main() {
     log(`[${base + i + 1}/${chapters.length}] ${c.id} (${c.subject})`);
     try {
       const r = await generateOne(c, opts);
-      if (r.status 
+           if (r.status === "completed") state.completed.push(c.id);
+      else { state.quarantined[c.id] = { attempts: r.attempts, reason: r.reason, at: new Date().toISOString() }; fails.push({ chapterId: c.id, subject: c.subject, paper: c.paper, module: c.module, chapterNumber: c.chapterNumber, chapterTitle: c.title, attempts: r.attempts, reason: r.reason, at: new Date().toISOString() }); }
+    } catch (e) {
+      const m = (e && e.message || String(e)).slice(0, 400);
+      if (/no usable gemini model|all gemini models failed|Gemini models available/i.test(m)) {
+        log(`ABORT: no working Gemini model — ${m}`);
+        save(STATE, { ...state, updatedAt: new Date().toISOString() });
+        throw new Error(m);
+      }
+      state.quarantined[c.id] = { attempts: AMAX, reason: m, at: new Date().toISOString() };
+      fails.push({ chapterId: c.id, subject: c.subject, paper: c.paper, module: c.module, chapterNumber: c.chapterNumber, chapterTitle: c.title, attempts: AMAX, reason: m, at: new Date().toISOString() });
+      log(`QUARANTINE ${c.id}: ${m}`);
+    }
+    save(STATE, { ...state, updatedAt: new Date().toISOString() });
+    if (fails.length) save(FAIL, fails);
+    if (!opts.mock && i < sel.length - 1) await sleep(DELAY);
+  }
+  log(`SUMMARY: completed ${state.completed.length}/${chapters.length}, quarantined ${Object.keys(state.quarantined).length}.`);
+  buildReview();
+  if (fails.length) process.exitCode = 1;
+}
+main().catch((e) => { console.error("FATAL:", e && e.stack ? e.stack : e); log("FATAL: " + (e && e.stack ? e.stack : e)); process.exit(2); });
