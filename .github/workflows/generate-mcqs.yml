@@ -24,9 +24,10 @@ jobs:
       - name: Run MCQ generation (resumable)
         run: node scripts/generate-chapter-bank.js
         working-directory: content-pipeline
-        env:
+                env:
           AI_PROVIDER: gemini
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: gemini-3.5-flash
           
 
       - name: Save resume state for the next run
