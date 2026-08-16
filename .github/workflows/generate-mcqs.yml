@@ -1,0 +1,50 @@
+name: Generate Chapter MCQs
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+        working-directory: content-pipeline
+
+      - name: Run MCQ generation (resumable)
+        run: node scripts/generate-chapter-bank.js
+        env:
+          AI_PROVIDER: gemini
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: gemini-2.5-flash
+
+      - name: Upload generated chapters
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-chapters
+          path: content-pipeline/generated/
+          if-no-files-found: error
+
+      - name: Upload review queue
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: review-queue
+          path: content-pipeline/review/
+          if-no-files-found: warn
+
+      - name: Upload failed chapters
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failed-chapters
+          path: content-pipeline/state/failed-chapters.json
+          if-no-files-found: warn
