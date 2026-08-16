@@ -2,6 +2,8 @@
 /* CA Inter Chapter MCQ Generator — single file, zero dependencies.
  * 30 plain MCQs + 5 scenarios x 4 linked per official ICAI chapter (94).
  * Gemini only, 1 chapter = 1 request. Resumable + quarantine + review exports.
+ * Model auto-detect: script Google se available models ki list leti hai aur
+ * retired model pe automatically agla candidate try karti hai.
  */
 "use strict";
 const fs = require("fs");
@@ -15,12 +17,14 @@ const FAIL = path.join(ROOT, "state", "failed-chapters.json");
 const LOG = path.join(ROOT, "state", "generation.log");
 const GEN = path.join(ROOT, "generated");
 const REV = path.join(ROOT, "review");
-const MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 const DELAY = Number(process.env.GEN_REQUEST_DELAY_MS || 4000);
 const VMAX = Number(process.env.GEN_MAX_VALIDATION_RETRIES || 3);
 const AMAX = Number(process.env.GEN_MAX_API_RETRIES || 6);
 const SLUG = { Accounts: "accounts", Law: "law", Taxation: "taxation", Costing: "costing", Audit: "audit", FM: "fm", SM: "sm" };
 const REVISION = "icai-chapter-bank-v1";
+const MODEL_POOL = ["gemini-2.5-flash-lite", "gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-pro"];
+const unavailableModels = new Set();
+let activeModel = process.env.GEMINI_MODEL || "";
 
 function log(msg) {
   const line = `[${new Date().toISOString().replace("T", " ").slice(0, 19)}] ${msg}`;
@@ -131,18 +135,71 @@ const SCHEMA = {
   },
   required: ["plain", "scenarios"],
 };
+async function listModels() {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) return [];
+  try {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`, { signal: AbortSignal.timeout(20000) });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.models || []).map((m) => String(m.name || "").replace(/^models\//, "")).filter((n) => n && !n.includes(":"));
+  } catch (e) { return []; }
+}
+async function pickModel() {
+  const available = await listModels();
+  const prefer = [process.env.GEMINI_MODEL, ...MODEL_POOL].filter(Boolean);
+  for (const name of prefer) {
+    if (unavailableModels.has(name)) continue;
+    if (available.includes(name)) return name;
+    const variant = available.find((n) => n === name || n.startsWith(name + "-"));
+    if (variant) return variant;
+  }
+  const fallback = available.find((n) => /flash/i.test(n) && !/latest/i.test(n));
+  if (fallback) return fallback;
+  throw new Error(`No usable Gemini model found. Available models: ${available.join(", ").slice(0, 300)}`);
+}
 async function callGemini(prompt) {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error("GEMINI_API_KEY not set");
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(MODEL)}:generateContent?key=${encodeURIComponent(key)}`;
-  const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: prompt }] }], generationConfig: { temperature: 0.7, maxOutputTokens: 65536, responseMimeType: "application/json", responseSchema: SCHEMA } }), signal: AbortSignal.timeout(180000) });
-  if (!res.ok) throw new Error(`Gemini HTTP ${res.status}: ${(await res.text().catch(() => "")).slice(0, 200)}`);
-  const data = await res.json();
-  const cand = data && data.candidates && data.candidates[0];
-  if (!cand || !cand.content || !Array.isArray(cand.content.parts) || !cand.content.parts.length) throw new Error(`no candidates (finish: ${cand && cand.finishReason})`);
-  const text = cand.content.parts.map((p) => p.text || "").join("");
-  if (!text.trim()) throw new Error("empty response");
-  try { return JSON.parse(text); } catch (e) { throw new Error(`non-JSON: ${text.slice(0, 120)}`); }
+  for (let attempt = 0; attempt <= MODEL_POOL.length + 2; attempt++) {
+    let model = activeModel;
+    if (!model) {
+      model = await pickModel();
+      activeModel = model;
+      log(`Gemini model selected: ${model}`);
+    }
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`;
+    let res;
+    try {
+      res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: prompt }] }], generationConfig: { temperature: 0.7, maxOutputTokens: 65536, responseMimeType: "application/json", responseSchema: SCHEMA } }), signal: AbortSignal.timeout(180000) });
+    } catch (e) {
+      if (attempt >= MODEL_POOL.length + 2) throw new Error(`network error: ${e && e.message}`);
+      unavailableModels.add(model); activeModel = null;
+      continue;
+    }
+    const text = await res.text().catch(() => "");
+    if (!res.ok) {
+      const retired = res.status === 404 || /no longer available|not found|is not supported/i.test(text);
+      if (retired) {
+        unavailableModels.add(model); activeModel = null;
+        log(`Model ${model} unavailable (HTTP ${res.status}) — switching to next candidate.`);
+        continue;
+      }
+      throw new Error(`Gemini HTTP ${res.status}: ${text.slice(0, 200)}`);
+    }
+    try {
+      const data = JSON.parse(text);
+      const cand = data && data.candidates && data.candidates[0];
+      if (!cand || !cand.content || !Array.isArray(cand.content.parts) || !cand.content.parts.length) throw new Error(`no candidates (finish: ${cand && cand.finishReason})`);
+      const out = cand.content.parts.map((p) => p.text || "").join("");
+      if (!out.trim()) throw new Error("empty response");
+      return JSON.parse(out);
+    } catch (e) {
+      if (e instanceof SyntaxError) throw new Error(`non-JSON response from ${model}`);
+      throw e;
+    }
+  }
+  throw new Error("all Gemini models failed");
 }
 function mockGen(ch, fail) {
   const stub = (t) => ({ prompt: `${t}: original practice question for ${ch.title}.`, options: [`${t} A`, `${t} B`, `${t} C`, `${t} D`], answerIndex: 0, explanation: `${t}: explanation covering the concept, rule and why the chosen option is correct for ${ch.title}, in enough detail.`, difficulty: "Medium", conceptTags: [ch.title.slice(0, 20), "mock"] });
@@ -185,7 +242,7 @@ function normalize(p, ch) {
   const plain = p.plain.map((x, i) => ({ id: `adp_q_${ch.id}_${pad(i + 1, 3)}`, kind: "normal", chapterId: ch.id, subject: ch.subject, ...q(x), sourceRef: ref, status: "needs_review" }));
   const scenarios = p.scenarios.map((s, si) => ({ id: `adp_s_${ch.id}_${pad(si + 1, 2)}`, kind: "scenario", chapterId: ch.id, subject: ch.subject, passage: s.passage.trim(), sourceRef: ref, status: "needs_review", linkedMcqs: s.linkedMcqs.map((x, mi) => ({ id: `adp_q_${ch.id}_${pad(si + 1, 2)}${mi + 1}`, kind: "scenario", scenarioId: `adp_s_${ch.id}_${pad(si + 1, 2)}`, sequenceInScenario: mi + 1, chapterId: ch.id, subject: ch.subject, ...q(x), status: "needs_review" })) }));
   const linked = scenarios.reduce((n, s) => n + s.linkedMcqs.length, 0);
-  return { schemaVersion: "1.0.0", bankRevision: REVISION, chapterId: ch.id, subject: ch.subject, paper: ch.paper, module: ch.module, chapterNumber: ch.chapterNumber, chapterTitle: ch.title, generatedAt: new Date().toISOString(), model: MODEL, status: "needs_review", counts: { plain: plain.length, scenarios: scenarios.length, linkedMcqs: linked, total: plain.length + linked }, plain, scenarios };
+  return { schemaVersion: "1.0.0", bankRevision: REVISION, chapterId: ch.id, subject: ch.subject, paper: ch.paper, module: ch.module, chapterNumber: ch.chapterNumber, chapterTitle: ch.title, generatedAt: new Date().toISOString(), model: activeModel || "gemini", status: "needs_review", counts: { plain: plain.length, scenarios: scenarios.length, linkedMcqs: linked, total: plain.length + linked }, plain, scenarios };
 }
 function loadState() {
   const s = load(STATE, { completed: [], quarantined: {} });
@@ -279,7 +336,7 @@ async function main() {
   }
   if (process.env.AI_PROVIDER && process.env.AI_PROVIDER !== "gemini") throw new Error("only gemini supported");
   const chapters = loadChapters();
-  log(`Catalog OK: ${chapters.length} chapters. Provider: ${opts.mock ? "MOCK" : "gemini/" + MODEL}`);
+  log(`Catalog OK: ${chapters.length} chapters. Provider: ${opts.mock ? "MOCK" : "gemini (auto-detect)"}`);
   let state = healState(loadState(), chapters);
   const pending = chapters.filter((c) => !state.completed.includes(c.id));
   const sel = opts.chapter ? pending.filter((c) => c.id === opts.chapter) : opts.limit ? pending.slice(0, opts.limit) : pending;
