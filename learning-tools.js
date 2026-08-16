@@ -420,12 +420,48 @@
     };
   }
 
+  function recallSessionKind(session) {
+    const subject = String(session.subject || "").trim().toLowerCase();
+    if (subject === "mock test" || subject === "mock") return "mock";
+    if (subject === "revision") return "revision";
+    return "subject";
+  }
+
+  // Recall prompts adapt to the session type selected in the Focus Room so a
+  // Mock Test session never shows generic "main concept" prompts and a Revision
+  // session asks about re-revision plans instead of first-time learning.
+  // Keep this logic in sync with the APK (mobile/src/context/StudyReceiptContext.tsx).
   function buildRecallQuestions(session) {
     const target = String(session.target || session.subject).trim();
+    const kind = recallSessionKind(session);
+    const typedTarget = String(session.target || "").trim();
+    const targetSuffix = typedTarget && typedTarget.toLowerCase() !== String(session.subject).toLowerCase()
+      ? ` for “${typedTarget}”`
+      : "";
+
+    if (kind === "mock") {
+      return [
+        { id: `${session.id}:mock-attempt`, prompt: `Which mock test or paper did you attempt${targetSuffix}?`, helper: "Name the mock series, paper and section you attempted." },
+        { id: `${session.id}:mock-performance`, prompt: "How did the exam go overall, and how many questions did you attempt?", helper: "Include how you felt about accuracy and whether you reached every question." },
+        { id: `${session.id}:mock-difficulty`, prompt: "Which section felt the most difficult, and why?", helper: "Name the topics or question types that slowed you down." },
+        { id: `${session.id}:mock-time`, prompt: "How was your time management during the mock?", helper: "Note where you spent too much or too little time." },
+        { id: `${session.id}:mock-improve`, prompt: "What mistakes did you make, and what will you improve in your next mock?", helper: "Be specific — silly errors, concept gaps or presentation issues." },
+      ];
+    }
+
+    if (kind === "revision") {
+      return [
+        { id: `${session.id}:revise-topics`, prompt: `Which chapters or topics did you revise${targetSuffix}?`, helper: "List the chapters, topics or past questions you covered." },
+        { id: `${session.id}:revise-recall`, prompt: "Without opening your notes, what were you able to recall?", helper: "Write the points that came back to you from memory first." },
+        { id: `${session.id}:revise-gaps`, prompt: "Which concepts, formulas or rules do you still need to revise again?", helper: "Note the weak spots you noticed during recall." },
+        { id: `${session.id}:revise-next`, prompt: "When will you do your next revision of this material?", helper: "Pick a realistic date or day and stick to it." },
+      ];
+    }
+
     return [
-      { id: `${session.id}:core`, prompt: `Without opening your notes, explain the main idea you learned about “${target}”.`, helper: "Write it as if you were teaching a junior student." },
-      { id: `${session.id}:details`, prompt: `List three rules, steps, formulas or key points you can recall from this ${session.subject} session.`, helper: "Short bullet-style answers are enough." },
-      { id: `${session.id}:application`, prompt: "What is one likely mistake in this topic, and how would you avoid it in an exam?", helper: "Use your own words. Accuracy verification will come from mentor-approved sources later." },
+      { id: `${session.id}:core`, prompt: `In your own words, explain the main concept you studied about “${target}” in this ${session.subject} session.`, helper: "Write it as if you were teaching a junior student." },
+      { id: `${session.id}:details`, prompt: `Recall the important rules, provisions, formulas or steps from this ${session.subject} session.`, helper: "Short bullet-style answers are enough." },
+      { id: `${session.id}:application`, prompt: "What is one mistake you could make on this topic in the exam, and how would you avoid it?", helper: "Use your own words. Accuracy verification will come from mentor-approved sources later." },
     ];
   }
 
@@ -1046,5 +1082,27 @@
     return [...normalizedDaily, ...normalizedPractice].sort((left, right) => new Date(right.date) - new Date(left.date));
   }
 
-  window.UMP_LEARNING_TOOLS = { renderFocus, renderMCQ, getPerformanceAttempts, cleanup };
+  // Pure logic surface used by the web workflow tests (scripts/test-web.js) and
+  // kept in sync with the APK implementations in mobile/src.
+  window.UMP_LEARNING_TOOLS = {
+    renderFocus,
+    renderMCQ,
+    getPerformanceAttempts,
+    cleanup,
+    parity: {
+      buildRecallQuestions,
+      recallSessionKind,
+      dailyQuestionIds,
+      dailyStreak,
+      groupsForStudent,
+      subjectGroup,
+      practicePool,
+      hashDaily,
+      seededRandom,
+      questions: () => questions,
+      revision: () => learningData.revision,
+      chapters: () => (learningData.officialMcqChapterCatalog || []),
+      manifest: () => learningData.manifest,
+    },
+  };
 })();
