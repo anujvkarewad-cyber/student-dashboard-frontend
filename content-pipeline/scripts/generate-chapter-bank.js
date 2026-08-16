@@ -23,8 +23,8 @@ const AMAX = Number(process.env.GEN_MAX_API_RETRIES || 6);
 const SLUG = { Accounts: "accounts", Law: "law", Taxation: "taxation", Costing: "costing", Audit: "audit", FM: "fm", SM: "sm" };
 const REVISION = "icai-chapter-bank-v1";
 const unavailableModels = new Set();
+const modelBusy = {};
 let activeModel = "";
-
 function log(msg) {
   const line = `[${new Date().toISOString().replace("T", " ").slice(0, 19)}] ${msg}`;
   console.log(line);
@@ -191,11 +191,20 @@ async function callGemini(prompt) {
     const text = await res.text().catch(() => "");
     if (!res.ok) {
       const unavailable = res.status === 404 || (res.status === 400 && /no longer available|not found|not supported|is not available/i.test(text));
-      if (unavailable) {
+           if (unavailable) {
         unavailableModels.add(model);
         activeModel = "";
         log(`Model ${model} unavailable (HTTP ${res.status}) — trying next candidate.`);
         continue;
+      }
+      if (res.status === 503 || res.status === 429) {
+        modelBusy[model] = (modelBusy[model] || 0) + 1;
+        if (modelBusy[model] >= 2) {
+          unavailableModels.add(model);
+          activeModel = "";
+          log(`Model ${model} busy (HTTP ${res.status}) — switching to next candidate.`);
+          continue;
+        }
       }
       throw new Error(`Gemini HTTP ${res.status}: ${text.slice(0, 200)}`);
     }
@@ -206,7 +215,8 @@ async function callGemini(prompt) {
         throw new Error(`no candidates (finish: ${cand && cand.finishReason})`);
       }
       const out = cand.content.parts.map((p) => p.text || "").join("");
-      if (!out.trim()) throw new Error("empty response");
+           if (!out.trim()) throw new Error("empty response");
+      modelBusy[model] = 0;
       return extractJson(out);
     } catch (e) {
       if (e instanceof SyntaxError) throw new Error(`non-JSON response from ${model}`);
