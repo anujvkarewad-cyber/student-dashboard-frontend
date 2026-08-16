@@ -14,9 +14,12 @@ jobs:
         with:
           node-version: 20
 
-      - name: Install dependencies
-        run: npm install
-        working-directory: content-pipeline
+      - name: Restore resume state (if a previous run saved any)
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: pipeline-state
+          path: content-pipeline/state
 
       - name: Run MCQ generation (resumable)
         run: node scripts/generate-chapter-bank.js
@@ -25,6 +28,14 @@ jobs:
           AI_PROVIDER: gemini
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: gemini-2.5-flash
+
+      - name: Save resume state for the next run
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-state
+          path: content-pipeline/state/
+          if-no-files-found: warn
 
       - name: Upload generated chapters
         if: always()
