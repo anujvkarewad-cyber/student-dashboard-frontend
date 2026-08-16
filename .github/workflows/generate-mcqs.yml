@@ -3,6 +3,13 @@ name: Generate Chapter MCQs
 on:
   workflow_dispatch: {}
 
+permissions:
+  contents: write
+
+concurrency:
+  group: mcq-generation
+  cancel-in-progress: true
+
 jobs:
   generate:
     runs-on: ubuntu-latest
@@ -14,29 +21,20 @@ jobs:
         with:
           node-version: 20
 
-      - name: Restore resume state (if a previous run saved any)
-        continue-on-error: true
-        uses: actions/download-artifact@v4
-        with:
-          name: pipeline-state
-          path: content-pipeline/state
-
       - name: Run MCQ generation (resumable)
-        run: node scripts/generate-chapter-bank.js
         working-directory: content-pipeline
-                env:
+        env:
           AI_PROVIDER: gemini
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GEMINI_MODEL: gemini-3.5-flash
-          
+        run: node scripts/generate-chapter-bank.js
 
-      - name: Save resume state for the next run
+      - name: Commit checkpoint to repo
         if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: pipeline-state
-          path: content-pipeline/state/
-          if-no-files-found: warn
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f content-pipeline/state content-pipeline/generated content-pipeline/review content-pipeline/config
+          if git diff --cached --quiet; then echo "no checkpoint changes"; else git commit -m "MCQ generation checkpoint" && git push origin main; fi
 
       - name: Upload generated chapters
         if: always()
@@ -44,7 +42,7 @@ jobs:
         with:
           name: generated-chapters
           path: content-pipeline/generated/
-          if-no-files-found: error
+          if-no-files-found: warn
 
       - name: Upload review queue
         if: always()
