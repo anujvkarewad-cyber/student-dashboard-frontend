@@ -58,10 +58,26 @@ function deriveCatalog() {
   return chapters;
 }
 function loadChapters() {
-  const canonical = fs.existsSync(CAT) ? deriveCatalog() : null;
-  let snapshot = load(CFG, { chapters: [] }).chapters || [];
+  let canonical = null;
+  if (fs.existsSync(CAT)) {
+    try { canonical = deriveCatalog(); }
+    catch (e) { log(`WARN: catalog TS parse failed (${e && e.message}) — falling back to config snapshot.`); }
+  }
+  const normalizeEntry = (c) => ({
+    id: String(c.id || c.chapterId || ""),
+    subject: c.subject,
+    paper: c.paper,
+    section: c.section,
+    part: c.part,
+    module: c.module,
+    chapterNumber: c.chapterNumber,
+    title: c.title || c.chapterTitle || "",
+    sourceUrl: c.sourceUrl,
+    catalogOrder: c.catalogOrder,
+  });
+  let snapshot = (load(CFG, { chapters: [] }).chapters || []).map(normalizeEntry).filter((c) => c.id);
   if (canonical) {
-    const norm = (arr) => JSON.stringify(arr.map((c) => ({ id: c.id, subject: c.subject, paper: c.paper, module: c.module, chapterNumber: c.chapterNumber, title: c.title })).sort((a, b) => a.id.localeCompare(b.id)));
+    const norm = (arr) => JSON.stringify(arr.map((c) => ({ id: c.id || c.chapterId || "", subject: c.subject, paper: c.paper, module: c.module, chapterNumber: c.chapterNumber, title: c.title || c.chapterTitle || "" })).sort((a, b) => String(a.id).localeCompare(String(b.id))));
     if (norm(snapshot) !== norm(canonical)) {
       snapshot = canonical;
       save(CFG, { revision: "icai-may-2026-v1", source: "mobile/src/data/icaiChapterCatalog.ts", generatedAt: new Date().toISOString(), chapters: snapshot });
@@ -177,6 +193,21 @@ function loadState() {
   if (!s.quarantined || typeof s.quarantined !== "object") s.quarantined = {};
   return s;
 }
+function healState(state, chapters) {
+  const present = [];
+  const missing = [];
+  for (const id of state.completed) {
+    const ch = chapters.find((c) => c.id === id);
+    const f = ch ? path.join(GEN, SLUG[ch.subject] || String(ch.subject).toLowerCase(), `${id}.json`) : null;
+    if (ch && f && fs.existsSync(f)) present.push(id);
+    else missing.push(id);
+  }
+  if (missing.length) {
+    state.completed = present;
+    log(`Resume check: ${missing.length} completed chapter(s) have no saved file here — will regenerate them.`);
+  }
+  return state;
+}
 async function generateOne(ch, opts) {
   const t0 = Date.now();
   let feedback = "";
@@ -249,8 +280,8 @@ async function main() {
   if (process.env.AI_PROVIDER && process.env.AI_PROVIDER !== "gemini") throw new Error("only gemini supported");
   const chapters = loadChapters();
   log(`Catalog OK: ${chapters.length} chapters. Provider: ${opts.mock ? "MOCK" : "gemini/" + MODEL}`);
-  const state = loadState();
-  const pending = chapters.filter((c) => !state.completed.includes(c.id) && !state.quarantined[c.id]);
+  let state = healState(loadState(), chapters);
+  const pending = chapters.filter((c) => !state.completed.includes(c.id));
   const sel = opts.chapter ? pending.filter((c) => c.id === opts.chapter) : opts.limit ? pending.slice(0, opts.limit) : pending;
   if (!sel.length) { log("Nothing pending."); if (!opts.dry) buildReview(); return; }
   log(`Plan: ${sel.length} pending (completed ${state.completed.length}, quarantined ${Object.keys(state.quarantined).length}).`);
@@ -278,4 +309,4 @@ async function main() {
   buildReview();
   if (fails.length) process.exitCode = 1;
 }
-main().catch((e) => { log("FATAL: " + (e && e.message || e)); process.exit(2); });
+main().catch((e) => { console.error("FATAL:", e && e.stack ? e.stack : e); log("FATAL: " + (e && e.stack ? e.stack : e)); process.exit(2); });
