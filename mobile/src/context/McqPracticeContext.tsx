@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { EnrichedMcqQuestion, McqDifficulty } from '../data/mcqMetadata';
+import { restoreMcqAttempts, syncCompletedMcqAttempts } from '../services/mcqCloudSync';
 import { CaGroup, subjectGroup } from '../utils/caGroups';
 import { useAuth } from './AuthContext';
 import { useMcqBank } from './McqBankContext';
@@ -68,6 +69,17 @@ const shuffled = <T,>(items: T[], seedValue: number) => {
   return result;
 };
 
+const mergePracticeAttempts = (local: McqPracticeSession[], remote: McqPracticeSession[]) => {
+  const merged = new Map<string, McqPracticeSession>();
+  [...local, ...remote].forEach((attempt) => {
+    const current = merged.get(attempt.id);
+    const timestamp = Number(attempt.completedAt || attempt.startedAt || 0);
+    const currentTimestamp = Number(current?.completedAt || current?.startedAt || 0);
+    if (!current || timestamp >= currentTimestamp) merged.set(attempt.id, attempt);
+  });
+  return [...merged.values()].sort((a, b) => Number(b.completedAt || b.startedAt) - Number(a.completedAt || a.startedAt)).slice(0, 150);
+};
+
 const filterQuestions = (allQuestions: EnrichedMcqQuestion[], config: PracticeConfig) => allQuestions.filter((question) => {
   const group = subjectGroup(question.subject);
   if (config.group !== 'Combined' && group !== config.group) return false;
@@ -80,7 +92,7 @@ const filterQuestions = (allQuestions: EnrichedMcqQuestion[], config: PracticeCo
 });
 
 export const McqPracticeProvider = ({ children }: PropsWithChildren) => {
-  const { student } = useAuth();
+  const { student, backendMode } = useAuth();
   const { hydrated: bankHydrated, revision: bankRevision, questions: allQuestions } = useMcqBank();
   const [history, setHistory] = useState<McqPracticeSession[]>([]);
   const [hydrated, setHydrated] = useState(false);
@@ -97,6 +109,7 @@ export const McqPracticeProvider = ({ children }: PropsWithChildren) => {
     if (!bankHydrated) return;
     AsyncStorage.getItem(storageKey(student.studentId)).then(async (saved) => {
       if (!mounted) return;
+      let localAttempts: McqPracticeSession[] = [];
       try {
         const parsed = saved ? JSON.parse(saved) as McqPracticeSession[] : [];
         // Completed legacy sessions can still contribute to aggregate history,
@@ -104,12 +117,23 @@ export const McqPracticeProvider = ({ children }: PropsWithChildren) => {
         const migrated = parsed.filter((session) => session.bankRevision === bankRevision || Boolean(session.completedAt));
         if (migrated.length !== parsed.length) await AsyncStorage.setItem(storageKey(student.studentId), JSON.stringify(migrated));
         if (!mounted) return;
+        localAttempts = migrated;
         setHistory(migrated);
       } catch { if (mounted) setHistory([]); }
       if (mounted) setHydrated(true);
+
+      if (backendMode !== 'mock') {
+        restoreMcqAttempts().then(async ({ practice }) => {
+          if (!mounted) return;
+          const merged = mergePracticeAttempts(localAttempts, practice as McqPracticeSession[]);
+          setHistory(merged);
+          await AsyncStorage.setItem(storageKey(student.studentId), JSON.stringify(merged));
+          await syncCompletedMcqAttempts([], merged);
+        }).catch(() => undefined);
+      }
     });
     return () => { mounted = false; };
-  }, [bankHydrated, bankRevision, student]);
+  }, [backendMode, bankHydrated, bankRevision, student]);
 
   const persist = useCallback(async (next: McqPracticeSession[]) => {
     setHistory(next);
@@ -159,8 +183,9 @@ export const McqPracticeProvider = ({ children }: PropsWithChildren) => {
       durationSeconds: Math.max(1, Math.floor((completedAt - activeSession.startedAt) / 1000)),
     };
     await persist(history.map((session) => session.id === activeSession.id ? updated : session));
+    if (backendMode !== 'mock') syncCompletedMcqAttempts([], [updated]).catch(() => undefined);
     return updated;
-  }, [activeSession, history, persist, questionsForSession]);
+  }, [activeSession, backendMode, history, persist, questionsForSession]);
 
   const abandonPractice = useCallback(async () => {
     if (!activeSession) return;

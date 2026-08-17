@@ -24,6 +24,7 @@ const requestedModeSwitch = process.env.EXPO_PUBLIC_ALLOW_MODE_SWITCH;
 
 export const config = {
   apiUrl: normalizeApiUrl(process.env.EXPO_PUBLIC_API_BASE_URL || defaultBaseUrl),
+  mentorApiUrl: (process.env.EXPO_PUBLIC_MENTOR_API_URL || 'https://ujjwal-pathak-project.onrender.com').replace(/\/+$/, ''),
   defaultApiMode,
   // Student release bundles are locked to Full Live by default. Explicit EAS
   // preview/read-only profiles still override both values through environment.

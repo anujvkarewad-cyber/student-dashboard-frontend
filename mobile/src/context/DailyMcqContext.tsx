@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { DailyMcqQuestion } from '../data/dailyMcqBank';
 import { CaGroup, subjectGroup } from '../utils/caGroups';
+import { restoreMcqAttempts, syncCompletedMcqAttempts } from '../services/mcqCloudSync';
 import { useAuth } from './AuthContext';
 import { useMcqBank } from './McqBankContext';
 
@@ -75,6 +76,18 @@ const dailyQuestionIds = (bank: DailyMcqQuestion[], date: string, studentId: str
     .map(({ id }) => id);
 };
 
+const mergeDailyAttempts = (local: DailyMcqAttempt[], remote: DailyMcqAttempt[]) => {
+  const merged = new Map<string, DailyMcqAttempt>();
+  [...local, ...remote].forEach((attempt) => {
+    const key = `${attempt.date}:${attempt.group}`;
+    const current = merged.get(key);
+    const timestamp = Number(attempt.completedAt || attempt.startedAt || 0);
+    const currentTimestamp = Number(current?.completedAt || current?.startedAt || 0);
+    if (!current || timestamp >= currentTimestamp) merged.set(key, attempt);
+  });
+  return [...merged.values()].sort((a, b) => Number(b.completedAt || b.startedAt) - Number(a.completedAt || a.startedAt)).slice(0, 180);
+};
+
 const calculateStreak = (attempts: DailyMcqAttempt[], group: CaGroup) => {
   const completed = new Set(attempts.filter((attempt) => attempt.group === group && attempt.completedAt).map((attempt) => attempt.date));
   const cursor = new Date();
@@ -88,7 +101,7 @@ const calculateStreak = (attempts: DailyMcqAttempt[], group: CaGroup) => {
 };
 
 export const DailyMcqProvider = ({ children }: PropsWithChildren) => {
-  const { student } = useAuth();
+  const { student, backendMode } = useAuth();
   const { hydrated: bankHydrated, revision: bankRevision, questions: mcqBank } = useMcqBank();
   const [history, setHistory] = useState<DailyMcqAttempt[]>([]);
   const [hydrated, setHydrated] = useState(false);
@@ -106,6 +119,7 @@ export const DailyMcqProvider = ({ children }: PropsWithChildren) => {
     if (!bankHydrated) return;
     AsyncStorage.getItem(storageKey(student.studentId)).then(async (saved) => {
       if (!mounted) return;
+      let localAttempts: DailyMcqAttempt[] = [];
       try {
         const parsed = saved ? JSON.parse(saved) as DailyMcqAttempt[] : [];
         // Preserve prior completed scores for streaks, but never resume or review
@@ -113,12 +127,23 @@ export const DailyMcqProvider = ({ children }: PropsWithChildren) => {
         const migrated = parsed.filter((attempt) => attempt.bankRevision === bankRevision || Boolean(attempt.completedAt && attempt.date < localDateKey()));
         if (migrated.length !== parsed.length) await AsyncStorage.setItem(storageKey(student.studentId), JSON.stringify(migrated));
         if (!mounted) return;
+        localAttempts = migrated;
         setHistory(migrated);
       } catch { if (mounted) setHistory([]); }
       if (mounted) setHydrated(true);
+
+      if (backendMode !== 'mock') {
+        restoreMcqAttempts().then(async ({ daily }) => {
+          if (!mounted) return;
+          const merged = mergeDailyAttempts(localAttempts, daily as DailyMcqAttempt[]);
+          setHistory(merged);
+          await AsyncStorage.setItem(storageKey(student.studentId), JSON.stringify(merged));
+          await syncCompletedMcqAttempts(merged, []);
+        }).catch(() => undefined);
+      }
     });
     return () => { mounted = false; };
-  }, [bankHydrated, bankRevision, student]);
+  }, [backendMode, bankHydrated, bankRevision, student]);
 
   const persist = useCallback(async (next: DailyMcqAttempt[]) => {
     setHistory(next);
@@ -173,8 +198,9 @@ export const DailyMcqProvider = ({ children }: PropsWithChildren) => {
       durationSeconds: Math.max(1, Math.floor((completedAt - current.startedAt) / 1000)),
     };
     await persist(history.map((attempt) => attempt.date === dateKey && attempt.group === group ? updated : attempt));
+    if (backendMode !== 'mock') syncCompletedMcqAttempts([updated], []).catch(() => undefined);
     return updated;
-  }, [dateKey, history, mcqBank, persist]);
+  }, [backendMode, dateKey, history, mcqBank, persist]);
 
   const value = useMemo<DailyMcqValue>(() => ({
     hydrated,

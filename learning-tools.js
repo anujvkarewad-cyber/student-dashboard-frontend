@@ -19,6 +19,7 @@
   let visibilityListenerInstalled = false;
   let focusReceiptSessionId = null;
   let dailyAutoSubmitting = false;
+  const cloudRestoredStudents = new Set();
 
   const mcqUi = {
     mode: "daily",
@@ -633,8 +634,10 @@
     return migrated;
   }
 
-  function saveDaily(history) {
-    saveJson(dailyKey(), history.slice(0, 180));
+  function saveDaily(history, syncCompleted = false) {
+    const saved = history.slice(0, 180);
+    saveJson(dailyKey(), saved);
+    if (syncCompleted && window.UMP_MCQ_CLOUD) window.UMP_MCQ_CLOUD.queue(saved, []);
   }
 
   function attemptForGroup(group) {
@@ -659,6 +662,41 @@
     return streak;
   }
 
+  function attemptTimestamp(attempt) {
+    return Number(attempt?.completedAt || attempt?.startedAt || 0);
+  }
+
+  function mergeAttempts(local, remote, keyFor) {
+    const merged = new Map();
+    [...(local || []), ...(remote || [])].forEach((attempt) => {
+      const key = keyFor(attempt);
+      if (!key) return;
+      const current = merged.get(key);
+      if (!current || attemptTimestamp(attempt) >= attemptTimestamp(current)) merged.set(key, attempt);
+    });
+    return [...merged.values()].sort((left, right) => attemptTimestamp(right) - attemptTimestamp(left));
+  }
+
+  function restoreCloudAttemptsForStudent() {
+    const id = studentId();
+    if (!id || id === "guest" || !window.UMP_MCQ_CLOUD || cloudRestoredStudents.has(id)) return;
+    cloudRestoredStudents.add(id);
+    window.UMP_MCQ_CLOUD.restore().then((remote) => {
+      const localDaily = loadJson(dailyKey(), []);
+      const localPractice = loadJson(practiceKey(), []);
+      const daily = mergeAttempts(localDaily, remote.daily, (attempt) => `${attempt.date}:${attempt.group}`).slice(0, 180);
+      const practice = mergeAttempts(localPractice, remote.practice, (attempt) => attempt.id).slice(0, 150);
+      saveJson(dailyKey(), daily);
+      saveJson(practiceKey(), practice);
+      // Back up completed legacy/local attempts that were not in the cloud yet.
+      window.UMP_MCQ_CLOUD.queue(daily, practice);
+      if (activeFeature === "mcq" && activeRoot && studentId() === id) renderMcqCurrent();
+    }).catch((error) => {
+      cloudRestoredStudents.delete(id); // retry next time the MCQ screen opens
+      console.warn("[MCQ Cloud] Restore delayed:", error.message);
+    });
+  }
+
   function renderMCQ(root, student) {
     cleanup();
     activeRoot = root;
@@ -675,6 +713,7 @@
       mcqUi.practiceConfig = null;
     }
     renderMcqCurrent();
+    restoreCloudAttemptsForStudent();
   }
 
   function replaceLearningData(nextData) {
@@ -846,7 +885,7 @@
     const attemptQuestions = attempt.questionIds.map((id) => QUESTION_BY_ID.get(id)).filter(Boolean);
     const completedAt = Date.now();
     const updated = { ...attempt, completedAt, score: attemptQuestions.reduce((total, question) => total + (attempt.answers[question.id] === question.answer ? 1 : 0), 0), total: attemptQuestions.length, durationSeconds: Math.max(1, Math.floor((completedAt - attempt.startedAt) / 1000)) };
-    saveDaily(history.map((item) => item.date === localDateKey() && item.group === group ? updated : item));
+    saveDaily(history.map((item) => item.date === localDateKey() && item.group === group ? updated : item), true);
     return updated;
   }
 
@@ -877,8 +916,10 @@
     return migrated;
   }
 
-  function savePractice(history) {
-    saveJson(practiceKey(), history.slice(0, 150));
+  function savePractice(history, syncCompleted = false) {
+    const saved = history.slice(0, 150);
+    saveJson(practiceKey(), saved);
+    if (syncCompleted && window.UMP_MCQ_CLOUD) window.UMP_MCQ_CLOUD.queue([], saved);
   }
 
   function activePractice() {
@@ -993,7 +1034,7 @@
     const sessionQuestions = session.questionIds.map((id) => QUESTION_BY_ID.get(id)).filter(Boolean);
     const completedAt = Date.now();
     const updated = { ...session, completedAt, score: sessionQuestions.reduce((total, question) => total + (session.answers[question.id] === question.answer ? 1 : 0), 0), total: sessionQuestions.length, durationSeconds: Math.max(1, Math.floor((completedAt - session.startedAt) / 1000)) };
-    savePractice(history.map((item) => item.id === session.id ? updated : item));
+    savePractice(history.map((item) => item.id === session.id ? updated : item), true);
     mcqUi.practiceResult = updated;
     renderPractice();
   }
