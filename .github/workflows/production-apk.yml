@@ -7,8 +7,11 @@ on:
         required: false
         default: 'MCQ sync improvements'
   push:
-    branches: [main]
-    paths: ['mobile/**', '.github/workflows/production-apk.yml']
+    branches:
+      - main
+    paths:
+      - 'mobile/**'
+      - '.github/workflows/production-apk.yml'
 permissions:
   contents: write
 concurrency:
@@ -23,67 +26,11 @@ jobs:
       EXPO_PUBLIC_BACKEND_MODE: "live"
       NODE_ENV: production
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 22, cache: npm, cache-dependency-path: mobile/package-lock.json }
-      - uses: actions/setup-java@v4
-        with: { distribution: temurin, java-version: "17" }
-      - uses: android-actions/setup-android@v3
-      - run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "ndk;27.1.12297006"
-      - name: Decode Keystore
-        env: { ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }} }
-        run: |
-          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > mobile/android-release-key.jks; else echo "::warning::No keystore"; fi
-      - working-directory: mobile
-        run: npm ci
-      - working-directory: mobile
-        run: npm run typecheck
-      - working-directory: mobile
-        run: npx expo prebuild --platform android --clean --no-install
-      - name: Configure signing
-        working-directory: mobile/android
-        env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: |
-          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then exit 0; fi
-          cat >> gradle.properties <<PROP
-          MYAPP_RELEASE_STORE_FILE=../android-release-key.jks
-          MYAPP_RELEASE_KEY_ALIAS=$KEY_ALIAS
-          MYAPP_RELEASE_STORE_PASSWORD=$STORE_PASSWORD
-          MYAPP_RELEASE_KEY_PASSWORD=$KEY_PASSWORD
-          PROP
-      - working-directory: mobile/android
-        run: |
-          chmod +x gradlew
-          ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,armeabi-v7a --no-daemon
-      - id: meta
-        working-directory: mobile
-        run: |
-          VERSION=$(node -p "require('./app.json').expo.version")
-          CODE=$(node -p "require('./app.json').expo.android.versionCode")
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "code=$CODE" >> $GITHUB_OUTPUT
-          echo "apk_name=UPM-v${VERSION}-${CODE}-release.apk" >> $GITHUB_OUTPUT
-      - run: cp mobile/android/app/build/outputs/apk/release/app-release.apk ${{ steps.meta.outputs.apk_name }} && ls -lh ${{ steps.meta.outputs.apk_name }}
-      - uses: actions/upload-artifact@v4
-        with: { name: ${{ steps.meta.outputs.apk_name }}, path: ${{ steps.meta.outputs.apk_name }}, retention-days: 30, compression-level: 0 }
-      - uses: softprops/action-gh-release@v2
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
         with:
-          tag_name: v${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.code }}
-          name: UPM v${{ steps.meta.outputs.version }} (${{ steps.meta.outputs.code }})
-          body: ${{ inputs.release_notes }}
-          files: ${{ steps.meta.outputs.apk_name }}
-      - env: { RELEASES_PAT: ${{ secrets.RELEASES_PAT }} }
-        run: |
-          if [ -z "$RELEASES_PAT" ]; then exit 0; fi
-          git clone https://x-access-token:${RELEASES_PAT}@github.com/anujvkarewad-cyber/UPM-Android-Releases.git /tmp/releases
-          cp ${{ steps.meta.outputs.apk_name }} /tmp/releases/
-          echo "# UPM Android Releases" > /tmp/releases/README.md
-          cd /tmp/releases
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add . && git commit -m "Release v${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.code }}" || echo "no changes"
-          git push origin main
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
