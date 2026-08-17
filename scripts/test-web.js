@@ -104,6 +104,12 @@ const localDateKey = (date = new Date()) =>
 // ---------------------------------------------------------------------------
 console.log("\n1. Web data bundle (generated from APK sources)");
 // ---------------------------------------------------------------------------
+test("visible app version matches the active PWA cache version", () => {
+  const appVersion = read("app.js").match(/APP_VERSION\s*=\s*"([^"]+)"/)?.[1];
+  const cacheVersion = read("service-worker.js").match(/CACHE_VERSION\s*=\s*"([^"]+)"/)?.[1];
+  assertEqual(appVersion, cacheVersion, "app/PWA version");
+});
+
 test("bundle revision is the canonical MCQ bank revision", () => {
   assertEqual(parity.revision(), "icai-may-2026-v1", "bundle revision");
   assertEqual(manifest.targetAttempt, "September 2026", "ICAI content manifest target attempt");

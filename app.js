@@ -1,4 +1,4 @@
-const APP_VERSION = "2.4.3";
+const APP_VERSION = "2.6.0";
 
 (function () {
   "use strict";
