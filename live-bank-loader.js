@@ -1,206 +1,262 @@
 /**
- * Live Mentor-Approved MCQ Bank Loader
- * Connects student dashboard to mentor backend (FastAPI) so when mentor approves
- * a chapter in MCQ Review, it immediately shows in student app/web.
- * 
- * Flow: Mentor approves in https://ujjwal-pathak-project.vercel.app/ai-content/queue
- *  -> status becomes approved/release_candidate
- *  -> backend /api/content/student/bank.json returns approved questions
- *  -> this loader fetches bank.json and replaces static dailyMcqBank
- *  -> demo data (needs_review) is automatically excluded by backend filter
- * 
- * Usage: Include AFTER learning-data.js but BEFORE learning-tools.js in index.html:
- * <script src="learning-data.js"></script>
- * <script src="live-bank-loader.js"></script>
- * <script src="learning-tools.js"></script>
+ * Published MCQ bank loader.
+ *
+ * The mentor FastAPI service is the source of truth. Static questions bundled
+ * in learning-data.js are build-time preview data only and are cleared before
+ * the MCQ tools initialise unless a cached published bank is available.
  */
-
 (function () {
-  'use strict';
+  "use strict";
 
-  // Config - change this to your Render backend URL
-  // Priority: window.MENTOR_API_URL > localStorage > default
-  const DEFAULT_MENTOR_API = 'https://ujjwal-pathak-project.onrender.com';
+  const DEFAULT_MENTOR_API = "https://ujjwal-pathak-project.onrender.com";
   const MENTOR_API = (
     window.MENTOR_API_URL ||
-    localStorage.getItem('ump_mentor_api_url') ||
+    localStorage.getItem("ump_mentor_api_url") ||
     DEFAULT_MENTOR_API
-  ).replace(/\/$/, '');
-
+  ).replace(/\/$/, "");
   const BANK_URL = `${MENTOR_API}/api/content/student/bank.json`;
-  const CACHE_KEY = 'ump_live_bank';
-  const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+  const BANK_META_URL = `${MENTOR_API}/api/content/student/bank-meta.json`;
+  const CACHE_KEY = "ump_live_published_bank_v1";
+  const CACHE_TTL = 24 * 60 * 60 * 1000;
+  const FETCH_TIMEOUT_MS = 65 * 1000; // Render free-tier cold starts can exceed 30 seconds.
+  const REVISION_POLL_MS = 10 * 1000;
+  const originalData = window.UMP_LEARNING_DATA || {};
 
-  console.log('[Live Bank] Mentor API:', MENTOR_API);
-  console.log('[Live Bank] Fetching live approved bank from:', BANK_URL);
+  function setStatus(state, detail = {}) {
+    window.UMP_LIVE_BANK_STATUS = {
+      state,
+      bankUrl: BANK_URL,
+      checkedAt: Date.now(),
+      ...detail,
+    };
+    window.dispatchEvent(new CustomEvent("ump:live-bank-change", {
+      detail: window.UMP_LIVE_BANK_STATUS,
+    }));
+  }
 
   function getCached() {
     try {
-      const raw = localStorage.getItem(CACHE_KEY);
-      if (!raw) return null;
-      const data = JSON.parse(raw);
-      if (Date.now() - data.ts > CACHE_TTL) {
-        console.log('[Live Bank] Cache expired');
+      const saved = JSON.parse(localStorage.getItem(CACHE_KEY) || "null");
+      if (!saved || !saved.payload || Date.now() - Number(saved.ts || 0) > CACHE_TTL) {
+        localStorage.removeItem(CACHE_KEY);
         return null;
       }
-      return data.payload;
-    } catch (e) {
+      return saved.payload;
+    } catch (_) {
+      localStorage.removeItem(CACHE_KEY);
       return null;
     }
   }
 
   function setCached(payload) {
     try {
-      localStorage.setItem(CACHE_KEY, JSON.stringify({
-        ts: Date.now(),
-        payload
-      }));
-    } catch (e) {
-      console.warn('[Live Bank] Cache save failed', e);
+      localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), payload }));
+    } catch (error) {
+      console.warn("[Published Bank] Cache save failed:", error);
     }
   }
 
-  function applyLiveBank(liveData) {
-    if (!liveData || !Array.isArray(liveData.questions) || liveData.questions.length === 0) {
-      console.log('[Live Bank] No live questions (count=0), keeping static bank. Mentor needs to approve chapters first.');
-      return false;
-    }
-
-    // Validate live questions have required fields
-    const validQuestions = liveData.questions.filter(q => 
-      q && q.id && q.prompt && Array.isArray(q.options) && q.options.length === 4
-    );
-
-    if (validQuestions.length === 0) {
-      console.warn('[Live Bank] Live data has 0 valid questions, keeping static');
-      return false;
-    }
-
-    // Replace static bank with live approved bank
-    // This automatically removes demo data (demo has status needs_review, not in live bank)
-    const oldCount = (window.UMP_LEARNING_DATA && window.UMP_LEARNING_DATA.questions && window.UMP_LEARNING_DATA.questions.length) || 0;
-    
-    // Ensure official chapter catalog exists - build from live data if needed
-    const chapterMap = {};
-    validQuestions.forEach(q => {
-      if (q.chapterId && !chapterMap[q.chapterId]) {
-        chapterMap[q.chapterId] = {
-          id: q.chapterId,
-          subject: q.subject,
-          title: q.chapterTitle || q.chapterId,
-          displayTitle: q.chapter || q.chapterTitle || q.chapterId
-        };
-      }
+  function chapterCatalog(questions) {
+    const fromQuestions = new Map();
+    questions.forEach((question) => {
+      if (!question.chapterId || fromQuestions.has(question.chapterId)) return;
+      fromQuestions.set(question.chapterId, question.officialChapter || {
+        id: question.chapterId,
+        subject: question.subject,
+        title: question.chapterTitle || question.chapterId,
+        officialTitle: question.chapterTitle || question.chapterId,
+        displayTitle: question.chapter || question.chapterTitle || question.chapterId,
+        chapterNumber: question.chapterNumber || 0,
+        module: question.chapterModule || "Module 1",
+        catalogOrder: question.chapterOrder || 0,
+      });
     });
+    return fromQuestions.size
+      ? [...fromQuestions.values()]
+      : (originalData.officialMcqChapterCatalog || []);
+  }
 
-    // Merge or replace: if live bank has approved chapters, use it; otherwise keep static + live
-    // Strategy: REPLACE static with live when live has data (mentor-approved), to remove demo
-    window.UMP_LEARNING_DATA = {
-      revision: liveData.revision || 'live-approved-' + new Date().toISOString(),
-      generatedAt: liveData.generatedAt || new Date().toISOString(),
+  function applyBank(payload, state = "ready") {
+    if (!payload || !Array.isArray(payload.questions)) {
+      throw new Error("Published bank response does not contain a questions array");
+    }
+
+    const validQuestions = payload.questions.filter((question) =>
+      question &&
+      question.id &&
+      question.prompt &&
+      Array.isArray(question.options) &&
+      question.options.length === 4 &&
+      Number.isInteger(question.answer) &&
+      question.answer >= 0 &&
+      question.answer < 4
+    );
+    if (validQuestions.length !== payload.questions.length) {
+      console.warn(
+        `[Published Bank] Ignored ${payload.questions.length - validQuestions.length} malformed question(s)`
+      );
+    }
+
+    const nextData = {
+      ...originalData,
+      revision: String(payload.revision || "published-r0"),
+      generatedAt: payload.generatedAt || new Date().toISOString(),
       questions: validQuestions,
-      officialMcqChapterCatalog: window.UMP_LEARNING_DATA ? window.UMP_LEARNING_DATA.officialMcqChapterCatalog : Object.values(chapterMap),
-      manifest: window.UMP_LEARNING_DATA ? window.UMP_LEARNING_DATA.manifest : { targetAttempt: 'May 2026', notice: 'Live mentor-approved content' },
+      officialMcqChapterCatalog: chapterCatalog(validQuestions),
+      manifest: {
+        ...(originalData.manifest || {}),
+        notice: "Mentor-reviewed and published question bank.",
+      },
       liveBank: true,
-      liveCount: validQuestions.length
+      liveCount: validQuestions.length,
     };
 
-    console.log(`[Live Bank] ✅ Applied live bank: ${oldCount} static -> ${validQuestions.length} live approved (demo removed)`);
-    console.log(`[Live Bank] Chapters: ${Object.keys(chapterMap).length}`, Object.keys(chapterMap));
+    window.UMP_LEARNING_DATA = nextData;
+    window.UMP_LIVE_BANK = { ...payload, questions: validQuestions, count: validQuestions.length };
 
-    // Also expose for debugging
-    window.UMP_LIVE_BANK = liveData;
-
-    return true;
-  }
-
-  async function fetchLiveBank() {
-    // Try cache first for instant load, then refresh in background
-    const cached = getCached();
-    if (cached) {
-      console.log('[Live Bank] Using cached live bank:', cached.count || cached.questions?.length);
-      applyLiveBank(cached);
+    // learning-tools.js may already be initialised (the network request is
+    // asynchronous). Replace its captured bank instead of only replacing a
+    // window global that the tool no longer reads.
+    if (window.UMP_LEARNING_TOOLS?.replaceLearningData) {
+      window.UMP_LEARNING_TOOLS.replaceLearningData(nextData);
     }
 
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 8000); // 8s timeout (Render cold start can be slow)
-
-      const res = await fetch(BANK_URL, {
-        signal: controller.signal,
-        headers: { 'Accept': 'application/json' }
-      });
-      clearTimeout(timeout);
-
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
-      }
-
-      const liveData = await res.json();
-      
-      console.log(`[Live Bank] Fetched live bank: ${liveData.count} questions, revision ${liveData.revision}`);
-
-      if (liveData.count === 0) {
-        console.log('[Live Bank] Live bank is empty (0) — mentor has not approved any chapter yet. Student will see static demo until approval.');
-        console.log('[Live Bank] To make a chapter live: Mentor Dashboard → Review Queue → Approve 50 questions → Chapter Coverage → Approve Chapter');
-        return;
-      }
-
-      setCached(liveData);
-      
-      const wasApplied = applyLiveBank(liveData);
-      
-      if (wasApplied) {
-        // If learning-tools already initialized, need to reload? For now, next navigation will use new data
-        // If on MCQ page, show toast
-        if (window.UMP_LEARNING_TOOLS && wasApplied) {
-          console.log('[Live Bank] Live bank applied, MCQ pool updated. Navigate to MCQ to see new chapters.');
-        }
-      }
-
-    } catch (err) {
-      console.warn('[Live Bank] Failed to fetch live bank (will keep static demo):', err.message);
-      console.warn('[Live Bank] Check: Is backend running at', MENTOR_API, '? CORS allowed?');
-      console.warn('[Live Bank] Test URL in browser:', BANK_URL);
-      
-      if (cached) {
-        console.log('[Live Bank] Keeping cached version due to fetch failure');
-      } else {
-        console.log('[Live Bank] No cache and fetch failed — using static demo bank (376 questions). Mentor should approve chapters to make live bank available.');
-      }
-    }
+    setStatus(state, {
+      revision: nextData.revision,
+      count: validQuestions.length,
+      cached: state === "cached" || state === "stale",
+    });
+    console.log(
+      `[Published Bank] Applied ${validQuestions.length} question(s), revision ${nextData.revision}`
+    );
+    return nextData;
   }
 
-  // Expose manual refresh for debugging
-  window.UMP_REFRESH_LIVE_BANK = function() {
-    console.log('[Live Bank] Manual refresh triggered');
-    localStorage.removeItem(CACHE_KEY);
-    return fetchLiveBank();
-  };
-
-  window.UMP_CLEAR_LIVE_CACHE = function() {
-    localStorage.removeItem(CACHE_KEY);
-    console.log('[Live Bank] Cache cleared');
-  };
-
-  // Auto-fetch on load
-  // Wait for DOM + learning-data.js to be loaded
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', fetchLiveBank);
+  const cachedAtStartup = getCached();
+  if (cachedAtStartup) {
+    // This synchronous apply runs before learning-tools.js, so a returning
+    // student immediately starts with the last known published bank.
+    applyBank(cachedAtStartup, "cached");
   } else {
-    // Small delay to ensure learning-data.js has set window.UMP_LEARNING_DATA
-    setTimeout(fetchLiveBank, 100);
+    // Fail closed: do not expose bundled preview/previous questions while the
+    // authoritative published bank is loading.
+    applyBank({ revision: "published-loading", generatedAt: null, questions: [] }, "loading");
   }
 
-  // Also refresh when student navigates to MCQ view (to catch new approvals)
-  let lastMcqCheck = 0;
-  const originalPushState = history.pushState;
-  history.pushState = function() {
-    originalPushState.apply(this, arguments);
-    const hash = location.hash;
-    if (hash.includes('mcq') && Date.now() - lastMcqCheck > 30000) { // 30s throttle
-      lastMcqCheck = Date.now();
-      setTimeout(fetchLiveBank, 500);
-    }
+  let requestInFlight = null;
+  async function fetchPublishedBank({ force = false } = {}) {
+    if (requestInFlight) return requestInFlight;
+
+    const hadUsableCache = Boolean(getCached());
+    setStatus("loading", {
+      revision: window.UMP_LEARNING_DATA?.revision,
+      count: window.UMP_LEARNING_DATA?.questions?.length || 0,
+      cached: hadUsableCache,
+    });
+
+    requestInFlight = (async () => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+      try {
+        const response = await fetch(BANK_URL, {
+          signal: controller.signal,
+          cache: "no-store",
+          headers: { Accept: "application/json" },
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const payload = await response.json();
+        if (!Array.isArray(payload.questions)) throw new Error("Invalid JSON bank shape");
+
+        // An empty response is authoritative and deliberately clears both the
+        // old cache and old questions.
+        setCached(payload);
+        return applyBank(payload, "ready");
+      } catch (error) {
+        const message = error?.name === "AbortError"
+          ? "The content server took too long to wake up. Please retry."
+          : String(error?.message || error);
+        console.warn("[Published Bank] Fetch failed:", message, BANK_URL);
+        const stale = getCached();
+        if (stale) {
+          applyBank(stale, "stale");
+          setStatus("stale", {
+            revision: stale.revision,
+            count: stale.questions?.length || 0,
+            cached: true,
+            error: message,
+          });
+        } else {
+          applyBank({ revision: "published-unavailable", questions: [] }, "error");
+          setStatus("error", { count: 0, cached: false, error: message });
+        }
+        return null;
+      } finally {
+        clearTimeout(timeout);
+        requestInFlight = null;
+      }
+    })();
+
+    return requestInFlight;
+  }
+
+  let metaRequestInFlight = null;
+  async function checkPublishedRevision() {
+    if (metaRequestInFlight || document.visibilityState === "hidden") return metaRequestInFlight;
+    metaRequestInFlight = (async () => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15_000);
+      try {
+        const response = await fetch(BANK_META_URL, {
+          signal: controller.signal,
+          cache: "no-store",
+          headers: { Accept: "application/json" },
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const meta = await response.json();
+        const currentRevision = String(window.UMP_LEARNING_DATA?.revision || "");
+        const currentCount = Number(window.UMP_LEARNING_DATA?.questions?.length || 0);
+        if (String(meta.revision || "") !== currentRevision || Number(meta.count || 0) !== currentCount) {
+          console.log(`[Published Bank] New revision detected: ${currentRevision} -> ${meta.revision}`);
+          await fetchPublishedBank({ force: true });
+        }
+      } catch (error) {
+        // Polling is best-effort. The full-bank loader owns user-visible errors.
+        console.debug("[Published Bank] Revision check skipped:", error?.message || error);
+      } finally {
+        clearTimeout(timeout);
+        metaRequestInFlight = null;
+      }
+    })();
+    return metaRequestInFlight;
+  }
+
+  window.UMP_REFRESH_LIVE_BANK = function () {
+    localStorage.removeItem(CACHE_KEY);
+    return fetchPublishedBank({ force: true });
   };
+  window.UMP_CLEAR_LIVE_CACHE = function () {
+    localStorage.removeItem(CACHE_KEY);
+    console.log("[Published Bank] Cache cleared");
+  };
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", () => fetchPublishedBank());
+  } else {
+    fetchPublishedBank();
+  }
+
+  let lastMcqRefresh = 0;
+  function refreshOnMcqNavigation() {
+    if (!location.hash.includes("mcq") || Date.now() - lastMcqRefresh < 3_000) return;
+    lastMcqRefresh = Date.now();
+    checkPublishedRevision();
+  }
+  window.addEventListener("hashchange", refreshOnMcqNavigation);
+  window.addEventListener("focus", refreshOnMcqNavigation);
+
+  // While the MCQ screen is open, poll only the tiny revision endpoint. The
+  // multi-megabyte question bank is downloaded again only after a publish.
+  setInterval(() => {
+    if (location.hash.includes("mcq")) checkPublishedRevision();
+  }, REVISION_POLL_MS);
 })();

@@ -148,7 +148,7 @@ export const DailyMcqScreen = ({ navigation, route }: Props) => {
             </View>
           </LinearGradient>
 
-          <View style={styles.draftBanner}><Ionicons name="shield-outline" size={20} color="#A86B00" /><View style={{ flex: 1 }}><Text style={styles.draftTitle}>ICAI-mapped draft · {icaiContentManifest.targetAttempt}</Text><Text style={styles.draftText}>Chapter names and numbers follow the official ICAI BoS May 2026 modules. The 7 normal + 3 case-study questions are original drafts; mentor approval and attempt-specific amendment review are still required.</Text></View></View>
+          <View style={styles.draftBanner}><Ionicons name="shield-checkmark-outline" size={20} color="#A86B00" /><View style={{ flex: 1 }}><Text style={styles.draftTitle}>Mentor-published bank · {icaiContentManifest.targetAttempt}</Text><Text style={styles.draftText}>Only chapters published from the mentor dashboard appear here. The app refreshes the bank from the content backend and removes superseded questions.</Text></View></View>
 
           <Pressable onPress={() => navigation.navigate('McqPractice')} style={({ pressed }) => [styles.practiceCard, pressed && { opacity: 0.78 }]}>
             <View style={styles.practiceIcon}><Ionicons name="infinite" size={25} color={colors.purple} /></View>
@@ -170,7 +170,7 @@ export const DailyMcqScreen = ({ navigation, route }: Props) => {
             <View style={styles.rule}><View style={styles.ruleIcon}><Ionicons name="bulb-outline" size={19} color={colors.primary} /></View><View><Text style={styles.ruleTitle}>Explanations after submission</Text><Text style={styles.ruleText}>Review both correct and incorrect answers.</Text></View></View>
           </Card>
 
-          <PrimaryButton label="Start today's MCQ" icon="play" loading={starting} onPress={start} />
+          <PrimaryButton label={todayQuestions.length ? "Start today's MCQ" : 'No published MCQs available'} icon="play" loading={starting} disabled={!todayQuestions.length} onPress={start} />
           {history.filter((item) => item.group === selectedGroup && item.completedAt).length ? <Text style={styles.historyHint}>{history.filter((item) => item.group === selectedGroup && item.completedAt).length} previous {selectedGroup} challenge{history.filter((item) => item.group === selectedGroup && item.completedAt).length === 1 ? '' : 's'} stored on this device.</Text> : null}
         </ScrollView>
       </SafeAreaView>
@@ -191,7 +191,7 @@ export const DailyMcqScreen = ({ navigation, route }: Props) => {
             <View style={styles.resultStreak}><Ionicons name="flame" size={17} color="#FFD36D" /><Text style={styles.resultStreakText}>{streak} day MCQ streak</Text></View>
           </LinearGradient>
 
-          <View style={styles.draftBanner}><Ionicons name="information-circle-outline" size={20} color="#A86B00" /><Text style={styles.draftText}>Source mapping targets {icaiContentManifest.targetAttempt}. Questions are original practice content, not reproduced ICAI questions, and remain pending mentor approval.</Text></View>
+          <View style={styles.draftBanner}><Ionicons name="information-circle-outline" size={20} color="#A86B00" /><Text style={styles.draftText}>Source mapping targets {icaiContentManifest.targetAttempt}. These questions came from the current mentor-published bank.</Text></View>
 
           <SectionHeader title="Answer review" />
           {todayQuestions.map((item, itemIndex) => {

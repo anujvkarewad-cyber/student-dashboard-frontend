@@ -114,6 +114,16 @@ test("bundle carries the APK question bank and full chapter catalogue", () => {
   assert(chapters.length >= 90, `expected at least 90 official chapters, got ${chapters.length}`);
 });
 
+test("an asynchronously fetched published bank replaces the captured runtime bank", () => {
+  const original = sandbox.UMP_LEARNING_DATA;
+  const replacement = { ...original, revision: "published-r9", questions: [questions[0]] };
+  assert(sandbox.UMP_LEARNING_TOOLS.replaceLearningData(replacement), "runtime rejected the replacement bank");
+  assertEqual(parity.revision(), "published-r9", "runtime revision after replacement");
+  assertEqual(parity.questions().length, 1, "runtime question count after replacement");
+  sandbox.UMP_LEARNING_TOOLS.replaceLearningData(original);
+  assertEqual(parity.questions().length, questions.length, "runtime bank restore");
+});
+
 test("every question is fully mapped and well-formed", () => {
   const subjects = ["Accounts", "Law", "Taxation", "Costing", "Audit", "FM", "SM"];
   const difficulties = ["Easy", "Medium", "Hard"];

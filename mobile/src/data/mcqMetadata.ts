@@ -75,6 +75,11 @@ const hardIds = new Set([
 ]);
 
 export const enrichMcqQuestion = (question: DailyMcqQuestion): EnrichedMcqQuestion => {
+  // Live mentor-published questions already carry canonical chapter metadata
+  // from FastAPI. Keep the static ID mapping only for the bundled preview bank.
+  const live = question as EnrichedMcqQuestion;
+  if (live.chapterId && live.chapter && live.officialChapter && live.difficulty) return live;
+
   const chapterId = chapterIdByQuestionId[question.id];
   const officialChapter = officialMcqChapterById[chapterId];
   if (!officialChapter) throw new Error(`Question ${question.id} has no verified ICAI May 2026 chapter mapping.`);

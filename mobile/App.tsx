@@ -7,6 +7,7 @@ import { AuthProvider } from './src/context/AuthContext';
 import { DailyMcqProvider } from './src/context/DailyMcqContext';
 import { DataProvider } from './src/context/DataContext';
 import { FocusTimerProvider } from './src/context/FocusTimerContext';
+import { McqBankProvider } from './src/context/McqBankContext';
 import { McqPracticeProvider } from './src/context/McqPracticeContext';
 import { NotificationsProvider } from './src/context/NotificationsContext';
 import { StudyReceiptsProvider } from './src/context/StudyReceiptContext';
@@ -21,14 +22,16 @@ export default function App() {
             <DataProvider>
               <FocusTimerProvider>
                 <StudyReceiptsProvider>
-                  <DailyMcqProvider>
-                    <McqPracticeProvider>
-                      <NotificationsProvider>
-                        <StatusBar style="dark" />
-                        <AppNavigator />
-                      </NotificationsProvider>
-                    </McqPracticeProvider>
-                  </DailyMcqProvider>
+                  <McqBankProvider>
+                    <DailyMcqProvider>
+                      <McqPracticeProvider>
+                        <NotificationsProvider>
+                          <StatusBar style="dark" />
+                          <AppNavigator />
+                        </NotificationsProvider>
+                      </McqPracticeProvider>
+                    </DailyMcqProvider>
+                  </McqBankProvider>
                 </StudyReceiptsProvider>
               </FocusTimerProvider>
             </DataProvider>

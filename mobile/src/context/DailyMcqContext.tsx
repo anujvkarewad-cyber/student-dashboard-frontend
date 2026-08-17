@@ -1,8 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { dailyMcqBank, DailyMcqQuestion } from '../data/dailyMcqBank';
+import { DailyMcqQuestion } from '../data/dailyMcqBank';
 import { CaGroup, subjectGroup } from '../utils/caGroups';
 import { useAuth } from './AuthContext';
+import { useMcqBank } from './McqBankContext';
 
 export type DailyMcqAttempt = {
   bankRevision?: string;
@@ -31,7 +32,6 @@ type DailyMcqValue = {
 };
 
 const DailyMcqContext = createContext<DailyMcqValue | undefined>(undefined);
-const MCQ_BANK_REVISION = 'icai-may-2026-v1';
 const storageKey = (studentId: string) => `ump_daily_mcq_${studentId}`;
 
 const localDateKey = (date = new Date()) => {
@@ -59,9 +59,9 @@ const seededRandom = (seedValue: number) => {
   };
 };
 
-const dailyQuestionIds = (date: string, studentId: string, group: CaGroup) => {
+const dailyQuestionIds = (bank: DailyMcqQuestion[], date: string, studentId: string, group: CaGroup) => {
   const random = seededRandom(hash(`${date}:${studentId}:${group}`));
-  const pool = dailyMcqBank.filter((question) => subjectGroup(question.subject) === group);
+  const pool = bank.filter((question) => subjectGroup(question.subject) === group);
   const pick = (questions: typeof pool, count: number) => questions
     .map((question) => ({ question, sort: random() }))
     .sort((a, b) => a.sort - b.sort)
@@ -89,6 +89,7 @@ const calculateStreak = (attempts: DailyMcqAttempt[], group: CaGroup) => {
 
 export const DailyMcqProvider = ({ children }: PropsWithChildren) => {
   const { student } = useAuth();
+  const { hydrated: bankHydrated, revision: bankRevision, questions: mcqBank } = useMcqBank();
   const [history, setHistory] = useState<DailyMcqAttempt[]>([]);
   const [hydrated, setHydrated] = useState(false);
   const dateKey = localDateKey();
@@ -99,15 +100,17 @@ export const DailyMcqProvider = ({ children }: PropsWithChildren) => {
     setHydrated(false);
     if (!student) {
       setHistory([]);
+      setHydrated(true);
       return;
     }
+    if (!bankHydrated) return;
     AsyncStorage.getItem(storageKey(student.studentId)).then(async (saved) => {
       if (!mounted) return;
       try {
         const parsed = saved ? JSON.parse(saved) as DailyMcqAttempt[] : [];
         // Preserve prior completed scores for streaks, but never resume or review
         // an attempt created against the superseded generic-topic question bank.
-        const migrated = parsed.filter((attempt) => attempt.bankRevision === MCQ_BANK_REVISION || Boolean(attempt.completedAt && attempt.date < localDateKey()));
+        const migrated = parsed.filter((attempt) => attempt.bankRevision === bankRevision || Boolean(attempt.completedAt && attempt.date < localDateKey()));
         if (migrated.length !== parsed.length) await AsyncStorage.setItem(storageKey(student.studentId), JSON.stringify(migrated));
         if (!mounted) return;
         setHistory(migrated);
@@ -115,7 +118,7 @@ export const DailyMcqProvider = ({ children }: PropsWithChildren) => {
       if (mounted) setHydrated(true);
     });
     return () => { mounted = false; };
-  }, [student]);
+  }, [bankHydrated, bankRevision, student]);
 
   const persist = useCallback(async (next: DailyMcqAttempt[]) => {
     setHistory(next);
@@ -126,27 +129,28 @@ export const DailyMcqProvider = ({ children }: PropsWithChildren) => {
 
   const questionsForGroup = useCallback((group: CaGroup) => {
     const attempt = attemptForGroup(group);
-    const ids = attempt?.questionIds || dailyQuestionIds(dateKey, student?.studentId || 'demo', group);
-    return ids.map((id) => dailyMcqBank.find((question) => question.id === id)).filter(Boolean) as DailyMcqQuestion[];
-  }, [attemptForGroup, dateKey, student?.studentId]);
+    const ids = attempt?.questionIds || dailyQuestionIds(mcqBank, dateKey, student?.studentId || 'demo', group);
+    return ids.map((id) => mcqBank.find((question) => question.id === id)).filter(Boolean) as DailyMcqQuestion[];
+  }, [attemptForGroup, dateKey, mcqBank, student?.studentId]);
 
   const startDaily = useCallback(async (group: CaGroup) => {
     if (!student) throw new Error('Please sign in again.');
+    if (!mcqBank.length) throw new Error('No mentor-published MCQs are available yet.');
     const existing = history.find((attempt) => attempt.date === dateKey && attempt.group === group);
     if (existing) return existing;
     const runningOtherGroup = history.find((attempt) => attempt.date === dateKey && attempt.group !== group && !attempt.completedAt);
     if (runningOtherGroup) throw new Error(`Finish the ${runningOtherGroup.group} attempt before starting ${group}.`);
     const attempt: DailyMcqAttempt = {
-      bankRevision: MCQ_BANK_REVISION,
+      bankRevision,
       date: dateKey,
       group,
-      questionIds: dailyQuestionIds(dateKey, student.studentId, group),
+      questionIds: dailyQuestionIds(mcqBank, dateKey, student.studentId, group),
       answers: {},
       startedAt: Date.now(),
     };
     await persist([attempt, ...history]);
     return attempt;
-  }, [dateKey, history, persist, student]);
+  }, [bankRevision, dateKey, history, mcqBank, persist, student]);
 
   const answerQuestion = useCallback(async (group: CaGroup, questionId: string, option: number) => {
     const current = history.find((attempt) => attempt.date === dateKey && attempt.group === group);
@@ -158,7 +162,7 @@ export const DailyMcqProvider = ({ children }: PropsWithChildren) => {
   const submitDaily = useCallback(async (group: CaGroup) => {
     const current = history.find((attempt) => attempt.date === dateKey && attempt.group === group);
     if (!current || current.completedAt) return current || null;
-    const questions = current.questionIds.map((id) => dailyMcqBank.find((question) => question.id === id)).filter(Boolean) as DailyMcqQuestion[];
+    const questions = current.questionIds.map((id) => mcqBank.find((question) => question.id === id)).filter(Boolean) as DailyMcqQuestion[];
     const score = questions.reduce((total, question) => total + (current.answers[question.id] === question.answer ? 1 : 0), 0);
     const completedAt = Date.now();
     const updated: DailyMcqAttempt = {
@@ -170,7 +174,7 @@ export const DailyMcqProvider = ({ children }: PropsWithChildren) => {
     };
     await persist(history.map((attempt) => attempt.date === dateKey && attempt.group === group ? updated : attempt));
     return updated;
-  }, [dateKey, history, persist]);
+  }, [dateKey, history, mcqBank, persist]);
 
   const value = useMemo<DailyMcqValue>(() => ({
     hydrated,

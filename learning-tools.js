@@ -1,9 +1,9 @@
 (function () {
   "use strict";
 
-  const learningData = window.UMP_LEARNING_DATA || { questions: [], manifest: {}, revision: "unknown" };
-  const questions = learningData.questions || [];
-  const QUESTION_BY_ID = new Map(questions.map((question) => [question.id, question]));
+  let learningData = window.UMP_LEARNING_DATA || { questions: [], manifest: {}, revision: "unknown" };
+  let questions = Array.isArray(learningData.questions) ? learningData.questions : [];
+  let QUESTION_BY_ID = new Map(questions.map((question) => [question.id, question]));
   const SUBJECTS = ["Accounts", "Law", "Taxation", "Costing", "Audit", "FM", "SM", "Revision", "Mock Test"];
   const GROUPS = ["Group I", "Group II"];
   const DAILY_SECONDS = 10 * 60;
@@ -677,7 +677,47 @@
     renderMcqCurrent();
   }
 
+  function replaceLearningData(nextData) {
+    if (!nextData || !Array.isArray(nextData.questions)) return false;
+    learningData = nextData;
+    questions = nextData.questions;
+    QUESTION_BY_ID = new Map(questions.map((question) => [question.id, question]));
+    mcqUi.dailyIndex = 0;
+    mcqUi.practiceIndex = 0;
+    mcqUi.practiceResult = null;
+    mcqUi.practiceConfig = null;
+    if (activeFeature === "mcq" && activeRoot) renderMcqCurrent();
+    return true;
+  }
+
+  function renderPublishedBankState() {
+    setClockUpdater(null);
+    const status = window.UMP_LIVE_BANK_STATUS || {};
+    const loading = status.state === "loading";
+    const failed = status.state === "error";
+    const title = loading
+      ? "Loading published MCQs…"
+      : failed
+        ? "Published MCQs could not be loaded"
+        : "No MCQs are published yet";
+    const message = loading
+      ? "The content server may take up to a minute to wake up. This page will update automatically."
+      : failed
+        ? (status.error || "Check your connection and try again.")
+        : "Once your mentor publishes a chapter, its questions will appear here automatically.";
+    activeRoot.innerHTML = `<div class="lt-shell lt-mcq-shell" data-testid="published-bank-state">${emptyState(loading ? "rotate" : failed ? "triangle-exclamation" : "book-open", title, message)}<button class="lt-wide-button secondary" data-live-bank-retry>${icon("rotate-right")} ${loading ? "Check again" : "Retry published bank"}</button></div>`;
+    const retry = activeRoot.querySelector("[data-live-bank-retry]");
+    if (retry) retry.onclick = () => {
+      retry.disabled = true;
+      if (window.UMP_REFRESH_LIVE_BANK) window.UMP_REFRESH_LIVE_BANK();
+    };
+  }
+
   function renderMcqCurrent() {
+    if (!questions.length) {
+      renderPublishedBankState();
+      return;
+    }
     if (mcqUi.mode === "practice") renderPractice();
     else renderDaily();
   }
@@ -1087,6 +1127,7 @@
   window.UMP_LEARNING_TOOLS = {
     renderFocus,
     renderMCQ,
+    replaceLearningData,
     getPerformanceAttempts,
     cleanup,
     parity: {
@@ -1105,4 +1146,12 @@
       manifest: () => learningData.manifest,
     },
   };
+
+  // Status-only changes (loading → error/stale) also need to refresh the empty
+  // bank panel even when the question array itself did not change.
+  window.addEventListener?.("ump:live-bank-change", () => {
+    if (activeFeature === "mcq" && activeRoot && !questions.length) {
+      renderPublishedBankState();
+    }
+  });
 })();

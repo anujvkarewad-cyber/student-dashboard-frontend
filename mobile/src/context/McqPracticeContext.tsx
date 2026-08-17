@@ -1,9 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { dailyMcqBank } from '../data/dailyMcqBank';
-import { EnrichedMcqQuestion, McqDifficulty, validateMcqChapterMappings } from '../data/mcqMetadata';
+import { EnrichedMcqQuestion, McqDifficulty } from '../data/mcqMetadata';
 import { CaGroup, subjectGroup } from '../utils/caGroups';
 import { useAuth } from './AuthContext';
+import { useMcqBank } from './McqBankContext';
 
 export type PracticeGroup = CaGroup | 'Combined';
 export type PracticeMode = 'Mixed' | 'Normal' | 'Case Study';
@@ -45,9 +45,7 @@ type McqPracticeValue = {
 };
 
 const McqPracticeContext = createContext<McqPracticeValue | undefined>(undefined);
-const MCQ_BANK_REVISION = 'icai-may-2026-v1';
 const storageKey = (studentId: string) => `ump_mcq_practice_${studentId}`;
-const allQuestions = validateMcqChapterMappings(dailyMcqBank);
 
 const hash = (value: string) => {
   let result = 0;
@@ -70,7 +68,7 @@ const shuffled = <T,>(items: T[], seedValue: number) => {
   return result;
 };
 
-const filterQuestions = (config: PracticeConfig) => allQuestions.filter((question) => {
+const filterQuestions = (allQuestions: EnrichedMcqQuestion[], config: PracticeConfig) => allQuestions.filter((question) => {
   const group = subjectGroup(question.subject);
   if (config.group !== 'Combined' && group !== config.group) return false;
   if (config.subject !== 'All Subjects' && question.subject !== config.subject) return false;
@@ -83,6 +81,7 @@ const filterQuestions = (config: PracticeConfig) => allQuestions.filter((questio
 
 export const McqPracticeProvider = ({ children }: PropsWithChildren) => {
   const { student } = useAuth();
+  const { hydrated: bankHydrated, revision: bankRevision, questions: allQuestions } = useMcqBank();
   const [history, setHistory] = useState<McqPracticeSession[]>([]);
   const [hydrated, setHydrated] = useState(false);
   const activeSession = history.find((session) => !session.completedAt);
@@ -92,15 +91,17 @@ export const McqPracticeProvider = ({ children }: PropsWithChildren) => {
     setHydrated(false);
     if (!student) {
       setHistory([]);
+      setHydrated(true);
       return;
     }
+    if (!bankHydrated) return;
     AsyncStorage.getItem(storageKey(student.studentId)).then(async (saved) => {
       if (!mounted) return;
       try {
         const parsed = saved ? JSON.parse(saved) as McqPracticeSession[] : [];
         // Completed legacy sessions can still contribute to aggregate history,
         // but an unfinished session must never resume with changed question text.
-        const migrated = parsed.filter((session) => session.bankRevision === MCQ_BANK_REVISION || Boolean(session.completedAt));
+        const migrated = parsed.filter((session) => session.bankRevision === bankRevision || Boolean(session.completedAt));
         if (migrated.length !== parsed.length) await AsyncStorage.setItem(storageKey(student.studentId), JSON.stringify(migrated));
         if (!mounted) return;
         setHistory(migrated);
@@ -108,27 +109,29 @@ export const McqPracticeProvider = ({ children }: PropsWithChildren) => {
       if (mounted) setHydrated(true);
     });
     return () => { mounted = false; };
-  }, [student]);
+  }, [bankHydrated, bankRevision, student]);
 
   const persist = useCallback(async (next: McqPracticeSession[]) => {
     setHistory(next);
     if (student) await AsyncStorage.setItem(storageKey(student.studentId), JSON.stringify(next.slice(0, 150)));
   }, [student]);
 
-  const availableQuestions = useCallback((config: PracticeConfig) => filterQuestions(config), []);
+  const availableQuestions = useCallback((config: PracticeConfig) => filterQuestions(allQuestions, config), [allQuestions]);
   const questionsForSession = useCallback((session: McqPracticeSession) => session.questionIds
     .map((id) => allQuestions.find((question) => question.id === id))
-    .filter(Boolean) as EnrichedMcqQuestion[], []);
+    .filter(Boolean) as EnrichedMcqQuestion[], [allQuestions]);
 
   const startPractice = useCallback(async (config: PracticeConfig, questionIds?: string[]) => {
     if (activeSession) return activeSession;
-    const pool = questionIds?.length ? allQuestions.filter((question) => questionIds.includes(question.id)) : filterQuestions(config);
-    if (!pool.length) throw new Error('No questions match these filters. Try Mixed difficulty or All Chapters.');
+    const pool = questionIds?.length
+      ? allQuestions.filter((question) => questionIds.includes(question.id))
+      : filterQuestions(allQuestions, config);
+    if (!pool.length) throw new Error('No mentor-published questions match these filters.');
     const now = Date.now();
     const selected = shuffled(pool, hash(`${student?.studentId}:${now}:${JSON.stringify(config)}`)).slice(0, questionIds?.length || Math.min(config.requestedCount, pool.length));
     const session: McqPracticeSession = {
       id: `practice:${now}`,
-      bankRevision: MCQ_BANK_REVISION,
+      bankRevision,
       config,
       questionIds: selected.map((question) => question.id),
       answers: {},
@@ -136,7 +139,7 @@ export const McqPracticeProvider = ({ children }: PropsWithChildren) => {
     };
     await persist([session, ...history]);
     return session;
-  }, [activeSession, history, persist, student?.studentId]);
+  }, [activeSession, allQuestions, bankRevision, history, persist, student?.studentId]);
 
   const answerQuestion = useCallback(async (questionId: string, option: number) => {
     if (!activeSession) return;
@@ -175,7 +178,7 @@ export const McqPracticeProvider = ({ children }: PropsWithChildren) => {
     answerQuestion,
     submitPractice,
     abandonPractice,
-  }), [abandonPractice, activeSession, answerQuestion, availableQuestions, history, hydrated, questionsForSession, startPractice, submitPractice]);
+  }), [abandonPractice, activeSession, allQuestions, answerQuestion, availableQuestions, history, hydrated, questionsForSession, startPractice, submitPractice]);
 
   return <McqPracticeContext.Provider value={value}>{children}</McqPracticeContext.Provider>;
 };

@@ -168,7 +168,7 @@ export const McqPracticeScreen = ({ navigation }: Props) => {
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <LinearGradient colors={['#172F61', '#3C58C5', '#7459D4']} style={styles.hero}><View style={styles.heroIcon}><Ionicons name="infinite" size={30} color={colors.primary} /></View><Text style={styles.heroEyebrow}>ICAI-PATTERN PRACTICE</Text><Text style={styles.heroTitle}>Unlimited MCQ Practice Zone</Text><Text style={styles.heroText}>Build a custom session by group, subject, chapter, type and difficulty. Practice sessions never change the Daily Challenge streak.</Text><View style={styles.heroStats}><Text style={styles.heroStat}>{completedCount} sessions</Text><Text style={styles.heroStat}>{average}% avg</Text><Text style={styles.heroStat}>{allQuestions.length} question pool</Text></View></LinearGradient>
 
-        <View style={styles.sourceBanner}><Ionicons name="shield-checkmark-outline" size={19} color="#9A6508" /><Text style={styles.sourceText}>Official chapter taxonomy: ICAI BoS May 2026 modules · Target attempt: {icaiContentManifest.targetAttempt}. Questions are original drafts; mentor approval and amendment review remain required.</Text></View>
+        <View style={styles.sourceBanner}><Ionicons name="shield-checkmark-outline" size={19} color="#9A6508" /><Text style={styles.sourceText}>Official chapter taxonomy: ICAI BoS May 2026 modules · Target attempt: {icaiContentManifest.targetAttempt}. Only questions in the current mentor-published bank are available.</Text></View>
 
         <SectionHeader title="Build your practice" />
         <Card style={styles.setupCard}>
