@@ -1,0 +1,8 @@
+{
+  "name": "student-dashboard-frontend",
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "googleapis": "^128.0.0"
+  }
+}
