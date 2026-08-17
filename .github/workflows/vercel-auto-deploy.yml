@@ -1,14 +1,27 @@
 name: Auto Deploy to Vercel
 on:
-  push: { branches: [main] }
+  push:
+    branches:
+      - main
   workflow_dispatch:
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - env: { VERCEL_DEPLOY_HOOK_URL: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }} }
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Trigger Vercel Deploy Hook
+        env:
+          VERCEL_DEPLOY_HOOK_URL: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
         run: |
-          if [ -z "$VERCEL_DEPLOY_HOOK_URL" ]; then echo "Native Vercel integration will handle deploy"; exit 0; fi
+          if [ -z "$VERCEL_DEPLOY_HOOK_URL" ]; then
+            echo "No deploy hook secret, skipping. Native Vercel integration will handle deploy."
+            exit 0
+          fi
+          echo "Triggering Vercel Deploy Hook..."
           curl -X POST "$VERCEL_DEPLOY_HOOK_URL"
-      - run: echo "Vercel auto-deploy check done - connect repo in Vercel Dashboard > Settings > Git if needed"
+          echo "Hook triggered"
+      - name: Native integration info
+        run: |
+          echo "If no secrets set, Vercel native GitHub integration will handle auto-deploy."
+          echo "Connect repo in Vercel Dashboard > Settings > Git if not already."
