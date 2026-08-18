@@ -6,7 +6,7 @@
 (function () {
   "use strict";
 
-  const DEFAULT_API = "https://ujjwal-pathak-project.onrender.com";
+  const DEFAULT_API = "https://ujjwal-pathak-mentor-api.onrender.com";
   const API = (window.MENTOR_API_URL || DEFAULT_API).replace(/\/$/, "");
   const pending = new Map();
   let flushTimer = null;
