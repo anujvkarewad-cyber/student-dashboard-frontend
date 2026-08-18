@@ -8,7 +8,7 @@
 (function () {
   "use strict";
 
-  const DEFAULT_MENTOR_API = "https://ujjwal-pathak-project.onrender.com";
+    const DEFAULT_MENTOR_API = "https://ujjwal-pathak-mentor-api.onrender.com";
   const MENTOR_API = (
     window.MENTOR_API_URL ||
     localStorage.getItem("ump_mentor_api_url") ||
