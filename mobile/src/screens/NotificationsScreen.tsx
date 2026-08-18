@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React, { useMemo, useState } from 'react';
-import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { Alert, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { EmptyState } from '../components/ui';
 import { useData } from '../context/DataContext';
@@ -37,6 +37,13 @@ export const NotificationsScreen = ({ navigation }: Props) => {
     else navigation.navigate('Main', { screen: 'Home' });
   };
 
+  const confirmClearAll = () => {
+    Alert.alert('Clear all notifications?', 'They will not return after refresh.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Clear All', style: 'destructive', onPress: () => clearAll() },
+    ]);
+  };
+
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>
       <FlatList
@@ -51,7 +58,7 @@ export const NotificationsScreen = ({ navigation }: Props) => {
               <View style={styles.summaryIcon}><Ionicons name="notifications" size={25} color={colors.primary} /></View>
               <View style={styles.summaryBody}><Text style={styles.summaryValue}>{unreadCount ? `${unreadCount} unread` : 'You’re all caught up'}</Text><Text style={styles.summaryText}>Mentor updates, reports and new material</Text></View>
               {unreadCount ? <Pressable onPress={() => markAllRead()} style={styles.markAll}><Text style={styles.markAllText}>Mark all read</Text></Pressable> : null}
-              <Pressable onPress={() => { if (confirm('Clear all notifications? They will not return after refresh.')) clearAll(); }} style={[styles.markAll, { backgroundColor: '#FEE2E2' }]}><Text style={[styles.markAllText, { color: '#DC2626' }]}>Clear All</Text></Pressable>
+              <Pressable onPress={confirmClearAll} style={[styles.markAll, { backgroundColor: '#FEE2E2' }]}><Text style={[styles.markAllText, { color: '#DC2626' }]}>Clear All</Text></Pressable>
             </View>
             <View style={styles.filters}>
               <Pressable onPress={() => setFilter('all')} style={[styles.filter, filter === 'all' && styles.filterActive]}><Text style={[styles.filterText, filter === 'all' && styles.filterTextActive]}>All</Text></Pressable>

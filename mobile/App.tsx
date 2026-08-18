@@ -10,6 +10,7 @@ import { FocusTimerProvider } from './src/context/FocusTimerContext';
 import { McqBankProvider } from './src/context/McqBankContext';
 import { McqPracticeProvider } from './src/context/McqPracticeContext';
 import { NotificationsProvider } from './src/context/NotificationsContext';
+import { ProgressSyncProvider } from './src/context/ProgressSyncContext';
 import { StudyReceiptsProvider } from './src/context/StudyReceiptContext';
 import { AppNavigator } from './src/navigation/AppNavigator';
 
@@ -25,10 +26,12 @@ export default function App() {
                   <McqBankProvider>
                     <DailyMcqProvider>
                       <McqPracticeProvider>
-                        <NotificationsProvider>
-                          <StatusBar style="dark" />
-                          <AppNavigator />
-                        </NotificationsProvider>
+                        <ProgressSyncProvider>
+                          <NotificationsProvider>
+                            <StatusBar style="dark" />
+                            <AppNavigator />
+                          </NotificationsProvider>
+                        </ProgressSyncProvider>
                       </McqPracticeProvider>
                     </DailyMcqProvider>
                   </McqBankProvider>

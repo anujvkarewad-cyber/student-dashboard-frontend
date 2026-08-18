@@ -1,12 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-import React from 'react';
+import React, { useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Card, InitialsAvatar, PrimaryButton } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import { useNotifications } from '../context/NotificationsContext';
+import { useProgressSync } from '../context/ProgressSyncContext';
 import { colors, radius, spacing } from '../theme';
 
 const InfoRow = ({ icon, label, value }: { icon: keyof typeof Ionicons.glyphMap; label: string; value?: string }) => (
@@ -29,7 +30,19 @@ export const ProfileScreen = () => {
   const { student, logout, backendMode } = useAuth();
   const { data } = useData();
   const { pushStatus, enablePush } = useNotifications();
+  const { sharing: progressSharing, setSharing: setProgressSharing } = useProgressSync();
+  const [progressBusy, setProgressBusy] = useState(false);
   const pushEnabled = pushStatus === 'enabled';
+
+  const confirmSharingToggle = (on: boolean) => {
+    const body = on
+      ? 'Mentor Ujjwal Pathak will see chapter-level MCQ summaries (no raw answers) to guide your progress.'
+      : 'Your MCQ progress will stop being shared with your mentor. Existing summaries may remain.';
+    Alert.alert(on ? 'Share progress with mentor?' : 'Stop sharing progress?', body, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: on ? 'Share' : 'Stop', onPress: () => { setProgressBusy(true); setProgressSharing(on).finally(() => setProgressBusy(false)); } },
+    ]);
+  };
   const pushMessage = pushEnabled ? 'Background alerts are active on this device.'
     : pushStatus === 'denied' ? 'Permission is blocked. Enable notifications from Android app settings.'
       : pushStatus === 'configuration-required' ? 'Firebase Android configuration is required in this build.'
@@ -73,6 +86,23 @@ export const ProfileScreen = () => {
 
         {backendMode === 'live' ? <View style={[styles.pushCard, pushEnabled && styles.pushCardEnabled]}><View style={[styles.pushIcon, pushEnabled && styles.pushIconEnabled]}><Ionicons name={pushEnabled ? 'notifications' : 'notifications-outline'} size={20} color={pushEnabled ? colors.success : colors.primary} /></View><View style={{ flex: 1 }}><Text style={[styles.pushTitle, pushEnabled && { color: colors.success }]}>{pushEnabled ? 'Live notifications enabled' : 'Live notifications'}</Text><Text style={styles.pushText}>{pushMessage}</Text></View>{!pushEnabled && pushStatus !== 'requesting' ? <Pressable onPress={() => enablePush()} style={styles.pushButton}><Text style={styles.pushButtonText}>Enable</Text></Pressable> : null}</View> : null}
 
+        <View style={[styles.shareCard, progressSharing && styles.shareCardEnabled]}>
+          <View style={[styles.pushIcon, progressSharing && { backgroundColor: '#FFFFFF' }]}>
+            <Ionicons name={progressSharing ? 'shield-checkmark' : 'shield-outline'} size={20} color={progressSharing ? colors.success : colors.primary} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.shareTitle, progressSharing && { color: colors.success }]}>{progressSharing ? 'Sharing MCQ progress with mentor' : 'Share MCQ progress with mentor'}</Text>
+            <Text style={styles.shareText}>
+              {progressSharing
+                ? 'Your chapter-level summaries sync with your mentor. Only summaries leave this device — never raw answers.'
+                : 'Turn this on so Ujjwal Pathak can see your chapter mastery and guide you.'}
+            </Text>
+          </View>
+          <Pressable disabled={progressBusy} onPress={() => confirmSharingToggle(!progressSharing)} style={[styles.pushButton, progressSharing && styles.shareButtonOff]}>
+            <Text style={styles.pushButtonText}>{progressBusy ? 'Saving…' : progressSharing ? 'Turn off' : 'Turn on'}</Text>
+          </Pressable>
+        </View>
+
         <Text style={styles.sectionTitle}>Student details</Text>
         <Card style={styles.infoCard}>
           <InfoRow icon="mail-outline" label="Email" value={student?.email} />
@@ -101,7 +131,7 @@ export const ProfileScreen = () => {
         </Card>
 
         <PrimaryButton label="Sign out" icon="log-out-outline" variant="secondary" onPress={confirmLogout} style={styles.logout} />
-        <Text style={styles.version}>Ujjwal Pathak Mentorship · Mobile v1.10.0</Text>
+        <Text style={styles.version}>Ujjwal Pathak Mentorship · Mobile v1.10.2</Text>
       </ScrollView>
     </SafeAreaView>
   );
@@ -141,6 +171,11 @@ const styles = StyleSheet.create({
   pushText: { color: colors.inkSoft, fontSize: 8, lineHeight: 13, marginTop: 2 },
   pushButton: { borderRadius: radius.pill, backgroundColor: colors.primary, paddingHorizontal: 11, paddingVertical: 8 },
   pushButtonText: { color: '#FFFFFF', fontSize: 8, fontWeight: '900' },
+  shareButtonOff: { backgroundColor: '#DC2626' },
+  shareCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, backgroundColor: colors.primarySoft, borderRadius: radius.md, borderWidth: 1, borderColor: '#D7E0FF', padding: spacing.md, marginTop: spacing.md },
+  shareCardEnabled: { backgroundColor: colors.tealSoft, borderColor: '#BFE5DB' },
+  shareTitle: { color: colors.primary, fontSize: 11, fontWeight: '900' },
+  shareText: { color: colors.inkSoft, fontSize: 8, lineHeight: 13, marginTop: 2 },
   sectionTitle: { color: colors.ink, fontSize: 17, fontWeight: '900', marginTop: spacing.xxl, marginBottom: spacing.md },
   infoCard: { paddingVertical: 3, shadowOpacity: 0.03 },
   infoRow: { flexDirection: 'row', alignItems: 'center', minHeight: 63, gap: spacing.md },
