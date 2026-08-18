@@ -638,6 +638,7 @@
     const saved = history.slice(0, 180);
     saveJson(dailyKey(), saved);
     if (syncCompleted && window.UMP_MCQ_CLOUD) window.UMP_MCQ_CLOUD.queue(saved, []);
+    if (syncCompleted && window.UMP_PROGRESS_SHARE) window.UMP_PROGRESS_SHARE.syncNow();
   }
 
   function attemptForGroup(group) {
