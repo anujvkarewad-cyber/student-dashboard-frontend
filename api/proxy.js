@@ -17,7 +17,10 @@ export default async function handler(req, res) {
     // The mobile app's in-app updater polls this. Values come from
     // Settings → Environment Variables (APP_ANDROID_*). This keeps the
     // update channel on the Vercel + Git backend combo.
-    if (req.body?.action === "app.version") {
+    // GET /api/proxy?action=app.version also works — open it in a browser
+    // to verify what the updater receives.
+    const updateAction = req.body?.action || req.query?.action;
+    if (updateAction === "app.version") {
       return res.status(200).json({
         result: {
           version: process.env.APP_ANDROID_VERSION || "1.10.2",
