@@ -178,45 +178,57 @@ jobs:
         working-directory: mobile/android
         run: |
           chmod +x gradlew
+          # Wrap node: every gradle-spawned node call logs its exact args + stderr
+          export NODE_REAL="$(readlink -f "$(command -v node)")"
+          echo "real node: $NODE_REAL ($($NODE_REAL -v))"
+          mkdir -p /tmp/nodewrap
+          cat > /tmp/nodewrap/node <<'WRAP'
+          #!/bin/bash
+          {
+            echo "=== node call: cwd=$(pwd)"
+            printf 'ARGS:'
+            printf ' %q' "$@"
+            echo
+          } >> /tmp/node-calls.log
+          out=$("$NODE_REAL" "$@" 2>/tmp/node-err.tmp)
+          code=$?
+          if [ "$code" -ne 0 ]; then
+            {
+              echo ">>> FAILED exit=$code"
+              echo ">>> STDERR:"
+              cat /tmp/node-err.tmp
+            } >> /tmp/node-calls.log
+          fi
+          printf '%s' "$out"
+          exit $code
+          WRAP
+          chmod +x /tmp/nodewrap/node
+          export PATH="/tmp/nodewrap:$PATH"
           set +e
           ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,armeabi-v7a --no-daemon --stacktrace > /tmp/gradle.log 2>&1
           STATUS=$?
           set -e
           if [ "$STATUS" -ne 0 ]; then
-            # gradle logs contain \r progress lines — strip them so greps work
             tr -d '\r' < /tmp/gradle.log | grep -v "^$" > /tmp/gclean.log
-            echo "===== ENV SNAPSHOT ====="
-            node -v; ls -la app/upm-release-key.jks 2>/dev/null || echo "keystore missing!"
-            grep -c "^MYAPP_" gradle.properties || true
-            echo "===== WHAT WENT WRONG (first 40 lines) ====="
-            awk '/What went wrong:/{f=1} f{print; c++} c>40{exit}' /tmp/gclean.log
-            FLINE=$(grep -n "FAILED" /tmp/gclean.log | grep -v "BUILD FAILED" | head -1 | cut -d: -f1)
-            echo "===== AROUND FIRST FAILED TASK (line $FLINE) ====="
-            if [ -n "$FLINE" ]; then
-              START=$((FLINE-40)); [ "$START" -lt 1 ] && START=1
-              sed -n "${START},$((FLINE+3))p" /tmp/gclean.log
-            else
-              echo "(no FAILED task line found)"
-            fi
-            echo "===== FULL LOG TAIL 100 ====="
-            tail -100 /tmp/gclean.log
-            # Everything above also goes to the run's Summary page
             {
               echo "## Gradle failure report"
               echo '```'
-              awk '/What went wrong:/{f=1} f{print; c++} c>40{exit}' /tmp/gclean.log
-              echo "---"
-              if [ -n "$FLINE" ]; then
-                START=$((FLINE-40)); [ "$START" -lt 1 ] && START=1
-                sed -n "${START},$((FLINE+3))p" /tmp/gclean.log
-              fi
-              echo "---"
-              tail -100 /tmp/gclean.log
+              echo "node: $($NODE_REAL -v) at $NODE_REAL"
+              echo ""
+              echo "--- node calls trace (KEY SECTION) ---"
+              cat /tmp/node-calls.log 2>/dev/null || echo "(none logged)"
+              echo ""
+              echo "--- what went wrong ---"
+              awk '/What went wrong:/{f=1} f{print; c++} c>25{exit}' /tmp/gclean.log
+              echo ""
+              echo "--- gradle log tail 60 ---"
+              tail -60 /tmp/gclean.log
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
-            # annotations (best 10)
-            awk '/What went wrong:/{f=1} f{print; c++} c>8{exit}' /tmp/gclean.log | while IFS= read -r line; do
-              echo "::error::G3: $(echo "$line" | cut -c1-200)"
+            echo "NODE CALLS TRACE:"
+            cat /tmp/node-calls.log 2>/dev/null
+            awk '/What went wrong:/{f=1} f{print; c++} c>6{exit}' /tmp/gclean.log | while IFS= read -r line; do
+              echo "::error::G4: $(echo "$line" | cut -c1-200)"
             done
             exit 1
           fi
