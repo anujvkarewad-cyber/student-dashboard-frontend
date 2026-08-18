@@ -183,12 +183,21 @@ jobs:
           STATUS=$?
           set -e
           if [ "$STATUS" -ne 0 ]; then
-            echo "===== GRADLE FAILURE — last 80 lines ====="
-            tail -80 /tmp/gradle.log
-            echo "===== Key error lines (also sent as annotations) ====="
-            grep -E "Caused by:|What went wrong|Execution failed|FAILED|error|Error|ENOENT|Cannot find|Unsupported|Required" /tmp/gradle.log | tail -40 | head -10 | while IFS= read -r line; do
+            echo "===== GRADLE FAILURE — last 120 lines ====="
+            tail -120 /tmp/gradle.log
+            # 1) The gradle failure summary block
+            awk '/What went wrong:/{f=1} f{print; c++} c>10{exit}' /tmp/gradle.log > /tmp/key1.txt
+            # 2) Output of the failing task itself (node stderr lands just before its FAILED line)
+            FLINE=$(grep -n "FAILED$" /tmp/gradle.log | head -1 | cut -d: -f1)
+            if [ -n "$FLINE" ]; then
+              START=$((FLINE-30)); [ "$START" -lt 1 ] && START=1
+              sed -n "${START},${FLINE}p" /tmp/gradle.log | grep -v "^$" | tail -14 > /tmp/key2.txt
+            fi
+            echo "===== SUMMARY BLOCK ====="; cat /tmp/key1.txt
+            echo "===== FAILING TASK OUTPUT ====="; cat /tmp/key2.txt 2>/dev/null
+            { cat /tmp/key1.txt; echo ---; cat /tmp/key2.txt 2>/dev/null; } | grep -v "^$" | head -10 | while IFS= read -r line; do
               msg=$(echo "$line" | tr -d '\r' | cut -c1-200)
-              echo "::error::GRADLE: $msg"
+              echo "::error::G2: $msg"
             done
             exit 1
           fi
