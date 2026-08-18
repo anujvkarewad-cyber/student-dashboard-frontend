@@ -13,6 +13,24 @@ export const maxDuration = 60;
 export default async function handler(req, res) {
   try {
 
+    // ── app.version: served directly from Vercel env vars (no Apps Script) ──
+    // The mobile app's in-app updater polls this. Values come from
+    // Settings → Environment Variables (APP_ANDROID_*). This keeps the
+    // update channel on the Vercel + Git backend combo.
+    if (req.body?.action === "app.version") {
+      return res.status(200).json({
+        result: {
+          version: process.env.APP_ANDROID_VERSION || "1.10.2",
+          versionCode: Number(process.env.APP_ANDROID_VERSION_CODE || 16),
+          minimumVersionCode: Number(process.env.APP_ANDROID_MIN_VERSION_CODE || 15),
+          apkUrl: process.env.APP_ANDROID_APK_URL || "",
+          releaseNotes: process.env.APP_ANDROID_RELEASE_NOTES || "",
+          forceUpdate: String(process.env.APP_ANDROID_FORCE_UPDATE || "false").toLowerCase() === "true",
+          publishedAt: process.env.APP_ANDROID_PUBLISHED_AT || new Date().toISOString().slice(0, 10)
+        }
+      });
+    }
+
     if (!process.env.APPS_SCRIPT_URL) {
       console.error("APPS_SCRIPT_URL env var is not set on this deployment");
       return res.status(500).json({
@@ -44,21 +62,21 @@ export default async function handler(req, res) {
     try {
       data = JSON.parse(rawText);
     } catch (parseErr) {
-  const action = req.body?.action || "unknown";
-  const preview = rawText.slice(0, 500).replace(/\s+/g, " ");
+      const action = req.body?.action || "unknown";
+      const preview = rawText.slice(0, 500).replace(/\s+/g, " ");
 
-  console.error(
-    `[${action}] Apps Script did not return valid JSON:`,
-    preview
-  );
+      console.error(
+        `[${action}] Apps Script did not return valid JSON:`,
+        preview
+      );
 
-  return res.status(502).json({
-    error: `[${action}] Apps Script returned a non-JSON response.`,
-    ...(process.env.NODE_ENV !== "production"
-      ? { upstreamPreview: preview }
-      : {})
-  });
-}
+      return res.status(502).json({
+        error: `[${action}] Apps Script returned a non-JSON response.`,
+        ...(process.env.NODE_ENV !== "production"
+          ? { upstreamPreview: preview }
+          : {})
+      });
+    }
 
     return res.status(200).json(data);
 
