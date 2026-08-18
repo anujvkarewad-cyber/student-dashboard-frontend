@@ -178,7 +178,20 @@ jobs:
         working-directory: mobile/android
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,armeabi-v7a --no-daemon
+          set +e
+          ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,armeabi-v7a --no-daemon --stacktrace > /tmp/gradle.log 2>&1
+          STATUS=$?
+          set -e
+          if [ "$STATUS" -ne 0 ]; then
+            echo "===== GRADLE FAILURE — last 80 lines ====="
+            tail -80 /tmp/gradle.log
+            echo "===== Key error lines (also sent as annotations) ====="
+            grep -E "Caused by:|What went wrong|Execution failed|FAILED|error|Error|ENOENT|Cannot find|Unsupported|Required" /tmp/gradle.log | tail -40 | head -10 | while IFS= read -r line; do
+              msg=$(echo "$line" | tr -d '\r' | cut -c1-200)
+              echo "::error::GRADLE: $msg"
+            done
+            exit 1
+          fi
 
       - name: Verify APK is signed with OUR keystore (not debug)
         working-directory: mobile/android
