@@ -183,21 +183,40 @@ jobs:
           STATUS=$?
           set -e
           if [ "$STATUS" -ne 0 ]; then
-            echo "===== GRADLE FAILURE — last 120 lines ====="
-            tail -120 /tmp/gradle.log
-            # 1) The gradle failure summary block
-            awk '/What went wrong:/{f=1} f{print; c++} c>10{exit}' /tmp/gradle.log > /tmp/key1.txt
-            # 2) Output of the failing task itself (node stderr lands just before its FAILED line)
-            FLINE=$(grep -n "FAILED$" /tmp/gradle.log | head -1 | cut -d: -f1)
+            # gradle logs contain \r progress lines — strip them so greps work
+            tr -d '\r' < /tmp/gradle.log | grep -v "^$" > /tmp/gclean.log
+            echo "===== ENV SNAPSHOT ====="
+            node -v; ls -la app/upm-release-key.jks 2>/dev/null || echo "keystore missing!"
+            grep -c "^MYAPP_" gradle.properties || true
+            echo "===== WHAT WENT WRONG (first 40 lines) ====="
+            awk '/What went wrong:/{f=1} f{print; c++} c>40{exit}' /tmp/gclean.log
+            FLINE=$(grep -n "FAILED" /tmp/gclean.log | grep -v "BUILD FAILED" | head -1 | cut -d: -f1)
+            echo "===== AROUND FIRST FAILED TASK (line $FLINE) ====="
             if [ -n "$FLINE" ]; then
-              START=$((FLINE-30)); [ "$START" -lt 1 ] && START=1
-              sed -n "${START},${FLINE}p" /tmp/gradle.log | grep -v "^$" | tail -14 > /tmp/key2.txt
+              START=$((FLINE-40)); [ "$START" -lt 1 ] && START=1
+              sed -n "${START},$((FLINE+3))p" /tmp/gclean.log
+            else
+              echo "(no FAILED task line found)"
             fi
-            echo "===== SUMMARY BLOCK ====="; cat /tmp/key1.txt
-            echo "===== FAILING TASK OUTPUT ====="; cat /tmp/key2.txt 2>/dev/null
-            { cat /tmp/key1.txt; echo ---; cat /tmp/key2.txt 2>/dev/null; } | grep -v "^$" | head -10 | while IFS= read -r line; do
-              msg=$(echo "$line" | tr -d '\r' | cut -c1-200)
-              echo "::error::G2: $msg"
+            echo "===== FULL LOG TAIL 100 ====="
+            tail -100 /tmp/gclean.log
+            # Everything above also goes to the run's Summary page
+            {
+              echo "## Gradle failure report"
+              echo '```'
+              awk '/What went wrong:/{f=1} f{print; c++} c>40{exit}' /tmp/gclean.log
+              echo "---"
+              if [ -n "$FLINE" ]; then
+                START=$((FLINE-40)); [ "$START" -lt 1 ] && START=1
+                sed -n "${START},$((FLINE+3))p" /tmp/gclean.log
+              fi
+              echo "---"
+              tail -100 /tmp/gclean.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            # annotations (best 10)
+            awk '/What went wrong:/{f=1} f{print; c++} c>8{exit}' /tmp/gclean.log | while IFS= read -r line; do
+              echo "::error::G3: $(echo "$line" | cut -c1-200)"
             done
             exit 1
           fi
