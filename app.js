@@ -1067,6 +1067,7 @@ const APP_VERSION = "2.6.0";
     if (btn) {
       btn.addEventListener("click", updatePassword);
     }
+     if (window.UMP_PROGRESS_SHARE) window.UMP_PROGRESS_SHARE.paint();
 
     // --- Push notification enable section inside profile card ---
     try {
