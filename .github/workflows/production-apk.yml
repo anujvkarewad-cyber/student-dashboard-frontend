@@ -121,6 +121,11 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           mv ../upm-release-key.jks app/upm-release-key.jks
+          # CRITICAL: gradle.properties from prebuild has NO trailing newline.
+          # Appending without this guard merges our first line into the last
+          # generated property (expo.inlineModules.watchedDirectories) and
+          # crashes expo autolinking's JSON.parse at projectsEvaluated.
+          [ -n "$(tail -c 1 gradle.properties)" ] && printf '\n' >> gradle.properties
           cat >> gradle.properties <<PROPS
           MYAPP_RELEASE_STORE_FILE=upm-release-key.jks
           MYAPP_RELEASE_KEY_ALIAS=$KEY_ALIAS
@@ -178,60 +183,7 @@ jobs:
         working-directory: mobile/android
         run: |
           chmod +x gradlew
-          # Wrap node: every gradle-spawned node call logs its exact args + stderr
-          export NODE_REAL="$(readlink -f "$(command -v node)")"
-          echo "real node: $NODE_REAL ($($NODE_REAL -v))"
-          mkdir -p /tmp/nodewrap
-          cat > /tmp/nodewrap/node <<'WRAP'
-          #!/bin/bash
-          {
-            echo "=== node call: cwd=$(pwd)"
-            printf 'ARGS:'
-            printf ' %q' "$@"
-            echo
-          } >> /tmp/node-calls.log
-          out=$("$NODE_REAL" "$@" 2>/tmp/node-err.tmp)
-          code=$?
-          if [ "$code" -ne 0 ]; then
-            {
-              echo ">>> FAILED exit=$code"
-              echo ">>> STDERR:"
-              cat /tmp/node-err.tmp
-            } >> /tmp/node-calls.log
-          fi
-          printf '%s' "$out"
-          exit $code
-          WRAP
-          chmod +x /tmp/nodewrap/node
-          export PATH="/tmp/nodewrap:$PATH"
-          set +e
-          ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,armeabi-v7a --no-daemon --stacktrace > /tmp/gradle.log 2>&1
-          STATUS=$?
-          set -e
-          if [ "$STATUS" -ne 0 ]; then
-            tr -d '\r' < /tmp/gradle.log | grep -v "^$" > /tmp/gclean.log
-            {
-              echo "## Gradle failure report"
-              echo '```'
-              echo "node: $($NODE_REAL -v) at $NODE_REAL"
-              echo ""
-              echo "--- node calls trace (KEY SECTION) ---"
-              cat /tmp/node-calls.log 2>/dev/null || echo "(none logged)"
-              echo ""
-              echo "--- what went wrong ---"
-              awk '/What went wrong:/{f=1} f{print; c++} c>25{exit}' /tmp/gclean.log
-              echo ""
-              echo "--- gradle log tail 60 ---"
-              tail -60 /tmp/gclean.log
-              echo '```'
-            } >> "$GITHUB_STEP_SUMMARY"
-            echo "NODE CALLS TRACE:"
-            cat /tmp/node-calls.log 2>/dev/null
-            awk '/What went wrong:/{f=1} f{print; c++} c>6{exit}' /tmp/gclean.log | while IFS= read -r line; do
-              echo "::error::G4: $(echo "$line" | cut -c1-200)"
-            done
-            exit 1
-          fi
+          ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,armeabi-v7a --no-daemon
 
       - name: Verify APK is signed with OUR keystore (not debug)
         working-directory: mobile/android
