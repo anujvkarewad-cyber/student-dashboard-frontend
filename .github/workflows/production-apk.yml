@@ -99,7 +99,7 @@ jobs:
             exit 1
           fi
           echo "Keystore decoded, password and alias verified."
-          keytool -list -v -keystore mobile/upm-release-key.jks -storepass "${{ secrets.STORE_PASSWORD }}" -alias "${{ secrets.KEY_ALIAS }}" 2>/dev/null | grep -E "Alias name|SHA256:" || true
+          keytool -list -v -keystore mobile/upm-release-key.jks -storepass "${{ secrets.STORE_PASSWORD }}" -alias "${{ secrets.KEY_ALIAS }}" 2>/dev/null | grep -iE "alias|sha-?256" || true
 
       - name: Install deps
         working-directory: mobile
@@ -194,8 +194,10 @@ jobs:
           set -e
           APK=app/build/outputs/apk/release/app-release.apk
           APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
-          KEY_SHA=$(keytool -list -v -keystore app/upm-release-key.jks -storepass "$STORE_PASSWORD" -alias "$KEY_ALIAS" 2>/dev/null \
-            | awk '/^ *SHA256:/ {print $2}' | tr -d ':' | tr 'A-F' 'a-f')
+          KEY_OUT=$(keytool -list -v -keystore app/upm-release-key.jks -storepass "$STORE_PASSWORD" -alias "$KEY_ALIAS" 2>&1)
+          echo "$KEY_OUT" | grep -iE "alias|sha-?256" || true
+          # Works with both Java 8 ("SHA256: AA:..") and Java 9+ ("Certificate fingerprint (SHA-256): AA:..") formats
+          KEY_SHA=$(echo "$KEY_OUT" | grep -oiE '[0-9a-f]{2}(:[0-9a-f]{2}){31}' | head -1 | tr -d ':' | tr 'A-F' 'a-f')
           APK_SHA=$("$APKSIGNER" verify --print-certs "$APK" | awk '/certificate SHA-256 digest:/ {print $NF; exit}' | tr 'A-F' 'a-f')
           echo "Keystore cert SHA-256: $KEY_SHA"
           echo "APK signer  SHA-256: $APK_SHA"
