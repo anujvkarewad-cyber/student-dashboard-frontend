@@ -15,6 +15,16 @@ const BUDGET_MS = 50000;
 const ATTEMPT_MS = 18000;
 const MENTOR_API_URL = (process.env.MENTOR_API_URL || "https://ujjwal-pathak-mentor-api.onrender.com").replace(/\/$/, "");
 const MONGO_LOGIN_ACTIONS = new Set(["validateLogin", "changePassword"]);
+const MONGO_DASHBOARD_ACTIONS = new Set([
+  "getStats",
+  "getStudyLog",
+  "getWeeklyReports",
+  "getAnnouncements",
+  "getLeaderboard",
+  "getStudentMentorNotes",
+  "getStudentFeedback",
+  "notes.listForStudent"
+]);
 
 async function attemptOnce(url, body, timeoutMs) {
   const controller = new AbortController();
@@ -117,6 +127,41 @@ export default async function handler(req, res) {
         if (mongoHit) return res.status(200).json(mongoHit);
       } catch (mongoErr) {
         console.error("Mongo login fallback to Apps Script:", mongoErr && mongoErr.message);
+      }
+    }
+
+        if (MONGO_DASHBOARD_ACTIONS.has(updateAction)) {
+      try {
+        const dashRes = await fetch(`${MENTOR_API_URL}/api/student-dashboard/get`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: updateAction,
+            payload: (req.body && req.body.payload) || {},
+            studentId: (req.body && req.body.payload && req.body.payload.studentId) || ""
+          })
+        });
+        const dashData = await dashRes.json();
+        if (dashData && dashData.found) return res.status(200).json({ result: dashData.result });
+      } catch (dashErr) {
+        console.error("Mongo dashboard fallback:", dashErr && dashErr.message);
+      }
+    }
+
+    if (updateAction === "addStudyLog") {
+      const payload = Object.assign({}, (req.body && req.body.payload) || {});
+      if (!payload.proofFile) {
+        try {
+          const writeRes = await fetch(`${MENTOR_API_URL}/api/student-dashboard/write`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "addStudyLog", payload: payload })
+          });
+          const writeData = await writeRes.json();
+          if (writeData && writeData.ok) {
+            return res.status(200).json({ result: writeData.result || { success: true } });
+          }
+        } catch (writeErr) {}
       }
     }
 
