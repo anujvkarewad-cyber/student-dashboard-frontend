@@ -10,6 +10,31 @@ export const config = {
 // ke 5-15s wale notification calls ko beech mein cut kar raha tha.
 // Hobby plan ki max allowed limit (60s) tak badha rahe hain.
 export const maxDuration = 60;
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const RETRY_STATUSES = new Set([404, 408, 429, 500, 502, 503, 504]);
+
+async function postAppsScript(url, body, attempt) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body
+  });
+  const rawText = await response.text();
+
+  if (!response.ok && RETRY_STATUSES.has(response.status) && attempt < 2) {
+    // Apps Script often 404s when too many students hit it together.
+    // One staggered retry usually lands after the first wave finishes.
+    await sleep(1200 + Math.floor(Math.random() * 1800));
+    return postAppsScript(url, body, attempt + 1);
+  }
+
+  return { response, rawText };
+}
+
 export default async function handler(req, res) {
   try {
 
@@ -44,20 +69,21 @@ export default async function handler(req, res) {
     const body = JSON.stringify(req.body);
     console.log("action:", req.body && req.body.action, "| payload size(bytes):", body.length);
 
-    const response = await fetch(process.env.APPS_SCRIPT_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body
-    });
-
-    const rawText = await response.text();
+    let response;
+    let rawText;
+    try {
+      ({ response, rawText } = await postAppsScript(process.env.APPS_SCRIPT_URL, body, 1));
+    } catch (fetchErr) {
+      console.error("Apps Script fetch failed:", fetchErr);
+      return res.status(502).json({
+        error: "Google server busy hai. 15 second wait karke ek baar phir try karo."
+      });
+    }
 
     if (!response.ok) {
       console.error("Apps Script responded with", response.status, rawText.slice(0, 500));
       return res.status(502).json({
-        error: `Apps Script returned ${response.status}. Check the deployment is set to "Execute as: Me" / "Who has access: Anyone", and that the deployment URL is current.`
+        error: "Google server busy hai. 15 second wait karke ek baar phir try karo."
       });
     }
 
