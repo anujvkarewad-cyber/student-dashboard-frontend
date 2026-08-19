@@ -3,13 +3,14 @@ import React, { createContext, PropsWithChildren, useCallback, useContext, useEf
 import { AppState } from 'react-native';
 import { EnrichedMcqQuestion } from '../data/mcqMetadata';
 
-const DEFAULT_MENTOR_API = 'https://ujjwal-pathak-project.onrender.com';
-const MENTOR_API = (process.env.EXPO_PUBLIC_MENTOR_API_URL || DEFAULT_MENTOR_API).replace(/\/+$/, '');
-const BANK_URL = `${MENTOR_API}/api/content/student/bank.json`;
-const BANK_META_URL = `${MENTOR_API}/api/content/student/bank-meta.json`;
-const CACHE_KEY = 'ump_live_published_bank_v1';
-const REQUEST_TIMEOUT_MS = 65_000;
-const REVISION_POLL_MS = 10_000;
+const HOSTS = [
+  'https://ujjwal-pathak-mentor-api.onrender.com',
+  'https://ujjwal-pathak-project.onrender.com',
+];
+const CACHE_KEY = 'ump_live_published_bank_v2';
+const HOST_KEY = 'ump_live_bank_host_v2';
+const REQUEST_TIMEOUT_MS = 90_000;
+const REVISION_POLL_MS = 15_000;
 
 type PublishedBankPayload = {
   revision: string;
@@ -53,6 +54,40 @@ const normalizePayload = (raw: PublishedBankPayload): PublishedBankPayload => {
   };
 };
 
+const fetchJson = async (url: string, ms: number) => {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), ms);
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: { Accept: 'application/json', 'Cache-Control': 'no-cache' },
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return await response.json();
+  } finally {
+    clearTimeout(timeout);
+  }
+};
+
+const pickHost = async (): Promise<string> => {
+  const saved = await AsyncStorage.getItem(HOST_KEY);
+  const ordered = [saved, ...HOSTS].filter(Boolean).filter((host, index, all) => all.indexOf(host) === index) as string[];
+  const results = await Promise.all(ordered.map(async (host) => {
+    try {
+      const meta = await fetchJson(`${host}/api/content/student/bank-meta.json`, 12_000);
+      return { host, count: Number(meta?.count || 0) };
+    } catch {
+      return { host, count: -1 };
+    }
+  }));
+  const best = results.reduce((win, row) => (row.count > win.count ? row : win), results[0]);
+  if (best && best.count > 0) {
+    await AsyncStorage.setItem(HOST_KEY, best.host);
+    return best.host;
+  }
+  return saved || HOSTS[0];
+};
+
 export const McqBankProvider = ({ children }: PropsWithChildren) => {
   const [payload, setPayload] = useState<PublishedBankPayload>({
     revision: 'published-loading',
@@ -65,16 +100,15 @@ export const McqBankProvider = ({ children }: PropsWithChildren) => {
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
-      const response = await fetch(BANK_URL, {
-        signal: controller.signal,
-        headers: { Accept: 'application/json', 'Cache-Control': 'no-cache' },
-      });
-      if (!response.ok) throw new Error(`Content server returned HTTP ${response.status}`);
-      const next = normalizePayload(await response.json() as PublishedBankPayload);
-      setPayload(next); // Empty is authoritative and removes previous questions.
+      const host = await pickHost();
+      const raw = await fetchJson(`${host}/api/content/student/bank.json`, REQUEST_TIMEOUT_MS);
+      const next = normalizePayload(raw as PublishedBankPayload);
+      if (next.count === 0 && payload.count > 0) {
+        setError('Live bank came back empty — keeping last good questions.');
+        return;
+      }
+      setPayload(next);
       await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(next));
       setError(undefined);
     } catch (reason) {
@@ -83,30 +117,21 @@ export const McqBankProvider = ({ children }: PropsWithChildren) => {
         : reason instanceof Error ? reason.message : 'Could not load published MCQs.';
       setError(message);
     } finally {
-      clearTimeout(timeout);
       setRefreshing(false);
       setHydrated(true);
     }
-  }, []);
+  }, [payload.count]);
 
   const checkPublishedRevision = useCallback(async () => {
     if (AppState.currentState !== 'active') return;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15_000);
     try {
-      const response = await fetch(BANK_META_URL, {
-        signal: controller.signal,
-        headers: { Accept: 'application/json', 'Cache-Control': 'no-cache' },
-      });
-      if (!response.ok) return;
-      const meta = await response.json() as { revision?: string; count?: number };
+      const host = await pickHost();
+      const meta = await fetchJson(`${host}/api/content/student/bank-meta.json`, 15_000) as { revision?: string; count?: number };
       if (!refreshing && (String(meta.revision || '') !== payload.revision || Number(meta.count || 0) !== payload.count)) {
         await refresh();
       }
     } catch {
-      // Background revision polling is best-effort; keep the current cached bank.
-    } finally {
-      clearTimeout(timeout);
+      // keep cached bank
     }
   }, [payload.count, payload.revision, refresh, refreshing]);
 
