@@ -16,16 +16,18 @@ const ATTEMPT_MS = 18000;
 const MENTOR_API_URL = (process.env.MENTOR_API_URL || "https://ujjwal-pathak-mentor-api.onrender.com").replace(/\/$/, "");
 const MONGO_LOGIN_ACTIONS = new Set(["validateLogin", "changePassword"]);
 const MONGO_DASHBOARD_ACTIONS = new Set([
-  "getStats",
-  "getStudyLog",
   "getWeeklyReports",
   "getAnnouncements",
   "getLeaderboard",
   "getStudentMentorNotes",
   "getStudentFeedback"
-  // Study material intentionally stays on the live Apps Script/Sheets path.
-  // The Mongo dashboard collection is only an imported snapshot, so serving
-  // notes from it hides folders uploaded after the last import (for example DT).
+  // getStats, getStudyLog and addStudyLog intentionally stay on the live
+  // Apps Script/Sheets path until the Mongo sync is complete. The Mongo
+  // dashboard collection is only an imported snapshot, so reading the tracker
+  // from it returns stale data that hides submissions made after the last
+  // import (e.g. "tracker submission not showing").
+  // Study material stays on the live Apps Script/Sheets path for the same
+  // reason (notes uploaded after the last import would be hidden).
 ]);
 
 async function attemptOnce(url, body, timeoutMs) {
@@ -150,22 +152,8 @@ export default async function handler(req, res) {
       }
     }
 
-    if (updateAction === "addStudyLog") {
-      const payload = Object.assign({}, (req.body && req.body.payload) || {});
-      if (!payload.proofFile) {
-        try {
-          const writeRes = await fetch(`${MENTOR_API_URL}/api/student-dashboard/write`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action: "addStudyLog", payload: payload })
-          });
-          const writeData = await writeRes.json();
-          if (writeData && writeData.ok) {
-            return res.status(200).json({ result: writeData.result || { success: true } });
-          }
-        } catch (writeErr) {}
-      }
-    }
+    // addStudyLog intentionally stays on the live Apps Script/Sheets path until
+    // the Mongo sync is complete (see MONGO_DASHBOARD_ACTIONS note above).
 
     if (!process.env.APPS_SCRIPT_URL) {
       return res.status(500).json({
