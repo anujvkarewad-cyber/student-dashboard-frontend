@@ -22,8 +22,10 @@ const MONGO_DASHBOARD_ACTIONS = new Set([
   "getAnnouncements",
   "getLeaderboard",
   "getStudentMentorNotes",
-  "getStudentFeedback",
-  "notes.listForStudent"
+  "getStudentFeedback"
+  // Study material intentionally stays on the live Apps Script/Sheets path.
+  // The Mongo dashboard collection is only an imported snapshot, so serving
+  // notes from it hides folders uploaded after the last import (for example DT).
 ]);
 
 async function attemptOnce(url, body, timeoutMs) {
