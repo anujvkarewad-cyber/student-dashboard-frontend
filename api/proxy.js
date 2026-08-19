@@ -6,44 +6,56 @@ export const config = {
   }
 };
 
-// Vercel Hobby plan ka default function timeout (~10s) tha, jo Apps Script
-// ke 5-15s wale notification calls ko beech mein cut kar raha tha.
-// Hobby plan ki max allowed limit (60s) tak badha rahe hain.
 export const maxDuration = 60;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const RETRY_STATUSES = new Set([404, 408, 429, 500, 502, 503, 504]);
 
-async function postAppsScript(url, body, attempt) {
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body
-  });
-  const rawText = await response.text();
+// Stay under Vercel function limit. vercel.json is 60s; keep a 50s budget.
+const BUDGET_MS = 50000;
+const ATTEMPT_MS = 18000;
 
-  if (!response.ok && RETRY_STATUSES.has(response.status) && attempt < 2) {
-    // Apps Script often 404s when too many students hit it together.
-    // One staggered retry usually lands after the first wave finishes.
-    await sleep(1200 + Math.floor(Math.random() * 1800));
-    return postAppsScript(url, body, attempt + 1);
+async function attemptOnce(url, body, timeoutMs) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+      signal: controller.signal
+    });
+    const rawText = await response.text();
+    return { response, rawText };
+  } catch (err) {
+    if (err && err.name === "AbortError") {
+      return { response: { ok: false, status: 408 }, rawText: "" };
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
   }
+}
 
-  return { response, rawText };
+async function postAppsScript(url, body) {
+  const started = Date.now();
+  const first = await attemptOnce(url, body, ATTEMPT_MS);
+  const elapsed = Date.now() - started;
+  const retryable = !first.response.ok && RETRY_STATUSES.has(first.response.status);
+  const remaining = BUDGET_MS - elapsed;
+  // Retry only if the first fail was relatively quick and we still have time.
+  if (retryable && elapsed < 12000 && remaining > 14000) {
+    await sleep(800 + Math.floor(Math.random() * 800));
+    return attemptOnce(url, body, Math.min(ATTEMPT_MS, BUDGET_MS - (Date.now() - started)));
+  }
+  return first;
 }
 
 export default async function handler(req, res) {
   try {
 
     // ── app.version: served directly from Vercel env vars (no Apps Script) ──
-    // The mobile app's in-app updater polls this. Values come from
-    // Settings → Environment Variables (APP_ANDROID_*). This keeps the
-    // update channel on the Vercel + Git backend combo.
-    // GET /api/proxy?action=app.version also works — open it in a browser
-    // to verify what the updater receives.
     const updateAction = req.body?.action || req.query?.action;
     if (updateAction === "app.version") {
       return res.status(200).json({
@@ -72,7 +84,7 @@ export default async function handler(req, res) {
     let response;
     let rawText;
     try {
-      ({ response, rawText } = await postAppsScript(process.env.APPS_SCRIPT_URL, body, 1));
+      ({ response, rawText } = await postAppsScript(process.env.APPS_SCRIPT_URL, body));
     } catch (fetchErr) {
       console.error("Apps Script fetch failed:", fetchErr);
       return res.status(502).json({
@@ -81,7 +93,7 @@ export default async function handler(req, res) {
     }
 
     if (!response.ok) {
-      console.error("Apps Script responded with", response.status, rawText.slice(0, 500));
+      console.error("Apps Script responded with", response.status, String(rawText || "").slice(0, 500));
       return res.status(502).json({
         error: "Google server busy hai. 15 second wait karke ek baar phir try karo."
       });
@@ -92,30 +104,20 @@ export default async function handler(req, res) {
       data = JSON.parse(rawText);
     } catch (parseErr) {
       const action = req.body?.action || "unknown";
-      const preview = rawText.slice(0, 500).replace(/\s+/g, " ");
-
-      console.error(
-        `[${action}] Apps Script did not return valid JSON:`,
-        preview
-      );
-
+      const preview = String(rawText || "").slice(0, 500).replace(/\s+/g, " ");
+      console.error(`[${action}] Apps Script did not return valid JSON:`, preview);
       return res.status(502).json({
         error: `[${action}] Apps Script returned a non-JSON response.`,
-        ...(process.env.NODE_ENV !== "production"
-          ? { upstreamPreview: preview }
-          : {})
+        ...(process.env.NODE_ENV !== "production" ? { upstreamPreview: preview } : {})
       });
     }
 
     return res.status(200).json(data);
 
   } catch (err) {
-
     console.error(err);
-
     return res.status(500).json({
       error: err.message
     });
-
   }
 }
