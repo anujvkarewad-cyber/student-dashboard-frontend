@@ -101,3 +101,62 @@ export default async function handler(req, res) {
       return res.status(200).json({
         result: {
           version: process.env.APP_ANDROID_VERSION || "1.10.2",
+                    versionCode: Number(process.env.APP_ANDROID_VERSION_CODE || 16),
+          minimumVersionCode: Number(process.env.APP_ANDROID_MIN_VERSION_CODE || 15),
+          apkUrl: process.env.APP_ANDROID_APK_URL || "",
+          releaseNotes: process.env.APP_ANDROID_RELEASE_NOTES || "",
+          forceUpdate: String(process.env.APP_ANDROID_FORCE_UPDATE || "false").toLowerCase() === "true",
+          publishedAt: process.env.APP_ANDROID_PUBLISHED_AT || new Date().toISOString().slice(0, 10)
+        }
+      });
+    }
+
+    if (MONGO_LOGIN_ACTIONS.has(updateAction)) {
+      try {
+        const mongoHit = await tryMongoLogin(req);
+        if (mongoHit) return res.status(200).json(mongoHit);
+      } catch (mongoErr) {
+        console.error("Mongo login fallback to Apps Script:", mongoErr && mongoErr.message);
+      }
+    }
+
+    if (!process.env.APPS_SCRIPT_URL) {
+      return res.status(500).json({
+        error: "Server misconfigured: APPS_SCRIPT_URL is missing."
+      });
+    }
+
+    const body = JSON.stringify(req.body);
+    let response;
+    let rawText;
+    try {
+      ({ response, rawText } = await postAppsScript(process.env.APPS_SCRIPT_URL, body));
+    } catch (fetchErr) {
+      return res.status(502).json({
+        error: "Google server busy hai. 15 second wait karke ek baar phir try karo."
+      });
+    }
+
+    if (!response.ok) {
+      return res.status(502).json({
+        error: "Google server busy hai. 15 second wait karke ek baar phir try karo."
+      });
+    }
+
+    let data;
+    try {
+      data = JSON.parse(rawText);
+    } catch (parseErr) {
+      return res.status(502).json({
+        error: "Apps Script returned a non-JSON response."
+      });
+    }
+
+    return res.status(200).json(data);
+
+  } catch (err) {
+    return res.status(500).json({
+      error: err.message
+    });
+  }
+}
