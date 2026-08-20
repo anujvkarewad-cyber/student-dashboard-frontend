@@ -1,13 +1,17 @@
 /**
  * Authenticated cloud backup/restore for completed MCQ attempts.
- * Existing Apps Script credentials are delegated for verification on each
- * backup/restore request and are never stored by the MCQ backend.
  */
 (function () {
   "use strict";
 
   const DEFAULT_API = "https://ujjwal-pathak-mentor-api.onrender.com";
-  const API = (window.MENTOR_API_URL || DEFAULT_API).replace(/\/$/, "");
+  function apiBase() {
+    return (
+      (window.UMP_MENTOR_API_URL && window.UMP_MENTOR_API_URL()) ||
+      window.MENTOR_API_URL ||
+      DEFAULT_API
+    ).replace(/\/$/, "");
+  }
   const pending = new Map();
   let flushTimer = null;
   let restorePromise = null;
@@ -26,7 +30,7 @@
   async function post(path, payload) {
     const credentials = savedCredentials();
     if (!credentials) throw new Error("Student login is required for MCQ cloud backup");
-    const response = await fetch(`${API}${path}`, {
+    const response = await fetch(`${apiBase()}${path}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...credentials, ...payload }),
@@ -50,6 +54,7 @@
       score: Number(attempt.score || 0),
       total: Number(attempt.total || 0),
       durationSeconds: Number(attempt.durationSeconds || 0),
+      review: Array.isArray(attempt.review) ? attempt.review : [],
     };
   }
 
@@ -67,6 +72,7 @@
       score: Number(attempt.score || 0),
       total: Number(attempt.total || 0),
       durationSeconds: Number(attempt.durationSeconds || 0),
+      review: Array.isArray(attempt.review) ? attempt.review : [],
     };
   }
 
