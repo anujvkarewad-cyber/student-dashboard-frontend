@@ -638,7 +638,6 @@
     const saved = history.slice(0, 180);
     saveJson(dailyKey(), saved);
     if (syncCompleted && window.UMP_MCQ_CLOUD) window.UMP_MCQ_CLOUD.queue(saved, []);
-    if (syncCompleted && window.UMP_PROGRESS_SHARE) window.UMP_PROGRESS_SHARE.syncNow();
   }
 
   function attemptForGroup(group) {
@@ -802,6 +801,7 @@
         <h3 class="lt-section-title">Challenge rules</h3><section class="lt-card lt-rules"><div>${icon("stopwatch")}<span><b>10-minute timer</b><small>The attempt auto-submits when time runs out.</small></span></div><div>${icon("calendar-day")}<span><b>One attempt per group per day</b><small>Group I and Group II maintain separate results and streaks.</small></span></div><div>${icon("list-check")}<span><b>7 normal + 3 case-study MCQs</b><small>Questions are mixed across your selected group's subjects.</small></span></div></section>
         <button class="lt-wide-button" data-mcq-action="start-daily">${icon("play")} Start ${group} challenge</button>
         <p class="lt-honesty">Today's question order is fixed for your Student ID and device date.</p>
+        ${dailyHistory().filter((item) => item.group === group && item.completedAt && item.date !== localDateKey()).slice(0, 8).map((item) => `<button class="lt-wide-button secondary" data-daily-open-result="${escapeAttr(item.date)}">${icon("clipboard")} ${escapeHtml(item.date)} · ${item.score}/${item.total} · view wrong answers</button>`).join("")}
       </div>`;
     bindMcqEvents();
   }
@@ -885,21 +885,75 @@
     if (!attempt || attempt.completedAt) return attempt;
     const attemptQuestions = attempt.questionIds.map((id) => QUESTION_BY_ID.get(id)).filter(Boolean);
     const completedAt = Date.now();
-    const updated = { ...attempt, completedAt, score: attemptQuestions.reduce((total, question) => total + (attempt.answers[question.id] === question.answer ? 1 : 0), 0), total: attemptQuestions.length, durationSeconds: Math.max(1, Math.floor((completedAt - attempt.startedAt) / 1000)) };
+    const updated = { ...attempt, completedAt, score: attemptQuestions.reduce((total, question) => total + (attempt.answers[question.id] === question.answer ? 1 : 0), 0), total: attemptQuestions.length, durationSeconds: Math.max(1, Math.floor((completedAt - attempt.startedAt) / 1000)), review: buildReview(attemptQuestions, attempt) };
     saveDaily(history.map((item) => item.date === localDateKey() && item.group === group ? updated : item), true);
     return updated;
   }
 
+  function buildReview(attemptQuestions, attempt) {
+    return (attemptQuestions || []).map((question) => {
+      const selected = attempt.answers ? attempt.answers[question.id] : undefined;
+      return {
+        id: question.id,
+        prompt: question.prompt,
+        options: question.options || [],
+        answer: question.answer,
+        selected: selected == null ? null : selected,
+        explanation: question.explanation || "",
+        subject: question.subject || "",
+        chapter: question.chapter || "",
+        difficulty: question.difficulty || "",
+        kind: question.kind || "",
+        caseStudy: question.caseStudy || null,
+        officialPaper: question.officialChapter?.paper || "",
+        correct: selected === question.answer,
+      };
+    });
+  }
+
+  function questionsFromAttempt(attempt) {
+    if (Array.isArray(attempt?.review) && attempt.review.length) {
+      return attempt.review.map((item) => ({
+        id: item.id,
+        prompt: item.prompt,
+        options: item.options || [],
+        answer: item.answer,
+        explanation: item.explanation,
+        subject: item.subject,
+        chapter: item.chapter,
+        difficulty: item.difficulty,
+        kind: item.kind,
+        caseStudy: item.caseStudy,
+        officialChapter: { paper: item.officialPaper || "Paper" },
+      }));
+    }
+    return (attempt?.questionIds || []).map((id) => QUESTION_BY_ID.get(id)).filter(Boolean);
+  }
+
   function reviewCards(attemptQuestions, attempt) {
-    return attemptQuestions.map((question, index) => {
-      const selected = attempt.answers[question.id];
+    const cards = (attempt?.review?.length ? attempt.review.map((item) => ({
+      id: item.id,
+      prompt: item.prompt,
+      options: item.options || [],
+      answer: item.answer,
+      explanation: item.explanation,
+      subject: item.subject,
+      difficulty: item.difficulty,
+      kind: item.kind,
+      caseStudy: item.caseStudy,
+      officialChapter: { paper: item.officialPaper || "Paper" },
+      chapter: item.chapter,
+      selected: item.selected,
+    })) : attemptQuestions.map((question) => ({ ...question, selected: attempt.answers?.[question.id] })));
+    return cards.map((question, index) => {
+      const selected = question.selected != null ? question.selected : attempt.answers?.[question.id];
       const correct = selected === question.answer;
       return `<article class="lt-card lt-review-card"><div class="lt-review-top"><span class="${correct ? "correct" : "wrong"}">${icon(correct ? "check" : "xmark")}</span><b>Q${index + 1} · ${escapeHtml(question.subject)} · ${escapeHtml(question.difficulty)}</b></div>${question.caseStudy ? `<div class="lt-mini-case"><b>${escapeHtml(question.caseStudy.title)}</b><p>${escapeHtml(question.caseStudy.passage)}</p></div>` : ""}<h3>${escapeHtml(question.prompt)}</h3><p>Your answer: <strong class="${correct ? "correct-text" : "wrong-text"}">${selected == null ? "Not answered" : escapeHtml(question.options[selected])}</strong></p>${correct ? "" : `<p class="lt-correct-answer">Correct: ${escapeHtml(question.options[question.answer])}</p>`}<div class="lt-explanation">${icon("lightbulb")}<span>${escapeHtml(question.explanation)}</span></div><div class="lt-source">${icon("book-open")}<span>ICAI BoS · ${escapeHtml(question.officialChapter.paper)} · ${escapeHtml(question.chapter)}</span></div></article>`;
     }).join("");
   }
 
   function renderDailyResult(group, attempt) {
-    const attemptQuestions = attempt.questionIds.map((id) => QUESTION_BY_ID.get(id)).filter(Boolean);
+    const attemptQuestions = questionsFromAttempt(attempt);
     const percentage = attempt.total ? Math.round((Number(attempt.score || 0) / attempt.total) * 100) : 0;
     activeRoot.innerHTML = `<div class="lt-shell lt-mcq-shell" data-testid="daily-mcq-result"><span class="lt-select-label">TODAY'S GROUP RESULTS</span>${groupSelectorHtml()}<section class="lt-result-hero ${percentage < 70 ? "low" : ""}"><span>${icon(percentage >= 70 ? "trophy" : "chart-simple")}</span><small>${group.toUpperCase()} · DAILY RESULT</small><h2>${percentage}%</h2><p>${attempt.score}/${attempt.total} correct · ${formatDuration(attempt.durationSeconds)}</p><b>${icon("fire")} ${dailyStreak(group)} day streak</b></section><h3 class="lt-section-title">Answer review</h3>${reviewCards(attemptQuestions, attempt)}<button class="lt-wide-button secondary" data-mcq-action="practice">${icon("infinity")} Open Unlimited Practice</button></div>`;
     bindMcqEvents();
@@ -921,6 +975,7 @@
     const saved = history.slice(0, 150);
     saveJson(practiceKey(), saved);
     if (syncCompleted && window.UMP_MCQ_CLOUD) window.UMP_MCQ_CLOUD.queue([], saved);
+    if (syncCompleted && window.UMP_PROGRESS_SHARE) window.UMP_PROGRESS_SHARE.syncNow();
   }
 
   function activePractice() {
@@ -987,7 +1042,7 @@
     const average = completed.length ? Math.round(completed.reduce((sum, session) => sum + ((session.score || 0) / Math.max(session.total || 1, 1)) * 100, 0) / completed.length) : 0;
     const latest = completed[0];
 
-    activeRoot.innerHTML = `<div class="lt-shell lt-mcq-shell" data-testid="practice-setup"><section class="lt-practice-hero"><span>${icon("infinity")}</span><small>ICAI-PATTERN PRACTICE</small><h2>Unlimited MCQ Practice Zone</h2><p>Build a custom session by group, subject, chapter, type and difficulty. Practice sessions never change the Daily Challenge streak.</p><div><b>${completed.length} sessions</b><b>${average}% avg</b><b>${questions.length} question pool</b></div></section><div class="lt-draft-note">${icon("book-open")}<p>${escapeHtml(learningData.manifest.notice || "Original ICAI-mapped practice content.")}</p></div><section class="lt-card lt-practice-filters"><div><label>GROUP</label><span>${groupOptions.map((item) => practiceChip(item, "group", config.group === item)).join("")}</span></div><hr><div><label>SUBJECT</label><span>${availableSubjects.map((item) => practiceChip(item, "subject", config.subject === item)).join("")}</span></div><hr><div><label>OFFICIAL ICAI CHAPTER</label><span class="lt-scroll-chips">${availableChapters.map((item) => practiceChip(item, "chapter", config.chapter === item)).join("")}</span></div><hr><div><label>QUESTION TYPE</label><span>${["Mixed", "Normal", "Case Study"].map((item) => practiceChip(item, "mode", config.mode === item)).join("")}</span></div><hr><div><label>DIFFICULTY</label><span>${["Mixed", "Easy", "Medium", "Hard"].map((item) => practiceChip(item, "difficulty", config.difficulty === item)).join("")}</span></div><hr><div><label>SESSION SIZE</label><span>${[5, 10, 20, 50].map((item) => practiceChip(String(item), "requestedCount", config.requestedCount === item, item)).join("")}</span></div></section><div class="lt-pool ${pool.length ? "" : "empty"}">${icon(pool.length ? "layer-group" : "circle-exclamation")}<div><b>${pool.length} questions match</b><p>${pool.length ? `This session will use ${Math.min(config.requestedCount, pool.length)} unique questions.` : "Broaden chapter, type or difficulty filters."}</p></div></div><button class="lt-wide-button" data-practice-action="start" ${pool.length ? "" : "disabled"}>${icon("play")} Start ${Math.min(config.requestedCount, pool.length)}-question practice</button>${latest ? `<div class="lt-local-note">${icon("chart-line")}<span>Practice history is stored locally. Latest: ${latest.score}/${latest.total}</span></div>` : emptyState("infinity", "No practice sessions yet", "Configure a session above. There is no daily practice limit.")}<button class="lt-text-button" data-mcq-action="daily">${icon("arrow-left")} Back to Daily MCQ</button></div>`;
+    activeRoot.innerHTML = `<div class="lt-shell lt-mcq-shell" data-testid="practice-setup"><section class="lt-practice-hero"><span>${icon("infinity")}</span><small>ICAI-PATTERN PRACTICE</small><h2>Unlimited MCQ Practice Zone</h2><p>Build a custom session by group, subject, chapter, type and difficulty. Practice sessions never change the Daily Challenge streak.</p><div><b>${completed.length} sessions</b><b>${average}% avg</b><b>${questions.length} question pool</b></div></section><div class="lt-draft-note">${icon("book-open")}<p>${escapeHtml(learningData.manifest.notice || "Original ICAI-mapped practice content.")}</p></div><section class="lt-card lt-practice-filters"><div><label>GROUP</label><span>${groupOptions.map((item) => practiceChip(item, "group", config.group === item)).join("")}</span></div><hr><div><label>SUBJECT</label><span>${availableSubjects.map((item) => practiceChip(item, "subject", config.subject === item)).join("")}</span></div><hr><div><label>OFFICIAL ICAI CHAPTER</label><span class="lt-scroll-chips">${availableChapters.map((item) => practiceChip(item, "chapter", config.chapter === item)).join("")}</span></div><hr><div><label>QUESTION TYPE</label><span>${["Mixed", "Normal", "Case Study"].map((item) => practiceChip(item, "mode", config.mode === item)).join("")}</span></div><hr><div><label>DIFFICULTY</label><span>${["Mixed", "Easy", "Medium", "Hard"].map((item) => practiceChip(item, "difficulty", config.difficulty === item)).join("")}</span></div><hr><div><label>SESSION SIZE</label><span>${[5, 10, 20, 50].map((item) => practiceChip(String(item), "requestedCount", config.requestedCount === item, item)).join("")}</span></div></section><div class="lt-pool ${pool.length ? "" : "empty"}">${icon(pool.length ? "layer-group" : "circle-exclamation")}<div><b>${pool.length} questions match</b><p>${pool.length ? `This session will use ${Math.min(config.requestedCount, pool.length)} unique questions.` : "Broaden chapter, type or difficulty filters."}</p></div></div><button class="lt-wide-button" data-practice-action="start" ${pool.length ? "" : "disabled"}>${icon("play")} Start ${Math.min(config.requestedCount, pool.length)}-question practice</button>${completed.length ? completed.slice(0, 8).map((session) => `<button class="lt-wide-button secondary" data-practice-open-result="${escapeAttr(session.id)}">${icon("clipboard")} ${new Date(session.completedAt).toLocaleDateString("en-IN")} · ${session.score}/${session.total} · view wrong answers</button>`).join("") : emptyState("infinity", "No practice sessions yet", "Configure a session above. There is no daily practice limit.")}<button class="lt-text-button" data-mcq-action="daily">${icon("arrow-left")} Back to Daily MCQ</button></div>`;
     bindMcqEvents();
   }
 
@@ -1034,14 +1089,14 @@
     if (!session) return;
     const sessionQuestions = session.questionIds.map((id) => QUESTION_BY_ID.get(id)).filter(Boolean);
     const completedAt = Date.now();
-    const updated = { ...session, completedAt, score: sessionQuestions.reduce((total, question) => total + (session.answers[question.id] === question.answer ? 1 : 0), 0), total: sessionQuestions.length, durationSeconds: Math.max(1, Math.floor((completedAt - session.startedAt) / 1000)) };
+    const updated = { ...session, completedAt, score: sessionQuestions.reduce((total, question) => total + (session.answers[question.id] === question.answer ? 1 : 0), 0), total: sessionQuestions.length, durationSeconds: Math.max(1, Math.floor((completedAt - session.startedAt) / 1000)), review: buildReview(sessionQuestions, session) };
     savePractice(history.map((item) => item.id === session.id ? updated : item), true);
     mcqUi.practiceResult = updated;
     renderPractice();
   }
 
   function renderPracticeResult(result) {
-    const resultQuestions = result.questionIds.map((id) => QUESTION_BY_ID.get(id)).filter(Boolean);
+    const resultQuestions = questionsFromAttempt(result);
     const wrongIds = resultQuestions.filter((question) => result.answers[question.id] !== question.answer).map((question) => question.id);
     const percentage = result.total ? Math.round(((result.score || 0) / result.total) * 100) : 0;
     activeRoot.innerHTML = `<div class="lt-shell lt-mcq-shell" data-testid="practice-result"><section class="lt-result-hero ${percentage < 70 ? "low" : ""}"><span>${icon(percentage >= 70 ? "trophy" : "chart-simple")}</span><small>UNLIMITED PRACTICE RESULT</small><h2>${percentage}%</h2><p>${result.score}/${result.total} correct · ${formatDuration(result.durationSeconds)}</p><b>${escapeHtml(result.config.group)} · ${escapeHtml(result.config.subject)} · ${escapeHtml(result.config.difficulty)}</b></section><h3 class="lt-section-title">Answer review</h3>${reviewCards(resultQuestions, result)}${wrongIds.length ? `<button class="lt-wide-button" data-practice-action="retry" data-question-ids="${escapeAttr(wrongIds.join(","))}">${icon("rotate-right")} Retry ${wrongIds.length} incorrect question${wrongIds.length === 1 ? "" : "s"}</button>` : ""}<button class="lt-wide-button secondary" data-practice-action="another">${icon("infinity")} Start another practice</button><button class="lt-wide-button secondary" data-mcq-action="daily">${icon("calendar")} Back to Daily MCQ</button></div>`;
@@ -1082,6 +1137,12 @@
       }
       const dailyDot = event.target.closest("[data-daily-dot]");
       if (dailyDot) { mcqUi.dailyIndex = Number(dailyDot.dataset.dailyDot); renderDaily(); return; }
+      const openDaily = event.target.closest("[data-daily-open-result]");
+      if (openDaily) {
+        const past = dailyHistory().find((item) => item.group === mcqUi.selectedGroup && item.date === openDaily.dataset.dailyOpenResult && item.completedAt);
+        if (past) renderDailyResult(mcqUi.selectedGroup, past);
+        return;
+      }
       if (event.target.closest("[data-daily-submit]")) {
         const attempt = attemptForGroup(mcqUi.selectedGroup);
         const unanswered = attempt.questionIds.length - Object.keys(attempt.answers || {}).length;
@@ -1102,6 +1163,13 @@
         return;
       }
 
+      const openPractice = event.target.closest("[data-practice-open-result]");
+      if (openPractice) {
+        const past = practiceHistory().find((session) => session.id === openPractice.dataset.practiceOpenResult);
+        if (past) { mcqUi.practiceResult = past; renderPractice(); }
+        return;
+      }
+
       const practiceAction = event.target.closest("[data-practice-action]");
       if (practiceAction) {
         const action = practiceAction.dataset.practiceAction;
@@ -1113,6 +1181,11 @@
           renderPractice();
         }
         if (action === "another") { mcqUi.practiceResult = null; mcqUi.practiceIndex = 0; renderPractice(); }
+        if (practiceAction.dataset.practiceOpenResult) {
+          const past = practiceHistory().find((session) => session.id === practiceAction.dataset.practiceOpenResult);
+          if (past) { mcqUi.practiceResult = past; renderPractice(); }
+          return;
+        }
         if (action === "retry") {
           const ids = String(practiceAction.dataset.questionIds || "").split(",").filter(Boolean);
           const config = { ...(mcqUi.practiceResult?.config || defaultPracticeConfig()), requestedCount: ids.length };
