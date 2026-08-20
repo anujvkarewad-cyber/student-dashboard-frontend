@@ -1,10 +1,16 @@
 import { config } from '../config';
 import { getSavedSession } from '../storage/session';
 
+type McqReviewItem = {
+  id: string; prompt: string; options: string[]; answer: number;
+  selected?: number | null; explanation?: string; subject?: string;
+  chapter?: string; difficulty?: string; kind?: string; correct?: boolean;
+};
+
 type LocalDaily = {
   bankRevision?: string; date: string; group: string; questionIds: string[];
   answers: Record<string, number>; startedAt: number; completedAt?: number;
-  score?: number; total?: number; durationSeconds?: number;
+  score?: number; total?: number; durationSeconds?: number; review?: McqReviewItem[];
 };
 
 type LocalPractice = {
@@ -15,7 +21,7 @@ type LocalPractice = {
     difficulty: string; requestedCount: number;
   };
   questionIds: string[]; answers: Record<string, number>; startedAt: number;
-  completedAt?: number; score?: number; total?: number; durationSeconds?: number;
+  completedAt?: number; score?: number; total?: number; durationSeconds?: number; review?: McqReviewItem[];
 };
 
 type CloudAttempt = Record<string, unknown> & { attemptId: string; kind: 'daily' | 'practice' };
@@ -47,6 +53,7 @@ const dailyToCloud = (attempt: LocalDaily): CloudAttempt | null => attempt.compl
   score: attempt.score || 0,
   total: attempt.total || attempt.questionIds.length,
   durationSeconds: attempt.durationSeconds || 0,
+  review: attempt.review || [],
 } : null;
 
 const practiceToCloud = (attempt: LocalPractice): CloudAttempt | null => attempt.completedAt ? {
@@ -61,6 +68,7 @@ const practiceToCloud = (attempt: LocalPractice): CloudAttempt | null => attempt
   score: attempt.score || 0,
   total: attempt.total || attempt.questionIds.length,
   durationSeconds: attempt.durationSeconds || 0,
+  review: attempt.review || [],
 } : null;
 
 export const syncCompletedMcqAttempts = async (daily: LocalDaily[] = [], practice: LocalPractice[] = []) => {
