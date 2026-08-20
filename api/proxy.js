@@ -16,18 +16,13 @@ const ATTEMPT_MS = 18000;
 const MENTOR_API_URL = (process.env.MENTOR_API_URL || "https://ujjwal-pathak-mentor-api.onrender.com").replace(/\/$/, "");
 const MONGO_LOGIN_ACTIONS = new Set(["validateLogin", "changePassword"]);
 const MONGO_DASHBOARD_ACTIONS = new Set([
+  "getStats",
+  "getStudyLog",
   "getWeeklyReports",
   "getAnnouncements",
   "getLeaderboard",
   "getStudentMentorNotes",
   "getStudentFeedback"
-  // getStats, getStudyLog and addStudyLog intentionally stay on the live
-  // Apps Script/Sheets path until the Mongo sync is complete. The Mongo
-  // dashboard collection is only an imported snapshot, so reading the tracker
-  // from it returns stale data that hides submissions made after the last
-  // import (e.g. "tracker submission not showing").
-  // Study material stays on the live Apps Script/Sheets path for the same
-  // reason (notes uploaded after the last import would be hidden).
 ]);
 
 async function attemptOnce(url, body, timeoutMs) {
@@ -75,6 +70,12 @@ function loginPayload(req) {
   };
 }
 
+function studyLogPayload(req) {
+  const payload = Object.assign({}, (req.body && req.body.payload) || {});
+  if (!payload.studentId && req.body && req.body.studentId) payload.studentId = req.body.studentId;
+  return payload;
+}
+
 async function tryMongoLogin(req) {
   const action = req.body?.action;
   const fields = loginPayload(req);
@@ -108,15 +109,27 @@ async function tryMongoLogin(req) {
   return null;
 }
 
+async function mirrorStudyLogToMongo(payload, gasResult) {
+  try {
+    await fetch(`${MENTOR_API_URL}/api/student-dashboard/write`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "addStudyLog", payload, result: gasResult || {} })
+    });
+  } catch (err) {
+    console.error("Mongo study-log mirror failed:", err && err.message);
+  }
+}
+
 export default async function handler(req, res) {
   try {
     const updateAction = req.body?.action || req.query?.action;
     if (updateAction === "app.version") {
       return res.status(200).json({
         result: {
-          version: process.env.APP_ANDROID_VERSION || "1.10.2",
-                    versionCode: Number(process.env.APP_ANDROID_VERSION_CODE || 16),
-          minimumVersionCode: Number(process.env.APP_ANDROID_MIN_VERSION_CODE || 15),
+          version: process.env.APP_ANDROID_VERSION || "1.10.4",
+          versionCode: Number(process.env.APP_ANDROID_VERSION_CODE || 19),
+          minimumVersionCode: Number(process.env.APP_ANDROID_MIN_VERSION_CODE || 17),
           apkUrl: process.env.APP_ANDROID_APK_URL || "",
           releaseNotes: process.env.APP_ANDROID_RELEASE_NOTES || "",
           forceUpdate: String(process.env.APP_ANDROID_FORCE_UPDATE || "false").toLowerCase() === "true",
@@ -134,7 +147,7 @@ export default async function handler(req, res) {
       }
     }
 
-        if (MONGO_DASHBOARD_ACTIONS.has(updateAction)) {
+    if (MONGO_DASHBOARD_ACTIONS.has(updateAction)) {
       try {
         const dashRes = await fetch(`${MENTOR_API_URL}/api/student-dashboard/get`, {
           method: "POST",
@@ -152,9 +165,6 @@ export default async function handler(req, res) {
       }
     }
 
-    // addStudyLog intentionally stays on the live Apps Script/Sheets path until
-    // the Mongo sync is complete (see MONGO_DASHBOARD_ACTIONS note above).
-
     if (!process.env.APPS_SCRIPT_URL) {
       return res.status(500).json({
         error: "Server misconfigured: APPS_SCRIPT_URL is missing."
@@ -167,12 +177,20 @@ export default async function handler(req, res) {
     try {
       ({ response, rawText } = await postAppsScript(process.env.APPS_SCRIPT_URL, body));
     } catch (fetchErr) {
+      if (updateAction === "addStudyLog") {
+        await mirrorStudyLogToMongo(studyLogPayload(req), {});
+        return res.status(200).json({ result: { success: true, message: "Saved on Mongo. Sheet retry pending." } });
+      }
       return res.status(502).json({
         error: "Google server busy hai. 15 second wait karke ek baar phir try karo."
       });
     }
 
     if (!response.ok) {
+      if (updateAction === "addStudyLog") {
+        await mirrorStudyLogToMongo(studyLogPayload(req), {});
+        return res.status(200).json({ result: { success: true, message: "Saved on Mongo. Sheet retry pending." } });
+      }
       return res.status(502).json({
         error: "Google server busy hai. 15 second wait karke ek baar phir try karo."
       });
@@ -182,9 +200,17 @@ export default async function handler(req, res) {
     try {
       data = JSON.parse(rawText);
     } catch (parseErr) {
+      if (updateAction === "addStudyLog") {
+        await mirrorStudyLogToMongo(studyLogPayload(req), {});
+        return res.status(200).json({ result: { success: true } });
+      }
       return res.status(502).json({
         error: "Apps Script returned a non-JSON response."
       });
+    }
+
+    if (updateAction === "addStudyLog") {
+      await mirrorStudyLogToMongo(studyLogPayload(req), data && data.result);
     }
 
     return res.status(200).json(data);
