@@ -35,8 +35,10 @@ export const DailyMcqScreen = ({ navigation, route }: Props) => {
   const [index, setIndex] = useState(0);
   const [clock, setClock] = useState(Date.now());
   const [starting, setStarting] = useState(false);
+  const [viewingPast, setViewingPast] = useState<ReturnType<typeof attemptForGroup> | null>(null);
   const autoSubmitted = useRef(false);
   const todayAttempt = attemptForGroup(selectedGroup);
+  const displayAttempt = viewingPast || todayAttempt;
   const todayQuestions = questionsForGroup(selectedGroup);
   const streak = streakForGroup(selectedGroup);
 
@@ -94,6 +96,7 @@ export const DailyMcqScreen = ({ navigation, route }: Props) => {
       return;
     }
     setSelectedGroup(group);
+    setViewingPast(null);
   };
 
   const groupSelector = (
@@ -126,6 +129,44 @@ export const DailyMcqScreen = ({ navigation, route }: Props) => {
   };
 
   if (!hydrated) return <SafeAreaView style={styles.loading}><ActivityIndicator color={colors.primary} /><Text style={styles.loadingText}>Preparing today’s challenge…</Text></SafeAreaView>;
+
+  if (viewingPast?.completedAt) {
+    const past = viewingPast;
+    const pastItems = (past.review?.length ? past.review : []).map((item) => ({
+      id: item.id, prompt: item.prompt, options: item.options || [], answer: item.answer,
+      explanation: item.explanation, subject: item.subject, kind: item.kind, chapter: item.chapter, selected: item.selected,
+    }));
+    const pastPct = past.total ? Math.round(((past.score || 0) / past.total) * 100) : 0;
+    return (
+      <SafeAreaView style={styles.safe} edges={['bottom']}>
+        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          <Text style={styles.selectLabel}>SAVED RESULT</Text>
+          {groupSelector}
+          <LinearGradient colors={pastPct >= 70 ? ['#126B61', '#1A9B86'] : ['#344867', '#536B8E']} style={styles.resultHero}>
+            <View style={styles.resultIcon}><Ionicons name={pastPct >= 70 ? 'trophy' : 'flag'} size={29} color={pastPct >= 70 ? colors.amber : colors.primary} /></View>
+            <Text style={styles.resultEyebrow}>{selectedGroup.toUpperCase()} · {past.date}</Text>
+            <Text style={styles.resultScore}>{pastPct}%</Text>
+            <Text style={styles.resultText}>{past.score}/{past.total} correct · {formatDuration(past.durationSeconds)}</Text>
+          </LinearGradient>
+          <SectionHeader title="Answer review — wrong answers highlighted" />
+          {pastItems.map((item, itemIndex) => {
+            const selected = item.selected != null ? item.selected : past.answers[item.id];
+            const correct = selected === item.answer;
+            return (
+              <Card key={item.id || String(itemIndex)} style={styles.reviewCard}>
+                <View style={styles.reviewTop}><View style={[styles.reviewStatus, correct ? styles.correctStatus : styles.wrongStatus]}><Ionicons name={correct ? 'checkmark' : 'close'} size={15} color={correct ? colors.success : colors.red} /></View><Text style={styles.reviewNumber}>Q{itemIndex + 1} · {item.subject}</Text></View>
+                <Text style={styles.reviewQuestion}>{item.prompt}</Text>
+                <Text style={styles.yourAnswer}>Your answer: <Text style={[styles.answerStrong, { color: correct ? colors.success : colors.red }]}>{selected == null ? 'Not answered' : (item.options || [])[selected]}</Text></Text>
+                {!correct ? <Text style={styles.correctAnswer}>Correct answer: {(item.options || [])[item.answer]}</Text> : null}
+                <View style={styles.explanation}><Ionicons name="bulb-outline" size={16} color={colors.primary} /><Text style={styles.explanationText}>{item.explanation}</Text></View>
+              </Card>
+            );
+          })}
+          <PrimaryButton label="Back to today's challenge" icon="arrow-back" onPress={() => setViewingPast(null)} />
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
 
   if (!todayAttempt) {
     return (
@@ -171,7 +212,12 @@ export const DailyMcqScreen = ({ navigation, route }: Props) => {
           </Card>
 
           <PrimaryButton label={todayQuestions.length ? "Start today's MCQ" : 'No published MCQs available'} icon="play" loading={starting} disabled={!todayQuestions.length} onPress={start} />
-          {history.filter((item) => item.group === selectedGroup && item.completedAt).length ? <Text style={styles.historyHint}>{history.filter((item) => item.group === selectedGroup && item.completedAt).length} previous {selectedGroup} challenge{history.filter((item) => item.group === selectedGroup && item.completedAt).length === 1 ? '' : 's'} stored on this device.</Text> : null}
+          {history.filter((item) => item.group === selectedGroup && item.completedAt && item.date !== todayAttempt?.date).slice(0, 8).map((item) => (
+            <Pressable key={`${item.date}-${item.group}`} onPress={() => setViewingPast(item)} style={styles.historyRow}>
+              <Ionicons name="clipboard-outline" size={16} color={colors.primary} />
+              <Text style={styles.historyRowText}>{item.date} · {item.score}/{item.total} · view wrong answers</Text>
+            </Pressable>
+          ))}
         </ScrollView>
       </SafeAreaView>
     );
@@ -305,6 +351,8 @@ const styles = StyleSheet.create({
   ruleText: { color: colors.muted, fontSize: 8, marginTop: 3 },
   ruleLine: { height: 1, backgroundColor: colors.border, marginLeft: 51 },
   historyHint: { color: colors.muted, fontSize: 8, textAlign: 'center', marginTop: spacing.md },
+  historyRow: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.primarySoft, borderRadius: radius.md, padding: spacing.md, marginTop: spacing.sm },
+  historyRowText: { flex: 1, color: colors.inkSoft, fontSize: 9, fontWeight: '700' },
   quizContent: { padding: spacing.lg, paddingBottom: 40 },
   quizHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   quizEyebrow: { color: colors.primary, fontSize: 8, fontWeight: '900', letterSpacing: 1 },
