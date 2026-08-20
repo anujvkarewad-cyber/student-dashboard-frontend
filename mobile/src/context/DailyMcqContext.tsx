@@ -17,6 +17,11 @@ export type DailyMcqAttempt = {
   score?: number;
   total?: number;
   durationSeconds?: number;
+  review?: Array<{
+    id: string; prompt: string; options: string[]; answer: number;
+    selected?: number | null; explanation?: string; subject?: string;
+    chapter?: string; difficulty?: string; kind?: string; correct?: boolean;
+  }>;
 };
 
 type DailyMcqValue = {
@@ -196,6 +201,19 @@ export const DailyMcqProvider = ({ children }: PropsWithChildren) => {
       score,
       total: questions.length,
       durationSeconds: Math.max(1, Math.floor((completedAt - current.startedAt) / 1000)),
+      review: questions.map((question) => ({
+        id: question.id,
+        prompt: question.prompt,
+        options: question.options,
+        answer: question.answer,
+        selected: current.answers[question.id] == null ? null : current.answers[question.id],
+        explanation: question.explanation || '',
+        subject: question.subject,
+        chapter: question.chapter,
+        difficulty: question.difficulty,
+        kind: question.kind,
+        correct: current.answers[question.id] === question.answer,
+      })),
     };
     await persist(history.map((attempt) => attempt.date === dateKey && attempt.group === group ? updated : attempt));
     if (backendMode !== 'mock') syncCompletedMcqAttempts([updated], []).catch(() => undefined);
