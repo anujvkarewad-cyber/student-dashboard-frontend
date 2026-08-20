@@ -188,7 +188,12 @@ export const McqPracticeScreen = ({ navigation }: Props) => {
         <View style={[styles.poolCard, !pool.length && styles.poolEmpty]}><View style={styles.poolIcon}><Ionicons name={pool.length ? 'layers-outline' : 'alert-circle-outline'} size={22} color={pool.length ? colors.primary : colors.red} /></View><View style={{ flex: 1 }}><Text style={styles.poolTitle}>{pool.length} questions match</Text><Text style={styles.poolText}>{pool.length ? `This session will use ${Math.min(config.requestedCount, pool.length)} unique questions. Start unlimited new sessions for fresh ordering.` : 'Broaden chapter, type or difficulty filters.'}</Text></View></View>
         <PrimaryButton label={`Start ${Math.min(config.requestedCount, pool.length)}-question practice`} icon="play" loading={starting} disabled={!pool.length} onPress={start} />
 
-        {completedCount ? <View style={styles.historySummary}><Ionicons name="analytics-outline" size={20} color={colors.primary} /><Text style={styles.historyText}>Practice history is stored locally. Latest: {history.find((item) => item.completedAt)?.score}/{history.find((item) => item.completedAt)?.total}</Text></View> : <Card style={{ marginTop: spacing.xl }}><EmptyState icon="infinite-outline" title="No practice sessions yet" message="Configure a session above. There is no daily practice limit." /></Card>}
+        {completedCount ? history.filter((item) => item.completedAt).slice(0, 8).map((item) => (
+          <Pressable key={item.id} onPress={() => setResult(item)} style={styles.historySummary}>
+            <Ionicons name="clipboard-outline" size={20} color={colors.primary} />
+            <Text style={styles.historyText}>{new Date(item.completedAt || item.startedAt).toLocaleDateString('en-IN')} · {item.score}/{item.total} · view wrong answers</Text>
+          </Pressable>
+        )) : <Card style={{ marginTop: spacing.xl }}><EmptyState icon="infinite-outline" title="No practice sessions yet" message="Configure a session above. There is no daily practice limit." /></Card>}
       </ScrollView>
     </SafeAreaView>
   );
