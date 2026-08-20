@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { DailyMcqQuestion } from '../data/dailyMcqBank';
+import { EnrichedMcqQuestion } from '../data/mcqMetadata';
 import { CaGroup, subjectGroup } from '../utils/caGroups';
 import { restoreMcqAttempts, syncCompletedMcqAttempts } from '../services/mcqCloudSync';
 import { useAuth } from './AuthContext';
@@ -30,7 +30,7 @@ type DailyMcqValue = {
   todayAttempts: DailyMcqAttempt[];
   history: DailyMcqAttempt[];
   attemptForGroup: (group: CaGroup) => DailyMcqAttempt | undefined;
-  questionsForGroup: (group: CaGroup) => DailyMcqQuestion[];
+  questionsForGroup: (group: CaGroup) => EnrichedMcqQuestion[];
   streakForGroup: (group: CaGroup) => number;
   startDaily: (group: CaGroup) => Promise<DailyMcqAttempt>;
   answerQuestion: (group: CaGroup, questionId: string, option: number) => Promise<void>;
@@ -65,7 +65,7 @@ const seededRandom = (seedValue: number) => {
   };
 };
 
-const dailyQuestionIds = (bank: DailyMcqQuestion[], date: string, studentId: string, group: CaGroup) => {
+const dailyQuestionIds = (bank: EnrichedMcqQuestion[], date: string, studentId: string, group: CaGroup) => {
   const random = seededRandom(hash(`${date}:${studentId}:${group}`));
   const pool = bank.filter((question) => subjectGroup(question.subject) === group);
   const pick = (questions: typeof pool, count: number) => questions
@@ -160,7 +160,7 @@ export const DailyMcqProvider = ({ children }: PropsWithChildren) => {
   const questionsForGroup = useCallback((group: CaGroup) => {
     const attempt = attemptForGroup(group);
     const ids = attempt?.questionIds || dailyQuestionIds(mcqBank, dateKey, student?.studentId || 'demo', group);
-    return ids.map((id) => mcqBank.find((question) => question.id === id)).filter(Boolean) as DailyMcqQuestion[];
+    return ids.map((id) => mcqBank.find((question) => question.id === id)).filter((question): question is EnrichedMcqQuestion => Boolean(question));
   }, [attemptForGroup, dateKey, mcqBank, student?.studentId]);
 
   const startDaily = useCallback(async (group: CaGroup) => {
@@ -192,7 +192,7 @@ export const DailyMcqProvider = ({ children }: PropsWithChildren) => {
   const submitDaily = useCallback(async (group: CaGroup) => {
     const current = history.find((attempt) => attempt.date === dateKey && attempt.group === group);
     if (!current || current.completedAt) return current || null;
-    const questions = current.questionIds.map((id) => mcqBank.find((question) => question.id === id)).filter(Boolean) as DailyMcqQuestion[];
+    const questions = current.questionIds.map((id) => mcqBank.find((question) => question.id === id)).filter((question): question is EnrichedMcqQuestion => Boolean(question));
     const score = questions.reduce((total, question) => total + (current.answers[question.id] === question.answer ? 1 : 0), 0);
     const completedAt = Date.now();
     const updated: DailyMcqAttempt = {
