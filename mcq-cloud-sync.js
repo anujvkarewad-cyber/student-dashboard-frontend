@@ -1,132 +1,99 @@
-/**
- * Authenticated cloud backup/restore for completed MCQ attempts.
- */
-(function () {
-  "use strict";
+import { config } from '../config';
+import { getSavedSession } from '../storage/session';
 
-  const DEFAULT_API = "https://ujjwal-pathak-mentor-api.onrender.com";
-  function apiBase() {
-    return (
-      (window.UMP_MENTOR_API_URL && window.UMP_MENTOR_API_URL()) ||
-      window.MENTOR_API_URL ||
-      DEFAULT_API
-    ).replace(/\/$/, "");
-  }
-  const pending = new Map();
-  let flushTimer = null;
-  let restorePromise = null;
+type McqReviewItem = {
+  id: string; prompt: string; options: string[]; answer: number;
+  selected?: number | null; explanation?: string; subject?: string;
+  chapter?: string; difficulty?: string; kind?: string; correct?: boolean;
+};
 
-  function savedCredentials() {
-    try {
-      const saved = JSON.parse(localStorage.getItem("ump_student") || "null");
-      return saved?.studentId && saved?.password
-        ? { studentId: saved.studentId, password: saved.password }
-        : null;
-    } catch (_) {
-      return null;
-    }
-  }
+type LocalDaily = {
+  bankRevision?: string; date: string; group: string; questionIds: string[];
+  answers: Record<string, number>; startedAt: number; completedAt?: number;
+  score?: number; total?: number; durationSeconds?: number; review?: McqReviewItem[];
+};
 
-  async function post(path, payload) {
-    const credentials = savedCredentials();
-    if (!credentials) throw new Error("Student login is required for MCQ cloud backup");
-    const response = await fetch(`${apiBase()}${path}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...credentials, ...payload }),
-    });
-    if (!response.ok) throw new Error(`MCQ cloud request failed (${response.status})`);
-    return response.json();
-  }
+type LocalPractice = {
+  id: string;
+  bankRevision?: string;
+  config: {
+    group: string; subject: string; chapter: string; mode: string;
+    difficulty: string; requestedCount: number;
+  };
+  questionIds: string[]; answers: Record<string, number>; startedAt: number;
+  completedAt?: number; score?: number; total?: number; durationSeconds?: number; review?: McqReviewItem[];
+};
 
-  function dailyCloudAttempt(attempt) {
-    if (!attempt?.completedAt || !attempt.date || !attempt.group) return null;
+type CloudAttempt = Record<string, unknown> & { attemptId: string; kind: 'daily' | 'practice' };
+type RestoredAttempts = { daily: LocalDaily[]; practice: LocalPractice[] };
+let restorePromise: Promise<RestoredAttempts> | null = null;
+
+const post = async <T,>(path: string, payload: Record<string, unknown>): Promise<T> => {
+  const session = await getSavedSession();
+  if (!session) throw new Error('Student login is required for MCQ cloud backup');
+  const response = await fetch(`${config.mentorApiUrl}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...session, ...payload }),
+  });
+  if (!response.ok) throw new Error(`MCQ cloud request failed (${response.status})`);
+  return response.json() as Promise<T>;
+};
+
+const dailyToCloud = (attempt: LocalDaily): CloudAttempt | null => attempt.completedAt ? {
+  attemptId: `daily:${attempt.date}:${attempt.group}`,
+  kind: 'daily',
+  bankRevision: attempt.bankRevision || 'unknown',
+  date: attempt.date,
+  group: attempt.group,
+  questionIds: attempt.questionIds,
+  answers: attempt.answers,
+  startedAt: attempt.startedAt,
+  completedAt: attempt.completedAt,
+  score: attempt.score || 0,
+  total: attempt.total || attempt.questionIds.length,
+  durationSeconds: attempt.durationSeconds || 0,
+  review: attempt.review || [],
+} : null;
+
+const practiceToCloud = (attempt: LocalPractice): CloudAttempt | null => attempt.completedAt ? {
+  attemptId: attempt.id,
+  kind: 'practice',
+  bankRevision: attempt.bankRevision || 'unknown',
+  config: attempt.config,
+  questionIds: attempt.questionIds,
+  answers: attempt.answers,
+  startedAt: attempt.startedAt,
+  completedAt: attempt.completedAt,
+  score: attempt.score || 0,
+  total: attempt.total || attempt.questionIds.length,
+  durationSeconds: attempt.durationSeconds || 0,
+  review: attempt.review || [],
+} : null;
+
+export const syncCompletedMcqAttempts = async (daily: LocalDaily[] = [], practice: LocalPractice[] = []) => {
+  const attempts = [
+    ...daily.map(dailyToCloud).filter(Boolean),
+    ...practice.map(practiceToCloud).filter(Boolean),
+  ] as CloudAttempt[];
+  if (!attempts.length) return { ok: true, accepted: 0 };
+  return post<{ ok: boolean; accepted: number }>('/api/student-attempts/sync', { attempts });
+};
+
+export const restoreMcqAttempts = async (): Promise<RestoredAttempts> => {
+  if (restorePromise) return restorePromise;
+  restorePromise = (async () => {
+    const data = await post<{ daily: CloudAttempt[]; practice: CloudAttempt[] }>('/api/student-attempts/restore', {});
     return {
-      attemptId: `daily:${attempt.date}:${attempt.group}`,
-      kind: "daily",
-      bankRevision: String(attempt.bankRevision || "unknown"),
-      date: attempt.date,
-      group: attempt.group,
-      questionIds: attempt.questionIds || [],
-      answers: attempt.answers || {},
-      startedAt: Number(attempt.startedAt || 0),
-      completedAt: Number(attempt.completedAt),
-      score: Number(attempt.score || 0),
-      total: Number(attempt.total || 0),
-      durationSeconds: Number(attempt.durationSeconds || 0),
-      review: Array.isArray(attempt.review) ? attempt.review : [],
+      daily: (data.daily || []).map((item) => {
+        const { attemptId: _attemptId, kind: _kind, ...attempt } = item;
+        return attempt as LocalDaily;
+      }),
+      practice: (data.practice || []).map((item) => {
+        const { attemptId, kind: _kind, ...attempt } = item;
+        return { ...attempt, id: attemptId } as LocalPractice;
+      }),
     };
-  }
-
-  function practiceCloudAttempt(attempt) {
-    if (!attempt?.completedAt || !attempt.id || !attempt.config) return null;
-    return {
-      attemptId: attempt.id,
-      kind: "practice",
-      bankRevision: String(attempt.bankRevision || "unknown"),
-      config: attempt.config,
-      questionIds: attempt.questionIds || [],
-      answers: attempt.answers || {},
-      startedAt: Number(attempt.startedAt || 0),
-      completedAt: Number(attempt.completedAt),
-      score: Number(attempt.score || 0),
-      total: Number(attempt.total || 0),
-      durationSeconds: Number(attempt.durationSeconds || 0),
-      review: Array.isArray(attempt.review) ? attempt.review : [],
-    };
-  }
-
-  function fromCloud(attempt) {
-    const copy = { ...attempt };
-    delete copy.kind;
-    delete copy.attemptId;
-    if (attempt.kind === "practice") copy.id = attempt.attemptId;
-    return copy;
-  }
-
-  async function flush() {
-    flushTimer = null;
-    if (!pending.size) return;
-    const attempts = [...pending.values()];
-    pending.clear();
-    try {
-      await post("/api/student-attempts/sync", { attempts });
-      window.UMP_MCQ_CLOUD_STATUS = { state: "synced", at: Date.now(), count: attempts.length };
-    } catch (error) {
-      attempts.forEach((attempt) => pending.set(`${attempt.kind}:${attempt.attemptId}`, attempt));
-      window.UMP_MCQ_CLOUD_STATUS = { state: "error", at: Date.now(), error: error.message };
-      console.warn("[MCQ Cloud] Backup delayed:", error.message);
-    }
-  }
-
-  function queue(daily = [], practice = []) {
-    daily.map(dailyCloudAttempt).filter(Boolean).forEach((attempt) => {
-      pending.set(`${attempt.kind}:${attempt.attemptId}`, attempt);
-    });
-    practice.map(practiceCloudAttempt).filter(Boolean).forEach((attempt) => {
-      pending.set(`${attempt.kind}:${attempt.attemptId}`, attempt);
-    });
-    if (!pending.size) return;
-    window.UMP_MCQ_CLOUD_STATUS = { state: "pending", at: Date.now(), count: pending.size };
-    if (flushTimer) clearTimeout(flushTimer);
-    flushTimer = setTimeout(flush, 1200);
-  }
-
-  async function restore() {
-    if (restorePromise) return restorePromise;
-    restorePromise = (async () => {
-      const data = await post("/api/student-attempts/restore", {});
-      return {
-        daily: (data.daily || []).map(fromCloud),
-        practice: (data.practice || []).map(fromCloud),
-      };
-    })();
-    try {
-      return await restorePromise;
-    } finally {
-      restorePromise = null;
-    }
-  }
-
-  window.UMP_MCQ_CLOUD = { queue, flush, restore };
-})();
+  })();
+  try { return await restorePromise; } finally { restorePromise = null; }
+};
