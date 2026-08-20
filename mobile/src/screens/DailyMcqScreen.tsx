@@ -212,7 +212,7 @@ export const DailyMcqScreen = ({ navigation, route }: Props) => {
           </Card>
 
           <PrimaryButton label={todayQuestions.length ? "Start today's MCQ" : 'No published MCQs available'} icon="play" loading={starting} disabled={!todayQuestions.length} onPress={start} />
-          {history.filter((item) => item.group === selectedGroup && item.completedAt && item.date !== todayAttempt?.date).slice(0, 8).map((item) => (
+          {history.filter((item) => item.group === selectedGroup && item.completedAt).slice(0, 8).map((item) => (
             <Pressable key={`${item.date}-${item.group}`} onPress={() => setViewingPast(item)} style={styles.historyRow}>
               <Ionicons name="clipboard-outline" size={16} color={colors.primary} />
               <Text style={styles.historyRowText}>{item.date} · {item.score}/{item.total} · view wrong answers</Text>
