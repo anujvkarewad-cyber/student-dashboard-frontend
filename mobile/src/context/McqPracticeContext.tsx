@@ -30,6 +30,11 @@ export type McqPracticeSession = {
   score?: number;
   total?: number;
   durationSeconds?: number;
+  review?: Array<{
+    id: string; prompt: string; options: string[]; answer: number;
+    selected?: number | null; explanation?: string; subject?: string;
+    chapter?: string; difficulty?: string; kind?: string; correct?: boolean;
+  }>;
 };
 
 type McqPracticeValue = {
@@ -181,6 +186,19 @@ export const McqPracticeProvider = ({ children }: PropsWithChildren) => {
       score: questions.reduce((total, question) => total + (activeSession.answers[question.id] === question.answer ? 1 : 0), 0),
       total: questions.length,
       durationSeconds: Math.max(1, Math.floor((completedAt - activeSession.startedAt) / 1000)),
+      review: questions.map((question) => ({
+        id: question.id,
+        prompt: question.prompt,
+        options: question.options,
+        answer: question.answer,
+        selected: activeSession.answers[question.id] == null ? null : activeSession.answers[question.id],
+        explanation: question.explanation || '',
+        subject: question.subject,
+        chapter: question.chapter,
+        difficulty: question.difficulty,
+        kind: question.kind,
+        correct: activeSession.answers[question.id] === question.answer,
+      })),
     };
     await persist(history.map((session) => session.id === activeSession.id ? updated : session));
     if (backendMode !== 'mock') syncCompletedMcqAttempts([], [updated]).catch(() => undefined);
