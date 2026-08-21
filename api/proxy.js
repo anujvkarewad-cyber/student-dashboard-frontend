@@ -110,14 +110,23 @@ async function tryMongoLogin(req) {
 }
 
 async function mirrorStudyLogToMongo(payload, gasResult) {
-  try {
-    await fetch(`${MENTOR_API_URL}/api/student-dashboard/write`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "addStudyLog", payload, result: gasResult || {} })
-    });
-  } catch (err) {
-    console.error("Mongo study-log mirror failed:", err && err.message);
+  const hosts = [MENTOR_API_URL, "https://ujjwal-pathak-project.onrender.com"];
+  const body = JSON.stringify({ action: "addStudyLog", payload, result: gasResult || {} });
+  for (let i = 0; i < hosts.length; i++) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(function () { controller.abort(); }, 12000);
+      const response = await fetch(hosts[i] + "/api/student-dashboard/write", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body,
+        signal: controller.signal
+      });
+      clearTimeout(timer);
+      if (response.ok) return;
+    } catch (err) {
+      console.error("Mongo study-log mirror failed:", hosts[i], err && err.message);
+    }
   }
 }
 
@@ -149,13 +158,14 @@ export default async function handler(req, res) {
 
     if (MONGO_DASHBOARD_ACTIONS.has(updateAction)) {
       try {
+        const payload = studyLogPayload(req);
         const dashRes = await fetch(`${MENTOR_API_URL}/api/student-dashboard/get`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             action: updateAction,
-            payload: (req.body && req.body.payload) || {},
-            studentId: (req.body && req.body.payload && req.body.payload.studentId) || ""
+            payload,
+            studentId: payload.studentId || ""
           })
         });
         const dashData = await dashRes.json();
@@ -163,6 +173,10 @@ export default async function handler(req, res) {
       } catch (dashErr) {
         console.error("Mongo dashboard fallback:", dashErr && dashErr.message);
       }
+    }
+
+    if (updateAction === "addStudyLog") {
+      await mirrorStudyLogToMongo(studyLogPayload(req), {});
     }
 
     if (!process.env.APPS_SCRIPT_URL) {
