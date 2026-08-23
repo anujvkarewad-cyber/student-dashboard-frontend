@@ -179,6 +179,22 @@ export default async function handler(req, res) {
       await mirrorStudyLogToMongo(studyLogPayload(req), {});
     }
 
+    if (updateAction === "deleteStudyLog") {
+      try {
+        const payload = studyLogPayload(req);
+        const delRes = await fetch(`${MENTOR_API_URL}/api/student-dashboard/write`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "deleteStudyLog", payload })
+        });
+        const delData = await delRes.json();
+        const result = (delData && delData.result) || delData || {};
+        return res.status(200).json({ result: { success: result.success !== false, ...result } });
+      } catch (err) {
+        return res.status(502).json({ error: "Delete failed. Try again." });
+      }
+    }
+
     if (!process.env.APPS_SCRIPT_URL) {
       return res.status(500).json({
         error: "Server misconfigured: APPS_SCRIPT_URL is missing."
