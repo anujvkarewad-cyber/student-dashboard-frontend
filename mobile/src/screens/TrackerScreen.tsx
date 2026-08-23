@@ -137,6 +137,7 @@ const styles = StyleSheet.create({
   logDate: { color: colors.muted, fontSize: 10, marginTop: 4 },
   hoursPill: { backgroundColor: colors.tealSoft, paddingHorizontal: 10, paddingVertical: 7, borderRadius: radius.pill },
   hours: { color: colors.teal, fontSize: 12, fontWeight: '900' },
+  deleteBtn: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
   footerSpace: { height: 40 },
   fab: { position: 'absolute', right: spacing.lg, bottom: 22, height: 54, borderRadius: 27, paddingHorizontal: spacing.xl, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.primary, shadowColor: colors.primaryDark, shadowOffset: { width: 0, height: 7 }, shadowOpacity: 0.28, shadowRadius: 12, elevation: 7 },
   fabText: { color: colors.surface, fontWeight: '900', fontSize: 14 },
