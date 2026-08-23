@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import React from 'react';
-import { FlatList, Linking, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { Alert, FlatList, Linking, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Card, EmptyState, ErrorBanner } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
@@ -23,7 +23,7 @@ const Summary = ({ icon, label, value }: { icon: keyof typeof Ionicons.glyphMap;
   </View>
 );
 
-const LogRow = ({ item }: { item: StudyLog }) => (
+const LogRow = ({ item, canDelete, onDelete }: { item: StudyLog; canDelete: boolean; onDelete: () => void }) => (
   <Card style={styles.logCard}>
     <View style={styles.dateTile}>
       <Text style={styles.dateDay}>{new Date(item.date).getDate() || '—'}</Text>
@@ -37,13 +37,18 @@ const LogRow = ({ item }: { item: StudyLog }) => (
     {item.proof && item.proof !== '#' ? (
       <Pressable onPress={() => Linking.openURL(item.proof!)} hitSlop={10}><Ionicons name="open-outline" size={20} color={colors.primary} /></Pressable>
     ) : null}
+    {canDelete ? (
+      <Pressable onPress={onDelete} hitSlop={10} style={styles.deleteBtn}>
+        <Ionicons name="trash-outline" size={18} color={colors.red} />
+      </Pressable>
+    ) : null}
   </Card>
 );
 
 export const TrackerScreen = () => {
   const navigation = useNavigation<any>();
   const { backendMode } = useAuth();
-  const { data, error, refreshing, refreshTracker } = useData();
+  const { data, error, refreshing, refreshTracker, deleteStudyLog } = useData();
   const stats = data.stats;
   const canSubmit = backendMode !== 'live-readonly';
 
@@ -52,7 +57,24 @@ export const TrackerScreen = () => {
       <FlatList
         data={data.studyLog}
         keyExtractor={(item, index) => `${item.date}-${index}`}
-        renderItem={({ item }) => <LogRow item={item} />}
+        renderItem={({ item }) => (
+          <LogRow
+            item={item}
+            canDelete={canSubmit}
+            onDelete={() => {
+              Alert.alert('Delete this entry?', `${niceDate(item.date)} · ${format(item.hours)}h`, [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Delete',
+                  style: 'destructive',
+                  onPress: () => deleteStudyLog({ date: item.date, hours: item.hours, topic: item.topic || '' }).catch((err) => {
+                    Alert.alert('Could not delete', err instanceof Error ? err.message : 'Try again.');
+                  }),
+                },
+              ]);
+            }}
+          />
+        )}
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => refreshTracker().catch(() => undefined)} colors={[colors.primary]} />}
         contentContainerStyle={styles.content}
