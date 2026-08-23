@@ -57,6 +57,10 @@ window.UMP_API = {
     return callAPI("addStudyLog", { studentId, ...entry });
   },
 
+  deleteStudyLog(studentId, entry) {
+    return callAPI("deleteStudyLog", { studentId, ...entry });
+  },
+
   getLeaderboard() {
     return callAPI("getLeaderboard");
   },
