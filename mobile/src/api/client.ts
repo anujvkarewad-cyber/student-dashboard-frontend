@@ -175,6 +175,12 @@ class ApiClient {
     return clone(demoLog);
   }
 
+  async deleteStudyLog(studentId: string, entry: { date: string; hours: number; topic?: string }): Promise<ApiSuccess> {
+    this.blockBackendWrite('Study-log delete');
+    if (!this.isUsingMocks()) return this.call<ApiSuccess>('deleteStudyLog', { studentId, ...entry });
+    return { success: true };
+  }
+
   async addStudyLog(studentId: string, entry: StudyLogPayload): Promise<ApiSuccess> {
     this.blockBackendWrite('Study-log submission');
     if (!this.isUsingMocks()) return this.call<ApiSuccess>('addStudyLog', { studentId, ...entry });
