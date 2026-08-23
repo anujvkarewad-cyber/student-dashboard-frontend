@@ -529,7 +529,7 @@
       <div class="table-wrap">
         <table class="data-table" data-testid="tracker-table">
           <thead>
-            <tr><th>Date</th><th>Topic</th><th>Hours</th><th>Proof</th></tr>
+            <tr><th>Date</th><th>Topic</th><th>Hours</th><th>Proof</th><th></th></tr>
           </thead>
           <tbody id="tracker-tbody"></tbody>
         </table>
@@ -669,9 +669,8 @@
           </div>
         </div>
         <button id="share-progress-btn" class="btn-primary" type="button">Turn on</button>
-      </div>      
+      </div>
 
-      
       <div class="profile-grid">
         <div><span>Email</span><b id="p-email">—</b></div>
         <div><span>Phone</span><b id="p-phone">—</b></div>
@@ -1049,14 +1048,15 @@
 <script src="firebase-init.js"></script>
 <script src="learning-data.js"></script>
 <script>
-  // Mentor API URL - change to your Render backend - set in localStorage to override
-   window.MENTOR_API_URL = "https://ujjwal-pathak-mentor-api.onrender.com";
-  try { localStorage.setItem("ump_mentor_api_url", window.MENTOR_API_URL); } catch (e) {}
+  // Default host. mentor-api.js then picks whichever Render service actually
+  // has published MCQs so a restart on one box cannot blank the student bank.
+  window.MENTOR_API_URL = localStorage.getItem("ump_mentor_api_url") || "https://ujjwal-pathak-mentor-api.onrender.com";
 </script>
+<script src="mentor-api.js"></script>
 <script src="live-bank-loader.js"></script>
 <script src="mcq-cloud-sync.js"></script>
+<script src="mcq-progress-share.js"></script>
 <script src="learning-tools.js"></script>
-<script src="mcq-progress-share.js"></script>  
 <script src="app.js"></script>
 <script>
 
@@ -1191,5 +1191,5 @@ document
 <script type="module" src="https://unpkg.com/@dotlottie/player-component@2.7.12/dist/dotlottie-player.mjs"></script>
 
 
-</body>
+<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a2f895925a98752b',t:'MTc4NzQ3MjAzMw=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
