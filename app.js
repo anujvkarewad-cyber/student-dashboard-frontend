@@ -1,4 +1,4 @@
-const APP_VERSION = "2.6.0";
+const APP_VERSION = "2.6.1";
 
 (function () {
   "use strict";
@@ -640,14 +640,47 @@ const APP_VERSION = "2.6.0";
     $$("[data-k='weekly']").forEach(el => el.textContent = fmt(st.weeklyHours, 1));
 
     const tb = $("#tracker-tbody");
-    tb.innerHTML = state.log.length ? state.log.map(row => `
+    tb.innerHTML = state.log.length ? state.log.map((row, idx) => `
       <tr>
         <td><b>${dayShort(row.date)}</b></td>
         <td>${escapeHtml(row.topic || "")}</td>
         <td><b class="mono">${fmt(row.hours, 1)}</b></td>
         <td>${row.proof && row.proof !== "#" ? `<a href="${row.proof}" target="_blank"><i class="fa-solid fa-arrow-up-right-from-square"></i> View</a>` : "—"}</td>
+        <td><button type="button" class="btn btn-secondary" data-del-log="${idx}" title="Delete this entry" style="padding:4px 10px;font-size:12px;color:#B91C1C">Delete</button></td>
       </tr>`).join("")
-      : `<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:30px">No submissions yet — start logging your daily study!</td></tr>`;
+      : `<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:30px">No submissions yet — start logging your daily study!</td></tr>`;
+
+    $$("[data-del-log]", tb).forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const row = state.log[Number(btn.dataset.delLog)];
+        if (!row) return;
+        if (!confirm(`Delete ${dayShort(row.date)} · ${fmt(row.hours, 1)}h?`)) return;
+        btn.disabled = true;
+        try {
+          const result = await api.deleteStudyLog(state.student.studentId, {
+            date: row.date,
+            hours: row.hours,
+            topic: row.topic || ""
+          });
+          if (!result || result.success === false) {
+            alert((result && result.message) || "Delete failed.");
+            return;
+          }
+          const [stats, log] = await Promise.all([
+            api.getStats(state.student.studentId),
+            api.getStudyLog(state.student.studentId)
+          ]);
+          state.stats = stats;
+          state.log = log;
+          $("#topbar-streak").textContent = stats.streak ?? 0;
+          renderTracker();
+        } catch (err) {
+          alert(err.message || "Delete failed.");
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    });
 
     const trackerBtn = $("#open-tracker-form");
     if (trackerBtn) {
@@ -1067,7 +1100,7 @@ const APP_VERSION = "2.6.0";
     if (btn) {
       btn.addEventListener("click", updatePassword);
     }
-     if (window.UMP_PROGRESS_SHARE) window.UMP_PROGRESS_SHARE.paint();
+    if (window.UMP_PROGRESS_SHARE) window.UMP_PROGRESS_SHARE.paint();
 
     // --- Push notification enable section inside profile card ---
     try {
