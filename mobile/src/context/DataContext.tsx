@@ -26,6 +26,7 @@ type DataContextValue = {
   refreshReports: () => Promise<void>;
   refreshNotes: () => Promise<void>;
   submitStudyLog: (entry: StudyLogPayload) => Promise<void>;
+  deleteStudyLog: (entry: { date: string; hours: number; topic?: string }) => Promise<void>;
   dismissFeedback: (id: string) => Promise<void>;
 };
 
@@ -175,6 +176,13 @@ export const DataProvider = ({ children }: PropsWithChildren) => {
     await refreshTracker();
   }, [refreshTracker, student]);
 
+  const deleteStudyLog = useCallback(async (entry: { date: string; hours: number; topic?: string }) => {
+    if (!student) throw new Error('Please log in again.');
+    const result = await api.deleteStudyLog(student.studentId, entry);
+    if (!result?.success) throw new Error(result?.message || 'The study log could not be deleted.');
+    await refreshTracker();
+  }, [refreshTracker, student]);
+
   const dismissFeedback = useCallback(async (id: string) => {
     try { await api.markMentorFeedbackRead(id); }
     catch (error) { if (!api.isReadOnlyMode()) throw error; }
@@ -195,8 +203,9 @@ export const DataProvider = ({ children }: PropsWithChildren) => {
     refreshReports,
     refreshNotes,
     submitStudyLog,
+    deleteStudyLog,
     dismissFeedback,
-  }), [data, loading, refreshing, error, fetchAll, refreshTracker, refreshLeaderboard, refreshReports, refreshNotes, submitStudyLog, dismissFeedback]);
+  }), [data, loading, refreshing, error, fetchAll, refreshTracker, refreshLeaderboard, refreshReports, refreshNotes, submitStudyLog, deleteStudyLog, dismissFeedback]);
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 };
