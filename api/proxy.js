@@ -22,7 +22,8 @@ const MONGO_DASHBOARD_ACTIONS = new Set([
   "getAnnouncements",
   "getLeaderboard",
   "getStudentMentorNotes",
-  "getStudentFeedback"
+  "getStudentFeedback",
+  "notes.listForStudent"
 ]);
 
 async function attemptOnce(url, body, timeoutMs) {
