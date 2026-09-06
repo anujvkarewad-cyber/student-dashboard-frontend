@@ -90,6 +90,7 @@ async function tryMongoLogin(req) {
     const result = data.result || data;
     if (result && result.success === true) return { result };
     if (result && result.code === "wrong_password") return { result };
+    if (result && result.code === "group_closed") return { result };
     return null;
   }
   if (action === "changePassword") {
