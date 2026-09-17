@@ -178,18 +178,6 @@ export default async function handler(req, res) {
       });
     }
 
-    if (updateAction === "saveDeviceToken") {
-      return res.status(200).json({ result: { success: true } });
-    }
-
-    if (
-      updateAction === "getAnnouncements" ||
-      updateAction === "getStudentMentorNotes" ||
-      updateAction === "getStudentFeedback"
-    ) {
-      return res.status(200).json({ result: [] });
-    }
-
     if (updateAction === "validateLogin") {
       try {
         const mongoHit = await tryMongoLogin(req);
