@@ -14,7 +14,6 @@ const RETRY_STATUSES = new Set([404, 408, 429, 500, 502, 503, 504]);
 const BUDGET_MS = 50000;
 const ATTEMPT_MS = 18000;
 const MENTOR_API_URL = (process.env.MENTOR_API_URL || "https://ujjwal-pathak-mentor-api.onrender.com").replace(/\/$/, "");
-const MONGO_LOGIN_ACTIONS = new Set(["validateLogin", "changePassword"]);
 const MONGO_DASHBOARD_ACTIONS = new Set([
   "getStats",
   "getStudyLog",
@@ -61,8 +60,8 @@ async function postAppsScript(url, body) {
   return first;
 }
 
-function isSept2026(attempt) {
-  const t = String(attempt || "").trim().toLowerCase();
+function isSept2026(value) {
+  const t = String(value || "").trim().toLowerCase();
   if (!t) return false;
   if (/sept(?:ember)?\s*20?26/.test(t)) return true;
   if (/\bsep(?:t)?[\s./-]*26\b/.test(t)) return true;
@@ -77,6 +76,15 @@ function sept26Closed() {
       message: "Sept 2026 access is closed."
     }
   };
+}
+
+function isClosedCohort(result) {
+  if (!result || result.success !== true) return false;
+  const attempt = String(result.attempt || result.examAttempt || result.exam || "").trim();
+  const batch = String(result.batch || "").trim();
+  if (isSept2026(attempt) || isSept2026(batch)) return true;
+  if (!attempt) return true;
+  return false;
 }
 
 function loginPayload(req) {
@@ -107,7 +115,7 @@ async function tryMongoLogin(req) {
     const data = await response.json();
     const result = data.result || data;
     if (result && result.success === true) {
-      if (isSept2026(result.attempt)) return sept26Closed();
+      if (isClosedCohort(result)) return sept26Closed();
       return { result };
     }
     if (result && result.code === "wrong_password") return { result };
@@ -170,12 +178,22 @@ export default async function handler(req, res) {
       });
     }
 
-    if (MONGO_LOGIN_ACTIONS.has(updateAction)) {
+    if (updateAction === "validateLogin") {
       try {
         const mongoHit = await tryMongoLogin(req);
         if (mongoHit) return res.status(200).json(mongoHit);
       } catch (mongoErr) {
-        console.error("Mongo login fallback to Apps Script:", mongoErr && mongoErr.message);
+        console.error("Mongo login unavailable, Sept 2026 closed:", mongoErr && mongoErr.message);
+      }
+      return res.status(200).json(sept26Closed());
+    }
+
+    if (updateAction === "changePassword") {
+      try {
+        const mongoHit = await tryMongoLogin(req);
+        if (mongoHit) return res.status(200).json(mongoHit);
+      } catch (mongoErr) {
+        console.error("Mongo password change fallback to Apps Script:", mongoErr && mongoErr.message);
       }
     }
 
@@ -264,6 +282,13 @@ export default async function handler(req, res) {
 
     if (updateAction === "addStudyLog") {
       await mirrorStudyLogToMongo(studyLogPayload(req), data && data.result);
+    }
+
+    if (updateAction === "validateLogin") {
+      const result = data && data.result;
+      if (result && result.success === true && isClosedCohort(result)) {
+        return res.status(200).json(sept26Closed());
+      }
     }
 
     return res.status(200).json(data);
