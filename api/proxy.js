@@ -61,6 +61,24 @@ async function postAppsScript(url, body) {
   return first;
 }
 
+function isSept2026(attempt) {
+  const t = String(attempt || "").trim().toLowerCase();
+  if (!t) return false;
+  if (/sept(?:ember)?\s*20?26/.test(t)) return true;
+  if (/\bsep(?:t)?[\s./-]*26\b/.test(t)) return true;
+  return false;
+}
+
+function sept26Closed() {
+  return {
+    result: {
+      success: false,
+      code: "group_closed",
+      message: "Sept 2026 access is closed."
+    }
+  };
+}
+
 function loginPayload(req) {
   const payload = (req.body && req.body.payload) || {};
   return {
@@ -88,7 +106,10 @@ async function tryMongoLogin(req) {
     });
     const data = await response.json();
     const result = data.result || data;
-    if (result && result.success === true) return { result };
+    if (result && result.success === true) {
+      if (isSept2026(result.attempt)) return sept26Closed();
+      return { result };
+    }
     if (result && result.code === "wrong_password") return { result };
     if (result && result.code === "group_closed") return { result };
     return null;
