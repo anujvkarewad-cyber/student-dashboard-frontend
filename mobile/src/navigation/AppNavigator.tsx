@@ -93,42 +93,44 @@ const navigationTheme = {
 };
 
 /**
- * v1.11.0 hardware BACK button fix.
- *  - Inside any stack screen (quiz, notes, result…) → normal pop behaviour.
- *  - On a non-Home tab → BACK moves to Home instead of exiting.
- *  - On Home → first press shows "Press back again to exit", second press
- *    within 2 seconds exits. No more accidental one-tap exit.
+ * v1.11.4 BULLETPROOF hardware BACK handling — the app NEVER exits on BACK.
+ *  - Inside any stack screen (quiz, notes, result…) → normal back.
+ *  - On a non-Home tab → BACK returns to Home.
+ *  - On Home / root → BACK is swallowed with a gentle toast. The phone's
+ *    back button can no longer throw the user out of the app; leaving the
+ *    app is only possible with the phone's Home / recent-apps keys.
  */
 const useAndroidBackFix = (navigationRef: ReturnType<typeof useNavigationContainerRef<RootStackParamList>>) => {
-  const [exitArmed, setExitArmed] = useState(false);
   useEffect(() => {
     const onBack = () => {
       const nav = navigationRef.current;
-      if (!nav || !nav.isReady()) return false;
-      // IMPORTANT: getCurrentRoute() returns the LEAF screen (e.g. 'Home'),
-      // never the parent 'Main' tab — so the old check never fired on the
-      // main screens and Android exited the app. Use the ROOT state instead:
-      // the top-level route is 'Main' exactly when a tab screen is focused.
+      // Splash / not ready: swallow the press too.
+      if (!nav || !nav.isReady()) return true;
+      // Anywhere a back stack exists → normal back navigation.
+      if (nav.canGoBack()) {
+        nav.goBack();
+        return true;
+      }
+      // Root level: if a non-Home tab is focused, go Home first.
       const root = nav.getRootState() as
         | { index: number; routes: { name: string; state?: { index: number; routes: { name: string }[] } }[] }
         | undefined;
       const top = root?.routes?.[root?.index ?? 0];
-      if (!top || top.name !== 'Main') return false; // stack screen → default pop
-      const tabState = top.state;
-      const currentTab = tabState?.routes?.[tabState.index ?? 0]?.name ?? 'Home';
-      if (currentTab !== 'Home') {
-        nav.navigate('Main', { screen: 'Home' });
-        return true;
+      if (top?.name === 'Main') {
+        const tabState = top.state;
+        const currentTab = tabState?.routes?.[tabState.index ?? 0]?.name ?? 'Home';
+        if (currentTab !== 'Home') {
+          nav.navigate('Main', { screen: 'Home' });
+          return true;
+        }
       }
-      if (exitArmed) return false; // allow real exit on second press
-      setExitArmed(true);
-      ToastAndroid.show('Press back again to exit', ToastAndroid.SHORT);
-      setTimeout(() => setExitArmed(false), 2000);
+      // Home / root: NEVER exit — just inform the user.
+      ToastAndroid.show('You are on the Home screen', ToastAndroid.SHORT);
       return true;
     };
     const sub = BackHandler.addEventListener('hardwareBackPress', onBack);
     return () => sub.remove();
-  }, [exitArmed, navigationRef]);
+  }, [navigationRef]);
 };
 
 export const AppNavigator = () => {
