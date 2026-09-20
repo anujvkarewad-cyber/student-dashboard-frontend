@@ -79,11 +79,18 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android packages
-        run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "ndk;27.1.12297006"
+      # NOTE: android-actions/setup-android@v3 is NOT used — the 2026-09 runner
+      # image ships cmdline-tools 16.0 which removed the legacy 'tools'
+      # package that action installs, so it crashes with exit code 1. The
+      # ubuntu-latest runner already has the Android SDK preinstalled at
+      # $ANDROID_HOME, so we install the needed packages directly.
+      - name: Install Android packages (preinstalled SDK)
+        run: |
+          set -e
+          SDKMGR="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          echo "Using sdkmanager at: $SDKMGR"
+          yes | "$SDKMGR" --licenses > /dev/null 2>&1 || true
+          "$SDKMGR" "platforms;android-36" "build-tools;36.0.0" "ndk;27.1.12297006"
 
       - name: Decode Keystore (mobile/ root - survives prebuild --clean)
         env:
