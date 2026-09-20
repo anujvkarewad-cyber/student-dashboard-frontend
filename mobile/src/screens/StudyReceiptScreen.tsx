@@ -129,7 +129,7 @@ export const StudyReceiptScreen = ({ route, navigation }: Props) => {
 
           <View style={styles.aiCard}><View style={styles.aiIcon}><Ionicons name="sparkles" size={22} color={colors.purple} /></View><View style={{ flex: 1 }}><Text style={styles.aiTitle}>AI verification layer</Text><Text style={styles.aiText}>Next phase: generate and grade source-cited questions from mentor-approved PDFs through a secure server endpoint.</Text></View><View style={styles.lockBadge}><Ionicons name="lock-closed" size={11} color={colors.muted} /></View></View>
 
-          <PrimaryButton label="Back to Focus Room" icon="arrow-back" onPress={() => navigation.navigate('Main', { screen: 'Focus' })} />
+          <PrimaryButton label="Back to Timer" icon="arrow-back" onPress={() => navigation.navigate('Main', { screen: 'Timer' })} />
         </ScrollView>
       </SafeAreaView>
     );

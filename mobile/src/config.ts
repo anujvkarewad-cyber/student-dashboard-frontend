@@ -24,7 +24,7 @@ const requestedModeSwitch = process.env.EXPO_PUBLIC_ALLOW_MODE_SWITCH;
 
 export const config = {
   apiUrl: normalizeApiUrl(process.env.EXPO_PUBLIC_API_BASE_URL || defaultBaseUrl),
-    mentorApiUrl: (process.env.EXPO_PUBLIC_MENTOR_API_URL || 'https://ujjwal-pathak-mentor-api.onrender.com').replace(/\/+$/, ''),
+  mentorApiUrl: (process.env.EXPO_PUBLIC_MENTOR_API_URL || 'https://ujjwal-pathak-mentor-api.onrender.com').replace(/\/+$/, ''),
   // Shared secret for computing the /api/progress-sync HMAC token. Leave blank
   // when the mentor backend has no SYNC_SECRET configured (dev mode accepts any
   // token); set it to the same value as the backend's SYNC_SECRET otherwise.
@@ -34,5 +34,5 @@ export const config = {
   // preview/read-only profiles still override both values through environment.
   allowModeSelection: requestedModeSwitch === 'true' ? true : requestedModeSwitch === 'false' ? false : !productionRelease,
   requestTimeoutMs: 60_000,
-  appVersion: (process.env.EXPO_PUBLIC_APP_VERSION || '1.10.2').trim(),
+  appVersion: (process.env.EXPO_PUBLIC_APP_VERSION || '1.11.0').trim(),
 };

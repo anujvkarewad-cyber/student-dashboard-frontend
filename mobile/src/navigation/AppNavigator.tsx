@@ -5,26 +5,35 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { BlurView } from 'expo-blur';
 import * as Notifications from 'expo-notifications';
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Image, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, BackHandler, Image, StyleSheet, Text, ToastAndroid, View } from 'react-native';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
+import { AiChatBot } from '../components/AiChatBot';
 import { AddStudyLogScreen } from '../screens/AddStudyLogScreen';
 import { ChangePasswordScreen } from '../screens/ChangePasswordScreen';
 import { DailyMcqScreen } from '../screens/DailyMcqScreen';
+import { DailyTargetScreen } from '../screens/DailyTargetScreen';
 import { DashboardScreen } from '../screens/DashboardScreen';
 import { FocusTimerScreen } from '../screens/FocusTimerScreen';
 import { ForgotPasswordScreen } from '../screens/ForgotPasswordScreen';
 import { LeaderboardScreen } from '../screens/LeaderboardScreen';
 import { LoginScreen } from '../screens/LoginScreen';
 import { McqPracticeScreen } from '../screens/McqPracticeScreen';
+import { MessagesScreen } from '../screens/MessagesScreen';
 import { NotesScreen } from '../screens/NotesScreen';
 import { NotificationsScreen } from '../screens/NotificationsScreen';
 import { NotePreviewScreen } from '../screens/NotePreviewScreen';
 import { NoteSubjectScreen } from '../screens/NoteSubjectScreen';
 import { ProfileScreen } from '../screens/ProfileScreen';
+import { RemindersScreen } from '../screens/RemindersScreen';
 import { ReportsScreen } from '../screens/ReportsScreen';
 import { StudyReceiptScreen } from '../screens/StudyReceiptScreen';
+import { TestPaperScreen } from '../screens/TestPaperScreen';
+import { TestPlayerScreen } from '../screens/TestPlayerScreen';
+import { TestResultScreen } from '../screens/TestResultScreen';
+import { TestsScreen } from '../screens/TestsScreen';
 import { TrackerScreen } from '../screens/TrackerScreen';
+import { WeeklyReportScreen } from '../screens/WeeklyReportScreen';
 import { notificationLink } from '../services/pushNotifications';
 import { colors, radius } from '../theme';
 import type { MainTabParamList, RootStackParamList } from './types';
@@ -34,9 +43,9 @@ const Tabs = createBottomTabNavigator<MainTabParamList>();
 
 const tabIcons: Record<keyof MainTabParamList, { active: keyof typeof Ionicons.glyphMap; idle: keyof typeof Ionicons.glyphMap }> = {
   Home: { active: 'home', idle: 'home-outline' },
+  Material: { active: 'folder-open', idle: 'folder-open-outline' },
+  Timer: { active: 'timer', idle: 'timer-outline' },
   Tracker: { active: 'time', idle: 'time-outline' },
-  Focus: { active: 'timer', idle: 'timer-outline' },
-  Notes: { active: 'folder-open', idle: 'folder-open-outline' },
   Profile: { active: 'person', idle: 'person-outline' },
 };
 
@@ -63,9 +72,9 @@ const MainTabs = () => (
     })}
   >
     <Tabs.Screen name="Home" component={DashboardScreen} options={{ title: 'Home' }} />
+    <Tabs.Screen name="Material" component={NotesScreen} options={{ title: 'Material' }} />
+    <Tabs.Screen name="Timer" component={FocusTimerScreen} options={{ title: 'Timer' }} />
     <Tabs.Screen name="Tracker" component={TrackerScreen} options={{ title: 'Tracker' }} />
-    <Tabs.Screen name="Focus" component={FocusTimerScreen} options={{ title: 'Focus' }} />
-    <Tabs.Screen name="Notes" component={NotesScreen} options={{ title: 'Material' }} />
     <Tabs.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profile' }} />
   </Tabs.Navigator>
 );
@@ -83,25 +92,62 @@ const navigationTheme = {
   colors: { ...DefaultTheme.colors, background: colors.canvas, primary: colors.primary, text: colors.ink, border: colors.border, card: colors.surface },
 };
 
+/**
+ * v1.11.0 hardware BACK button fix.
+ *  - Inside any stack screen (quiz, notes, result…) → normal pop behaviour.
+ *  - On a non-Home tab → BACK moves to Home instead of exiting.
+ *  - On Home → first press shows "Press back again to exit", second press
+ *    within 2 seconds exits. No more accidental one-tap exit.
+ */
+const useAndroidBackFix = (navigationRef: ReturnType<typeof useNavigationContainerRef<RootStackParamList>>) => {
+  const [exitArmed, setExitArmed] = useState(false);
+  useEffect(() => {
+    const onBack = () => {
+      const nav = navigationRef.current;
+      if (!nav || !nav.isReady()) return false;
+      const route = nav.getCurrentRoute() as { name: string; state?: { routes: { name: string }[]; index: number } } | undefined;
+      if (!route || route.name !== 'Main') return false; // stack screen → default pop
+      const tabState = route.state;
+      const currentTab = tabState?.routes?.[tabState.index ?? 0]?.name ?? 'Home';
+      if (currentTab !== 'Home') {
+        nav.navigate('Main', { screen: 'Home' });
+        return true;
+      }
+      if (exitArmed) return false; // allow real exit on second press
+      setExitArmed(true);
+      ToastAndroid.show('Press back again to exit', ToastAndroid.SHORT);
+      setTimeout(() => setExitArmed(false), 2000);
+      return true;
+    };
+    const sub = BackHandler.addEventListener('hardwareBackPress', onBack);
+    return () => sub.remove();
+  }, [exitArmed, navigationRef]);
+};
+
 export const AppNavigator = () => {
   const { student, booting, backendMode } = useAuth();
   const { refreshAll, refreshNotes } = useData();
   const navigationRef = useNavigationContainerRef<RootStackParamList>();
   const [navigationReady, setNavigationReady] = useState(false);
   const requiresPasswordChange = Boolean(student?.forcePasswordChange && backendMode === 'live');
+  useAndroidBackFix(navigationRef);
 
   const openPush = useCallback((notification: Notifications.Notification) => {
     if (!student || !navigationReady || !navigationRef.isReady()) return;
     const link = notificationLink(notification);
     if (link.includes('notes') || link.includes('material')) {
       refreshNotes().catch(() => undefined);
-      navigationRef.navigate('Main', { screen: 'Notes' });
+      navigationRef.navigate('Main', { screen: 'Material' });
     } else if (link.includes('report')) {
       navigationRef.navigate('Reports');
     } else if (link.includes('tracker')) {
       navigationRef.navigate('Main', { screen: 'Tracker' });
     } else if (link.includes('mcq')) {
       navigationRef.navigate('DailyMcq');
+    } else if (link.includes('target')) {
+      navigationRef.navigate('DailyTarget');
+    } else if (link.includes('message')) {
+      navigationRef.navigate('Messages');
     } else {
       navigationRef.navigate('Main', { screen: 'Home' });
     }
@@ -114,7 +160,9 @@ export const AppNavigator = () => {
       if (link.includes('notes') || link.includes('material')) refreshNotes().catch(() => undefined);
       else refreshAll().catch(() => undefined);
     });
-    const responded = Notifications.addNotificationResponseReceivedListener((response) => openPush(response.notification));
+    const responded = Notifications.addNotificationResponseReceivedListener((response) => {
+      openPush(response.notification);
+    });
     Notifications.getLastNotificationResponseAsync().then((response) => {
       if (!response) return;
       openPush(response.notification);
@@ -152,8 +200,17 @@ export const AppNavigator = () => {
             <RootStack.Screen name="Reports" component={ReportsScreen} options={{ title: 'Weekly reports' }} />
             <RootStack.Screen name="Leaderboard" component={LeaderboardScreen} options={{ title: 'Leaderboard' }} />
             <RootStack.Screen name="AddStudyLog" component={AddStudyLogScreen} options={{ title: 'Log study hours', presentation: 'modal', animation: 'slide_from_bottom' }} />
+            {/* v1.11.0 reform screens */}
+            <RootStack.Screen name="Tests" component={TestsScreen} options={{ title: 'Tests' }} />
             <RootStack.Screen name="NoteSubject" component={NoteSubjectScreen} options={({ route }) => ({ title: route.params.subject })} />
             <RootStack.Screen name="NotePreview" component={NotePreviewScreen} options={{ title: 'Protected note preview' }} />
+            <RootStack.Screen name="DailyTarget" component={DailyTargetScreen} options={{ title: "Today's Target" }} />
+            <RootStack.Screen name="TestPlayer" component={TestPlayerScreen} options={() => ({ title: 'Test' })} />
+            <RootStack.Screen name="TestPaper" component={TestPaperScreen} options={() => ({ title: 'Question Paper' })} />
+            <RootStack.Screen name="TestResult" component={TestResultScreen} options={{ title: 'Result · Answer Key · Marking Scheme' }} />
+            <RootStack.Screen name="WeeklyReport" component={WeeklyReportScreen} options={{ title: 'Weekly Report' }} />
+            <RootStack.Screen name="Messages" component={MessagesScreen} options={{ title: 'Mentor Messages' }} />
+            <RootStack.Screen name="Reminders" component={RemindersScreen} options={{ title: 'Reminders' }} />
             <RootStack.Screen name="ChangePassword" component={ChangePasswordScreen} options={{ title: 'Change password' }} />
           </>
         ) : (
@@ -163,6 +220,7 @@ export const AppNavigator = () => {
           </>
         )}
       </RootStack.Navigator>
+      {student && !requiresPasswordChange ? <AiChatBot /> : null}
     </NavigationContainer>
   );
 };

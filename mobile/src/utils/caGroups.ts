@@ -29,10 +29,7 @@ export const subjectGroup = (subject?: string): CaGroup | 'General' => {
     value === 'fm' || value === 'sm'
   ) return 'Group II';
 
-  if (
-    /account|law|tax|gst|direct tax|corporate/.test(value) ||
-    value === 'dt'
-  ) return 'Group I';
+  if (/account|law|tax|gst|direct tax|corporate/.test(value)) return 'Group I';
   return 'General';
 };
 

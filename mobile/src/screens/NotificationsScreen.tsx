@@ -33,7 +33,7 @@ export const NotificationsScreen = ({ navigation }: Props) => {
     if (item.target === 'receipt' && item.sessionId) navigation.navigate('StudyReceipt', { sessionId: item.sessionId });
     else if (item.target === 'mcq') navigation.navigate('DailyMcq', item.group ? { group: item.group } : undefined);
     else if (item.target === 'reports') navigation.navigate('Reports');
-    else if (item.target === 'notes') navigation.navigate('Main', { screen: 'Notes' });
+    else if (item.target === 'notes') navigation.navigate('Main', { screen: 'Material' });
     else navigation.navigate('Main', { screen: 'Home' });
   };
 

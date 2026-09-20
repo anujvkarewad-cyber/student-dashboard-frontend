@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Card, ErrorBanner, InitialsAvatar, PrimaryButton, SectionHeader } from '../components/ui';
+import { ReformHubCards } from '../components/ReformHubCards';
 import { useAuth } from '../context/AuthContext';
 import { useDailyMcq } from '../context/DailyMcqContext';
 import { useData } from '../context/DataContext';
@@ -88,7 +89,7 @@ export const DashboardScreen = () => {
     if (item.target === 'receipt' && item.sessionId) navigation.navigate('StudyReceipt', { sessionId: item.sessionId });
     else if (item.target === 'mcq') navigation.navigate('DailyMcq', item.group ? { group: item.group } : undefined);
     else if (item.target === 'reports') navigation.navigate('Reports');
-    else if (item.target === 'notes') navigation.navigate('Notes');
+    else if (item.target === 'notes') navigation.navigate('Main', { screen: 'Material' });
   };
 
   return (
@@ -118,6 +119,9 @@ export const DashboardScreen = () => {
 
         {error ? <ErrorBanner message={error} onRetry={() => refreshAll().catch(() => undefined)} /> : null}
         {loading && !stats.totalEntries ? <ActivityIndicator color={colors.primary} style={styles.loader} /> : null}
+
+        {/* v1.11.0 reform hub — target, AI, messages, reminders, focus, material */}
+        <ReformHubCards navigation={navigation} />
 
         <View style={styles.hero}>
           <BlurTargetView ref={heroTarget} style={StyleSheet.absoluteFill}>
@@ -212,19 +216,13 @@ export const DashboardScreen = () => {
 
         <SectionHeader title="Quick actions" />
         <Card style={styles.actionsCard}>
-          <Action icon="help-circle-outline" label="Start today's Daily MCQ" onPress={() => navigation.navigate('DailyMcq')} />
-          <View style={styles.actionDivider} />
           <Action icon="infinite-outline" label="Unlimited MCQ practice" onPress={() => navigation.navigate('McqPractice')} />
-          <View style={styles.actionDivider} />
-          <Action icon="timer-outline" label="Start focus timer" onPress={() => navigation.navigate('Focus')} />
           <View style={styles.actionDivider} />
           <Action icon={backendMode === 'live-readonly' ? 'eye-outline' : 'add-circle-outline'} label={backendMode === 'live-readonly' ? 'View study history' : 'Log study hours'} onPress={() => navigation.navigate('Tracker')} />
           <View style={styles.actionDivider} />
           <Action icon="trophy-outline" label="View leaderboard" onPress={() => navigation.navigate('Leaderboard')} />
           <View style={styles.actionDivider} />
           <Action icon="document-text-outline" label="Weekly reports" onPress={() => navigation.navigate('Reports')} />
-          <View style={styles.actionDivider} />
-          <Action icon="folder-open-outline" label="Study material" onPress={() => navigation.navigate('Notes')} />
         </Card>
 
         <SectionHeader title="7-day rhythm" />

@@ -1,13 +1,15 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { FlatList, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native';
+import { FlatList, Linking, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { EmptyState } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import { colors, radius, spacing } from '../theme';
 import { CaGroup, caGroupDetails, groupsForStudent, subjectGroup } from '../utils/caGroups';
+
+const FREE_NOTES_URL = (process.env.EXPO_PUBLIC_FREE_NOTES_URL || '').trim();
 
 const palette = [
   { tint: colors.primary, soft: colors.primarySoft },
@@ -80,6 +82,23 @@ export const NotesScreen = () => {
           <>
             <View style={styles.header}><Text style={styles.eyebrow}>LEARNING LIBRARY</Text><Text style={styles.title}>Study material</Text><Text style={styles.subtitle}>Mentor resources separated according to your CA Intermediate group.</Text></View>
 
+            <Pressable
+              onPress={() => { if (FREE_NOTES_URL) Linking.openURL(FREE_NOTES_URL).catch(() => undefined); }}
+              disabled={!FREE_NOTES_URL}
+              style={[styles.freeNotes, FREE_NOTES_URL && styles.freeNotesActive]}
+            >
+              <View style={[styles.freeNotesIcon, FREE_NOTES_URL && { backgroundColor: colors.teal }]}>
+                <Ionicons name="globe-outline" size={19} color={FREE_NOTES_URL ? '#fff' : colors.muted} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.freeNotesTitle, { color: FREE_NOTES_URL ? colors.teal : colors.muted }]}>
+                  {FREE_NOTES_URL ? 'Free Notes Site' : 'Free Notes Site (coming soon)'}
+                </Text>
+                <Text style={styles.freeNotesSub}>{FREE_NOTES_URL ? 'Open extra free notes, charts and summaries' : 'The mentorship team will share the link here'}</Text>
+              </View>
+              {FREE_NOTES_URL ? <Ionicons name="open-outline" size={17} color={colors.teal} /> : null}
+            </Pressable>
+
             <Text style={styles.groupHeading}>SELECT GROUP</Text>
             <View style={styles.groupSelector}>
               {allowedGroups.map((group) => {
@@ -118,6 +137,11 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.canvas },
   content: { paddingHorizontal: spacing.lg },
   header: { paddingTop: spacing.lg, paddingBottom: spacing.lg },
+  freeNotes: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, padding: spacing.md, marginBottom: spacing.md, opacity: 0.75 },
+  freeNotesActive: { borderColor: colors.teal, opacity: 1 },
+  freeNotesIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: colors.canvas, alignItems: 'center', justifyContent: 'center' },
+  freeNotesTitle: { fontSize: 13, fontWeight: '900' },
+  freeNotesSub: { fontSize: 10, color: colors.muted, marginTop: 2 },
   eyebrow: { color: colors.primary, fontSize: 10, fontWeight: '900', letterSpacing: 1.3 },
   title: { color: colors.ink, fontSize: 27, fontWeight: '900', letterSpacing: -0.7, marginTop: 3 },
   subtitle: { color: colors.muted, fontSize: 12, lineHeight: 18, marginTop: 4 },

@@ -10,6 +10,7 @@ import Svg, { Circle } from 'react-native-svg';
 import { Card, Chip, EmptyState, SectionHeader } from '../components/ui';
 import { useFocusTimer } from '../context/FocusTimerContext';
 import { useStudyReceipts } from '../context/StudyReceiptContext';
+import { requestChatBot } from '../services/chatBotBus';
 import { colors, radius, spacing } from '../theme';
 
 const subjects = ['Accounts', 'Law', 'Taxation', 'Costing', 'Audit', 'FM', 'SM', 'Revision', 'Mock Test'];
@@ -90,7 +91,7 @@ export const FocusTimerScreen = () => {
         onPress: async () => {
           tap(Haptics.ImpactFeedbackStyle.Heavy);
           const session = await finish();
-          if (session) navigation.navigate('StudyReceipt', { sessionId: session.id });
+          if (session) requestChatBot({ revisionTopic: `${session.subject} ${session.target}` });
         },
       },
     ],
@@ -159,17 +160,17 @@ export const FocusTimerScreen = () => {
         <Card style={styles.subjectCard}>
           <View style={styles.chips}>{subjects.map((item) => <Chip key={item} label={item} selected={subject === item} onPress={() => setSubject(item)} />)}</View>
           <View style={styles.targetDivider} />
-          <Text style={styles.targetLabel}>SESSION TARGET</Text>
+          <Text style={styles.targetLabel}>WHAT ARE YOU STUDYING? (COMPULSORY)</Text>
           <TextInput
             value={target}
             onChangeText={setTarget}
             editable={status === 'idle'}
-            placeholder="e.g. Understand AS 16 and solve 20 questions"
+            placeholder="e.g. Accounts — Chapter 3: Accounting Standards"
             placeholderTextColor={colors.muted}
             maxLength={140}
             style={[styles.targetInput, status !== 'idle' && styles.targetInputLocked]}
           />
-          {status !== 'idle' ? <Text style={styles.lockedHint}><Ionicons name="lock-closed" size={11} /> Subject and target are locked while a session is active.</Text> : <Text style={styles.targetHelp}>Your target becomes the source prompt for the Study Receipt.</Text>}
+          {status !== 'idle' ? <Text style={styles.lockedHint}><Ionicons name="lock-closed" size={11} /> Subject and target are locked while a session is active.</Text> : <Text style={styles.targetHelp}>Compulsory before start. When the session ends, the AI assistant opens and quizzes you on what you studied.</Text>}
         </Card>
 
         {dueReceipts.length ? (

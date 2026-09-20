@@ -3,6 +3,7 @@ import React, { createContext, PropsWithChildren, useCallback, useContext, useEf
 import { dailyMcqBank } from '../data/dailyMcqBank';
 import { enrichMcqQuestion, EnrichedMcqQuestion } from '../data/mcqMetadata';
 import { buildProgressPayload, getShareChoice, setMentorSharing, syncProgress, ProgressSummary, ProgressTrendPoint } from '../services/progressSync';
+import { syncTestHistory } from '../services/testHistorySync';
 import { useAuth } from './AuthContext';
 import { useDailyMcq } from './DailyMcqContext';
 import { useMcqBank } from './McqBankContext';
@@ -73,6 +74,7 @@ export const ProgressSyncProvider = ({ children }: PropsWithChildren) => {
       ];
       const { summaries, trend } = buildProgressPayload(student.studentId, sessions, questionLookup);
       const result = await syncProgress(student.studentId, summaries, trend);
+      await syncTestHistory({ studentId: student.studentId, studentName: (student as any).studentName, batch: (student as any).batch }).catch(() => undefined);
       if (result.ok) {
         setStatus('ok');
         setLastSyncedAt(new Date().toISOString());
