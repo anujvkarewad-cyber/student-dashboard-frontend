@@ -98,3 +98,10 @@ export const sendMessage = (studentId: string, text: string, studentName?: strin
     method: 'POST',
     body: { studentId, text, studentName, batch },
   });
+
+// ── WhatsApp number fit (enrollment, reminders, announcements) ────────────
+export const saveWhatsAppNumber = (studentId: string, number: string) =>
+  mentorFetch<{ result?: { success?: boolean; whatsapp?: string; message?: string } }>('/api/student-auth/whatsapp', { method: 'POST', body: { studentId, number } });
+
+export const notifyReminderWhatsApp = (studentId: string, text: string) =>
+  mentorFetch<{ result?: { success?: boolean } }>('/api/student-auth/reminder-notify', { method: 'POST', body: { studentId, text } });

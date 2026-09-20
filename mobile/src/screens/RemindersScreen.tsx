@@ -4,6 +4,8 @@ import React, { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Card, PrimaryButton } from '../components/ui';
+import { notifyReminderWhatsApp } from '../api/reformApi';
+import { useAuth } from '../context/AuthContext';
 import { colors, radius, spacing } from '../theme';
 
 type ReminderPref = { id: string; label: string; sub: string; time: string; on: boolean; custom?: boolean };
@@ -40,6 +42,7 @@ async function scheduleAll(prefs: ReminderPref[]) {
  */
 export const RemindersScreen = () => {
   const [prefs, setPrefs] = useState<ReminderPref[]>(DEFAULTS);
+  const { student } = useAuth();
   const [custom, setCustom] = useState<ReminderPref[]>([]);
   const [adding, setAdding] = useState(false);
   const [newLabel, setNewLabel] = useState('');
@@ -65,10 +68,19 @@ export const RemindersScreen = () => {
     await scheduleAll([...nextPrefs, ...nextCustom]);
   };
 
+  // When a reminder is switched ON (or added) and the student has saved a
+  // WhatsApp number, mirror it to WhatsApp too (enrollment/reminders fit).
+  const waMirror = (p: ReminderPref) => {
+    const wa = (student as any)?.whatsapp;
+    if (student && wa) notifyReminderWhatsApp(student.studentId, `${p.label} at ${p.time}`).catch(() => undefined);
+  };
+
   const toggle = (id: string) => {
     const inDefaults = prefs.some((p) => p.id === id);
     const nextPrefs = inDefaults ? prefs.map((p) => (p.id === id ? { ...p, on: !p.on } : p)) : prefs;
     const nextCustom = !inDefaults ? custom.map((p) => (p.id === id ? { ...p, on: !p.on } : p)) : custom;
+    const turnedOn = [...nextPrefs, ...nextCustom].find((p) => p.id === id && p.on);
+    if (turnedOn) waMirror(turnedOn);
     persistAndSchedule(nextPrefs, nextCustom);
   };
 
@@ -82,6 +94,7 @@ export const RemindersScreen = () => {
     const item: ReminderPref = { id: `custom-${Date.now()}`, label, sub: label, time: newTime, on: true, custom: true };
     setAdding(false);
     setNewLabel('');
+    waMirror(item);
     persistAndSchedule(prefs, [...custom, item]);
   };
 

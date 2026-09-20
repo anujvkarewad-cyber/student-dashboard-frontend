@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import React, { useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { saveWhatsAppNumber } from '../api/reformApi';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Card, InitialsAvatar, PrimaryButton } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
@@ -28,6 +29,22 @@ const MenuRow = ({ icon, title, subtitle, onPress }: { icon: keyof typeof Ionico
 export const ProfileScreen = () => {
   const navigation = useNavigation<any>();
   const { student, logout, backendMode } = useAuth();
+  const [waNumber, setWaNumber] = useState('');
+  const [waBusy, setWaBusy] = useState(false);
+  const savedWa = (student as any)?.whatsapp || '';
+
+  const saveWa = async () => {
+    if (!student || !waNumber.trim()) return;
+    setWaBusy(true);
+    const res = await saveWhatsAppNumber(student.studentId, waNumber.trim());
+    setWaBusy(false);
+    if (res?.result?.success) {
+      Alert.alert('Saved', 'WhatsApp number saved. Reminders and announcements will also arrive on this number.');
+      setWaNumber('');
+    } else {
+      Alert.alert('Could not save', res?.result?.message || 'Check the number and try again.');
+    }
+  };
   const { data } = useData();
   const { pushStatus, enablePush } = useNotifications();
   const { sharing: progressSharing, setSharing: setProgressSharing } = useProgressSync();
@@ -116,6 +133,25 @@ export const ProfileScreen = () => {
           <InfoRow icon="flag-outline" label="Attempt" value={student?.attempt} />
         </Card>
 
+        <Text style={styles.sectionTitle}>WhatsApp</Text>
+        <Card style={styles.infoCard}>
+          <View style={styles.waRow}>
+            <Ionicons name="logo-whatsapp" size={20} color={colors.teal} />
+            <TextInput
+              style={styles.waInput}
+              placeholder="Your WhatsApp number (e.g. 9822012345)"
+              placeholderTextColor={colors.muted}
+              keyboardType="phone-pad"
+              value={waNumber}
+              onChangeText={setWaNumber}
+            />
+          </View>
+          {savedWa ? <Text style={styles.waSaved}>Saved: +{savedWa} — reminders & announcements arrive here</Text> : <Text style={styles.waHint}>Add your number so enrollment info, reminders and announcements reach your WhatsApp.</Text>}
+          <Pressable disabled={waBusy || !waNumber.trim()} onPress={saveWa} style={[styles.pushButton, { marginTop: spacing.md, opacity: waNumber.trim() ? 1 : 0.5 }]}>
+            <Text style={styles.pushButtonText}>{waBusy ? 'Saving…' : 'Save WhatsApp number'}</Text>
+          </Pressable>
+        </Card>
+
         <Text style={styles.sectionTitle}>Account & progress</Text>
         <Card style={styles.menuCard}>
           <MenuRow icon="help-circle-outline" title="Daily MCQ Challenge" subtitle="Today’s 10-question knowledge check" onPress={() => navigation.navigate('DailyMcq')} />
@@ -190,6 +226,10 @@ const styles = StyleSheet.create({
   menuBody: { flex: 1 },
   menuTitle: { color: colors.ink, fontSize: 13, fontWeight: '900' },
   menuSubtitle: { color: colors.muted, fontSize: 9, marginTop: 3 },
+  waRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  waInput: { flex: 1, color: colors.ink, fontSize: 12, fontWeight: '700', paddingVertical: 6 },
+  waSaved: { color: colors.teal, fontSize: 9, marginTop: spacing.sm, fontWeight: '700' },
+  waHint: { color: colors.muted, fontSize: 9, marginTop: spacing.sm },
   logout: { marginTop: spacing.xxl },
   version: { color: colors.muted, fontSize: 9, textAlign: 'center', marginTop: spacing.lg },
 });

@@ -105,9 +105,16 @@ const useAndroidBackFix = (navigationRef: ReturnType<typeof useNavigationContain
     const onBack = () => {
       const nav = navigationRef.current;
       if (!nav || !nav.isReady()) return false;
-      const route = nav.getCurrentRoute() as { name: string; state?: { routes: { name: string }[]; index: number } } | undefined;
-      if (!route || route.name !== 'Main') return false; // stack screen → default pop
-      const tabState = route.state;
+      // IMPORTANT: getCurrentRoute() returns the LEAF screen (e.g. 'Home'),
+      // never the parent 'Main' tab — so the old check never fired on the
+      // main screens and Android exited the app. Use the ROOT state instead:
+      // the top-level route is 'Main' exactly when a tab screen is focused.
+      const root = nav.getRootState() as
+        | { index: number; routes: { name: string; state?: { index: number; routes: { name: string }[] } }[] }
+        | undefined;
+      const top = root?.routes?.[root?.index ?? 0];
+      if (!top || top.name !== 'Main') return false; // stack screen → default pop
+      const tabState = top.state;
       const currentTab = tabState?.routes?.[tabState.index ?? 0]?.name ?? 'Home';
       if (currentTab !== 'Home') {
         nav.navigate('Main', { screen: 'Home' });
