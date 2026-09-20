@@ -231,12 +231,16 @@ jobs:
           ls -lh ${{ steps.meta.outputs.apk_name }}
           sha256sum ${{ steps.meta.outputs.apk_name }}
 
+      # continue-on-error: the APK is also published as a GitHub Release asset
+      # below (the live distribution channel). If the free-tier artifact storage
+      # quota is temporarily full, the release still ships.
       - name: Upload artifact
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.meta.outputs.apk_name }}
           path: ${{ steps.meta.outputs.apk_name }}
-          retention-days: 30
+          retention-days: 7
           compression-level: 0
 
       - name: Create GitHub Release (this repo)
