@@ -2,7 +2,7 @@
   "expo": {
     "name": "Ujjwal Pathak Mentorship",
     "slug": "ujjwal-pathak-mentorship",
-    "version": "1.11.4",
+    "version": "1.11.5",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "upmentorship",
