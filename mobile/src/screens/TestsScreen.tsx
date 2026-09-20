@@ -18,7 +18,8 @@ export const TestsScreen = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { student } = useAuth();
   const batch = String(student?.batch || '');
-  const visible = (batches: string[]) => batches.includes('All Batches') || (batch !== '' && batches.includes(batch));
+  const visible = (batches: string[]) =>
+    batch === 'ALL' || Boolean((student as any)?.master) || batches.includes('All Batches') || (batch !== '' && batches.includes(batch));
   const myPaper = uploadedPaperTests.filter((x) => visible(x.batches));
   const myMcq = uploadedTests.filter((x) => visible((x as any).batches || ['All Batches']));
 
