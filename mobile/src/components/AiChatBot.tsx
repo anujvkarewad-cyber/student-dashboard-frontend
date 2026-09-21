@@ -8,29 +8,66 @@ import { setChapterCompleted } from '../services/completedChapters';
 import { answerFromSyllabus, matchChapter, pickQuizQuestions } from '../services/syllabusBrain';
 import type { DailyMcqQuestion } from '../data/dailyMcqBank';
 import type { OfficialMcqChapter } from '../data/icaiChapterCatalog';
-import { colors, radius, spacing } from '../theme';
+import { colors } from '../theme';
 
 type Msg = { me: boolean; text: string };
 type RevStage = null | 'ask-chapter' | 'quiz';
 
-const WELCOME = 'Hi! I am your AI study assistant with knowledge of the full CA Inter syllabus. Ask me anything — or type "quiz me on <chapter>" for a quick revision round.';
+// TRUE ChatGPT welcome - NO * symbols at all
+const WELCOME = `How can I help you right now?
 
-// ---------- ChatGPT-like formatted message renderer ----------
+Concept Clarity
+Stuck on a tricky topic like Consolidation of Accounts or LLP Compliance?
+
+Numerical Practice
+Need a step-by-step solution for a Costing or Taxation problem?
+
+Exam Strategy
+Want to know how ICAI tests specific provisions in Corporate Laws or Audit?
+
+Quick Revision
+Need a 5-minute summary of a key section (e.g., Section 2 of LLP Act or Section 185 of Companies Act)?
+
+Just drop your subject, topic, or a specific question. For example:
+Explain Section 2 of the LLP Act, 2008 simply.
+Solve this Costing problem: [Paste problem].
+What are the key differences between Audit and Inspection?
+
+I'm ready when you are. Let's make your CA Inter journey smoother.`;
+
+// ---------- ChatGPT-like formatted message renderer - strips ALL * ----------
 const InlineBold = ({ text, isMe }: { text: string; isMe: boolean }) => {
-  // Split by **bold**
-  const parts = text.split(/(\*\*.*?\*\*)/g);
+  // First strip **, then handle *word* -> bold without stars
+  // Split by **bold** and *italic*
+  const parts = text.split(/(\*\*.*?\*\*|\*[^*\n]+\*)/g);
   return (
     <Text>
       {parts.map((part, i) => {
+        if (!part) return null;
+        // **bold**
         if (part.startsWith('**') && part.endsWith('**') && part.length >= 4) {
-          const inner = part.slice(2, -2);
+          const inner = part.slice(2, -2).replace(/\*/g, '').trim();
           return (
             <Text key={i} style={isMe ? styles.inlineBoldMe : styles.inlineBold}>
               {inner}
             </Text>
           );
         }
-        return <Text key={i}>{part}</Text>;
+        // *italic* or *word* -> treat as bold without stars
+        if (part.startsWith('*') && part.endsWith('*') && part.length >= 3 && !part.includes('**')) {
+          const inner = part.slice(1, -1).replace(/\*/g, '').trim();
+          // Don't bold if it's just a bullet star at start
+          if (inner.length > 0 && inner.length < 80) {
+            return (
+              <Text key={i} style={isMe ? styles.inlineBoldMe : styles.inlineBold}>
+                {inner}
+              </Text>
+            );
+          }
+        }
+        // Remove any stray * that might remain
+        const cleaned = part.replace(/\*\*/g, '').replace(/(^|\s)\*(\S)/g, '$1$2').replace(/(\S)\*(\s|$)/g, '$1$2');
+        return <Text key={i}>{cleaned}</Text>;
       })}
     </Text>
   );
@@ -57,62 +94,58 @@ const parseBlocks = (raw: string): Block[] => {
   };
 
   for (let line of lines) {
-    const trimmed = line.trim();
+    let trimmed = line.trim();
+    // Strip leading/trailing ** and single * for detection
+    const cleanForDetect = trimmed.replace(/^\*\*|\*\*$/g, '').replace(/^\*|\*$/g, '').trim();
     if (!trimmed) {
       flushTable();
       blocks.push({ type: 'spacer' });
       continue;
     }
-    // Table row detection: | col | col |
+    // Table row
     if (trimmed.startsWith('|') && trimmed.endsWith('|') && trimmed.split('|').length >= 3) {
-      // separator line |---|---|
       if (/^\|[\s\-|:]+\|$/.test(trimmed)) continue;
       const cells = trimmed
         .split('|')
         .slice(1, -1)
-        .map((c) => c.replace(/\*\*/g, '').trim());
+        .map((c) => c.replace(/\*\*/g, '').replace(/\*/g, '').trim());
       if (cells.length) tableRows.push(cells);
       continue;
     }
     flushTable();
 
-    // Headings: ### or ## or **Heading**
+    // Headings: ### or ##
     const hMatch = trimmed.match(/^(#{1,3})\s+(.*)/);
     if (hMatch) {
       const level = hMatch[1].length;
-      blocks.push({ type: 'heading', text: hMatch[2].replace(/\*\*/g, '').trim(), level });
+      blocks.push({ type: 'heading', text: hMatch[2].replace(/\*\*/g, '').replace(/\*/g, '').trim(), level });
       continue;
     }
-    // Bold heading on its own line: **What Section 2 Covers** or **Section 43 – ...**
+    // Bold heading on its own line
     if (/^\*\*.+\*\*$/.test(trimmed) && trimmed.length < 140) {
-      blocks.push({ type: 'heading', text: trimmed.replace(/^\*\*|\*\*$/g, '').trim(), level: 2 });
+      blocks.push({ type: 'heading', text: trimmed.replace(/^\*\*|\*\*$/g, '').replace(/\*/g, '').trim(), level: 2 });
       continue;
     }
-    // Subheading patterns: **1. Overview** or **What is...** or lines ending with : and bold
-    if (/^(\*\*)?.*(Covers|Insight|Truth|Strategy|Example|Important|Brutal|What|Why|How).*(\*\*)?:?$/.test(trimmed) && trimmed.length < 100 && !trimmed.includes('  ')) {
-      // Only treat as subheading if short and looks like heading
+    // Subheading detection - short lines that look like headings
+    if (trimmed.length < 80 && !trimmed.includes('  ') && /Covers|Insight|Truth|Strategy|Example|Important|Applicability|Criteria|Overview|Summary/.test(trimmed.replace(/\*/g, ''))) {
       if (trimmed.replace(/\*/g, '').length < 60) {
-        // Check if it's likely a heading (contains Covers, Insight, Truth)
-        if (/Covers|Insight|Truth|Strategy|Exam/.test(trimmed)) {
-          blocks.push({ type: 'subheading', text: trimmed.replace(/\*\*/g, '').replace(/:$/, '').trim() });
-          continue;
-        }
+        blocks.push({ type: 'subheading', text: trimmed.replace(/\*\*/g, '').replace(/\*/g, '').replace(/:$/, '').trim() });
+        continue;
       }
     }
     // Bullet detection
-    if (/^[-•]\s+/.test(trimmed) || /^\*\s+/.test(trimmed) || /^\d+\.\s+/.test(trimmed) || /^[•]\s+/.test(trimmed)) {
-      const icon = '•';
+    if (/^[-•]\s+/.test(trimmed) || /^\*\s+/.test(trimmed) || /^\d+\.\s+/.test(trimmed)) {
       const txt = trimmed.replace(/^[-•*]\s+/, '').replace(/^\d+\.\s+/, '').trim();
-      blocks.push({ type: 'bullet', text: txt, icon });
+      blocks.push({ type: 'bullet', text: txt, icon: '•' });
       continue;
     }
-    if (trimmed.startsWith('👉') || trimmed.startsWith('⚠️') || trimmed.startsWith('💡') || trimmed.startsWith('✅') || trimmed.startsWith('❌')) {
+    if (trimmed.startsWith('👉') || trimmed.startsWith('⚠️') || trimmed.startsWith('💡') || trimmed.startsWith('✅') || trimmed.startsWith('❌') || trimmed.startsWith('🔹') || trimmed.startsWith('📌')) {
       const icon = trimmed[0];
       const txt = trimmed.slice(1).trim();
       blocks.push({ type: 'bullet', text: txt, icon });
       continue;
     }
-    // Normal paragraph
+    // Normal paragraph - also strip stray * at start/end
     blocks.push({ type: 'paragraph', text: line });
   }
   flushTable();
@@ -122,9 +155,9 @@ const parseBlocks = (raw: string): Block[] => {
 const FormattedMessage = ({ text, isMe }: { text: string; isMe: boolean }) => {
   const blocks = parseBlocks(text);
   return (
-    <View style={{ gap: 6 }}>
+    <View style={{ gap: isMe ? 4 : 8 }}>
       {blocks.map((b, idx) => {
-        if (b.type === 'spacer') return <View key={idx} style={{ height: 6 }} />;
+        if (b.type === 'spacer') return <View key={idx} style={{ height: isMe ? 4 : 8 }} />;
         if (b.type === 'heading') {
           const isH1 = b.level === 1;
           return (
@@ -171,7 +204,6 @@ const FormattedMessage = ({ text, isMe }: { text: string; isMe: boolean }) => {
             </View>
           );
         }
-        // paragraph
         return (
           <Text key={idx} style={isMe ? styles.paragraphMe : styles.paragraph}>
             <InlineBold text={b.text} isMe={isMe} />
@@ -181,7 +213,6 @@ const FormattedMessage = ({ text, isMe }: { text: string; isMe: boolean }) => {
     </View>
   );
 };
-// ---------- end formatter ----------
 
 export const AiChatBot = () => {
   const { student } = useAuth();
@@ -224,7 +255,7 @@ export const AiChatBot = () => {
       return;
     }
     setRevStage('ask-chapter');
-    push({ me: false, text: 'Great session! 🎉 Which chapter did you study? Tell me the name and I will ask a few questions to check what you remember.' });
+    push({ me: false, text: 'Great session! Which chapter did you study? Tell me the name and I will ask a few questions to check what you remember.' });
   }, [askQuestion, push]);
 
   useEffect(() => {
@@ -261,7 +292,7 @@ export const AiChatBot = () => {
       if (correct) setRevScore((s) => s + 1);
       push({
         me: false,
-        text: correct ? `✅ Correct! ${q.explanation}` : `❌ Not quite — the answer is ${'ABCD'[q.answer]}. ${q.explanation}`,
+        text: correct ? `Correct! ${q.explanation}` : `Not quite — the answer is ${'ABCD'[q.answer]}. ${q.explanation}`,
       });
       if (revIndex + 1 < revQuestions.length) {
         const next = revIndex + 1;
@@ -274,7 +305,7 @@ export const AiChatBot = () => {
         setTimeout(() => {
           push({
             me: false,
-            text: finalScore >= 2 ? `Revision round done — ${finalScore}/${revQuestions.length} correct. Strong! Chapter marked as revised. Keep it up! 💪` : `Revision round done — ${finalScore}/${revQuestions.length} correct. No stress — revise the chapter once more tonight and try me again tomorrow.`,
+            text: finalScore >= 2 ? `Revision round done — ${finalScore}/${revQuestions.length} correct. Strong! Chapter marked as revised. Keep it up!` : `Revision round done — ${finalScore}/${revQuestions.length} correct. No stress — revise the chapter once more tonight and try me again tomorrow.`,
           });
           if (ch) setChapterCompleted(ch.id, true).catch(() => undefined);
         }, 350);
@@ -311,68 +342,86 @@ export const AiChatBot = () => {
   return (
     <>
       <Pressable style={styles.fab} onPress={() => setOpen(true)} accessibilityLabel="Open AI assistant">
-        <Ionicons name="sparkles" size={23} color="#fff" />
-        <View style={styles.fabDot} />
+        <Ionicons name="sparkles" size={22} color="#fff" />
       </Pressable>
 
       <Modal visible={open} animationType="slide" transparent onRequestClose={() => setOpen(false)}>
-        <KeyboardAvoidingView style={styles.backdrop} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}>
-          <Pressable style={styles.backdropTap} onPress={() => setOpen(false)} accessibilityLabel="Close AI assistant" />
+        <KeyboardAvoidingView style={styles.backdrop} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={0}>
           <View style={styles.sheet}>
+            {/* ChatGPT-style header */}
             <View style={styles.sheetHeader}>
-              <View style={styles.sheetIcon}><Ionicons name="sparkles" size={18} color="#fff" /></View>
-              <View style={styles.sheetTitleBox}>
-                <Text style={styles.sheetTitle}>AI Study Assistant</Text>
-                <Text style={styles.sheetSub}>Full syllabus · doubts · revision rounds</Text>
-              </View>
-              <Pressable style={styles.closeBtn} onPress={() => setOpen(false)} accessibilityLabel="Close">
-                <Ionicons name="close" size={20} color={colors.inkSoft} />
+              <Pressable style={styles.backBtn} onPress={() => setOpen(false)}>
+                <Ionicons name="chevron-back" size={24} color="#000" />
               </Pressable>
+              <View style={styles.headerCenter}>
+                <Text style={styles.sheetTitle}>ChatGPT • CA Inter Mentor</Text>
+                <Text style={styles.sheetSub}>UPM AI • Full syllabus</Text>
+              </View>
+              <View style={styles.headerRight} />
             </View>
 
             <ScrollView ref={listRef} style={styles.chatArea} contentContainerStyle={styles.chatList} keyboardShouldPersistTaps="handled" onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}>
               {chat.map((m, i) => (
                 <View key={i} style={[styles.messageRow, m.me ? styles.messageRowMe : styles.messageRowAi]}>
                   {!m.me ? (
-                    <View style={styles.aiAvatar}><Ionicons name="sparkles" size={14} color={colors.primary} /></View>
+                    <View style={styles.aiAvatar}>
+                      <Ionicons name="sparkles" size={14} color="#000" />
+                    </View>
                   ) : null}
                   <View style={[styles.bubble, m.me ? styles.bubbleMe : styles.bubbleAi]}>
+                    {!m.me && i === 0 ? (
+                      <Text style={styles.welcomeTitle}>How can I help you right now?</Text>
+                    ) : !m.me ? (
+                      <View style={styles.aiNameRow}>
+                        <Text style={styles.aiName}>UPM AI</Text>
+                      </View>
+                    ) : null}
                     <FormattedMessage text={m.text} isMe={m.me} />
                   </View>
                 </View>
               ))}
               {thinking ? (
                 <View style={styles.messageRowAi}>
-                  <View style={styles.aiAvatar}><Ionicons name="sparkles" size={14} color={colors.primary} /></View>
+                  <View style={styles.aiAvatar}>
+                    <Ionicons name="sparkles" size={14} color="#000" />
+                  </View>
                   <View style={styles.bubbleAi}>
+                    <View style={styles.aiNameRow}>
+                      <Text style={styles.aiName}>UPM AI</Text>
+                    </View>
                     <View style={styles.thinkingRow}>
                       <View style={styles.dot} />
                       <View style={[styles.dot, { opacity: 0.6 }]} />
                       <View style={[styles.dot, { opacity: 0.3 }]} />
-                      <Text style={styles.thinkingText}>AI is thinking…</Text>
                     </View>
                   </View>
                 </View>
               ) : null}
             </ScrollView>
 
-            <View style={styles.composer}>
-              <TextInput
-                value={input}
-                onChangeText={setInput}
-                placeholder="Type any syllabus question…"
-                placeholderTextColor={colors.muted}
-                style={styles.composerInput}
-                onSubmitEditing={send}
-                selectionColor={colors.primary}
-                autoCorrect={false}
-                returnKeyType="send"
-                blurOnSubmit={false}
-                multiline
-              />
-              <Pressable style={[styles.sendBtn, (!input.trim() || thinking) && styles.sendOff]} onPress={send} disabled={!input.trim() || thinking}>
-                <Ionicons name="send" size={17} color="#fff" />
-              </Pressable>
+            {/* ChatGPT pill composer */}
+            <View style={styles.composerWrapper}>
+              <View style={styles.composer}>
+                <Pressable style={styles.plusBtn}>
+                  <Ionicons name="add" size={22} color="#000" />
+                </Pressable>
+                <TextInput
+                  value={input}
+                  onChangeText={setInput}
+                  placeholder="Message UPM AI..."
+                  placeholderTextColor="#8E8E93"
+                  style={styles.composerInput}
+                  onSubmitEditing={send}
+                  selectionColor="#000"
+                  autoCorrect={false}
+                  returnKeyType="send"
+                  blurOnSubmit={false}
+                  multiline
+                />
+                <Pressable style={[styles.sendBtn, (!input.trim() || thinking) && styles.sendOff]} onPress={send} disabled={!input.trim() || thinking}>
+                  <Ionicons name="arrow-up" size={18} color="#fff" />
+                </Pressable>
+              </View>
             </View>
           </View>
         </KeyboardAvoidingView>
@@ -382,55 +431,57 @@ export const AiChatBot = () => {
 };
 
 const styles = StyleSheet.create({
-  fab: { position: 'absolute', right: 18, bottom: 96, width: 56, height: 56, borderRadius: 19, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', zIndex: 30, shadowColor: colors.shadow, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.3, shadowRadius: 14, elevation: 10 },
-  fabDot: { position: 'absolute', top: 8, right: 9, width: 9, height: 9, borderRadius: 5, backgroundColor: colors.amber, borderWidth: 1.5, borderColor: '#fff' },
-  backdrop: { flex: 1, backgroundColor: 'rgba(16,35,63,0.45)', justifyContent: 'flex-end' },
-  backdropTap: { position: 'absolute', top: 0, left: 0, right: 0, bottom: '18%' },
-  sheet: { height: '84%', backgroundColor: '#F7F7F8', borderTopLeftRadius: 26, borderTopRightRadius: 26, overflow: 'hidden' },
-  sheetHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.md, backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border },
-  sheetIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
-  sheetTitleBox: { flex: 1 },
-  sheetTitle: { fontSize: 15, fontWeight: '900', color: colors.ink },
-  sheetSub: { fontSize: 11, color: colors.muted, marginTop: 1 },
-  closeBtn: { width: 34, height: 34, borderRadius: 11, backgroundColor: colors.canvas, alignItems: 'center', justifyContent: 'center' },
-  chatArea: { flex: 1, backgroundColor: '#F7F7F8' },
-  chatList: { paddingHorizontal: 12, paddingTop: spacing.md, paddingBottom: spacing.md, gap: 14 },
-  messageRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, maxWidth: '100%' },
-  messageRowAi: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, maxWidth: '92%', alignSelf: 'flex-start' },
-  messageRowMe: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, maxWidth: '88%', alignSelf: 'flex-end' },
-  aiAvatar: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', marginBottom: 2 },
-  bubble: { borderRadius: 18, paddingHorizontal: 14, paddingVertical: 12, maxWidth: '100%' },
-  bubbleMe: { backgroundColor: colors.primary, borderBottomRightRadius: 4, alignSelf: 'flex-end' },
-  bubbleAi: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E5E7EB', borderBottomLeftRadius: 4, alignSelf: 'flex-start', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 3, elevation: 1 },
-  // ChatGPT-like typography
-  paragraph: { fontSize: 13.5, lineHeight: 21, color: '#111827' },
-  paragraphMe: { fontSize: 13.5, lineHeight: 21, color: '#FFFFFF' },
-  heading1: { fontSize: 16, lineHeight: 22, fontWeight: '900', color: '#111827', marginTop: 10, marginBottom: 6 },
-  heading2: { fontSize: 14.5, lineHeight: 20, fontWeight: '800', color: '#111827', marginTop: 10, marginBottom: 4 },
-  headingMe: { fontSize: 14.5, lineHeight: 20, fontWeight: '800', color: '#FFFFFF', marginTop: 4, marginBottom: 2 },
-  subHeading: { fontSize: 13, lineHeight: 18, fontWeight: '800', color: colors.primary, marginTop: 12, marginBottom: 4, letterSpacing: 0.2 },
-  subHeadingMe: { fontSize: 13, lineHeight: 18, fontWeight: '800', color: '#FFFFFF', marginTop: 6, marginBottom: 2 },
-  inlineBold: { fontWeight: '800', color: '#111827' },
-  inlineBoldMe: { fontWeight: '800', color: '#FFFFFF' },
-  bulletRow: { flexDirection: 'row', gap: 8, marginTop: 2 },
-  bulletIcon: { fontSize: 13.5, lineHeight: 21, color: colors.primary, fontWeight: '900', marginTop: 1 },
-  bulletIconMe: { fontSize: 13.5, lineHeight: 21, color: '#FFFFFF', fontWeight: '900', marginTop: 1 },
-  bulletText: { flex: 1, fontSize: 13.5, lineHeight: 21, color: '#1F2937' },
-  bulletTextMe: { flex: 1, fontSize: 13.5, lineHeight: 21, color: '#FFFFFF' },
-  table: { marginTop: 8, borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 10, overflow: 'hidden', backgroundColor: '#FFFFFF' },
-  tableMe: { marginTop: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)', borderRadius: 10, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.15)' },
-  tableRow: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-  tableHeaderRow: { backgroundColor: '#F9FAFB' },
+  fab: { position: 'absolute', right: 18, bottom: 96, width: 56, height: 56, borderRadius: 28, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center', zIndex: 30, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.25, shadowRadius: 14, elevation: 10 },
+  backdrop: { flex: 1, backgroundColor: '#FFFFFF', justifyContent: 'flex-end' },
+  sheet: { flex: 1, backgroundColor: '#FFFFFF' },
+  sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingTop: 12, paddingBottom: 12, backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: '#E5E5EA' },
+  backBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  headerCenter: { flex: 1, alignItems: 'center' },
+  headerRight: { width: 36 },
+  sheetTitle: { fontSize: 16, fontWeight: '700', color: '#000', letterSpacing: -0.3 },
+  sheetSub: { fontSize: 12, color: '#8E8E93', marginTop: 1 },
+  chatArea: { flex: 1, backgroundColor: '#FFFFFF' },
+  chatList: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 16, gap: 20 },
+  messageRow: { flexDirection: 'row', gap: 10, maxWidth: '100%' },
+  messageRowAi: { flexDirection: 'row', gap: 10, maxWidth: '100%', alignSelf: 'flex-start' },
+  messageRowMe: { flexDirection: 'row', gap: 10, maxWidth: '85%', alignSelf: 'flex-end', justifyContent: 'flex-end' },
+  aiAvatar: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#F2F2F7', borderWidth: 1, borderColor: '#E5E5EA', alignItems: 'center', justifyContent: 'center', marginTop: 2 },
+  aiNameRow: { marginBottom: 6 },
+  aiName: { fontSize: 13, fontWeight: '700', color: '#000' },
+  welcomeTitle: { fontSize: 20, fontWeight: '800', color: '#000', marginBottom: 16, letterSpacing: -0.4 },
+  bubble: { flex: 1, borderRadius: 0, paddingHorizontal: 0, paddingVertical: 0 },
+  bubbleMe: { backgroundColor: '#F2F2F7', borderRadius: 18, paddingHorizontal: 14, paddingVertical: 10, alignSelf: 'flex-end' },
+  bubbleAi: { backgroundColor: 'transparent', flex: 1 },
+  // TRUE ChatGPT typography - larger, cleaner
+  paragraph: { fontSize: 15, lineHeight: 24, color: '#000000', letterSpacing: -0.2 },
+  paragraphMe: { fontSize: 15, lineHeight: 22, color: '#000000' },
+  heading1: { fontSize: 20, lineHeight: 26, fontWeight: '800', color: '#000000', marginTop: 16, marginBottom: 8, letterSpacing: -0.5 },
+  heading2: { fontSize: 16, lineHeight: 22, fontWeight: '700', color: '#000000', marginTop: 14, marginBottom: 6 },
+  headingMe: { fontSize: 15, lineHeight: 22, fontWeight: '700', color: '#000000' },
+  subHeading: { fontSize: 14, lineHeight: 20, fontWeight: '700', color: '#000000', marginTop: 14, marginBottom: 6 },
+  subHeadingMe: { fontSize: 14, lineHeight: 20, fontWeight: '700', color: '#000000' },
+  inlineBold: { fontWeight: '700', color: '#000000' },
+  inlineBoldMe: { fontWeight: '700', color: '#000000' },
+  bulletRow: { flexDirection: 'row', gap: 8, marginTop: 4, paddingRight: 8 },
+  bulletIcon: { fontSize: 15, lineHeight: 24, color: '#000000', fontWeight: '400', marginTop: 0 },
+  bulletIconMe: { fontSize: 15, lineHeight: 22, color: '#000000', fontWeight: '400' },
+  bulletText: { flex: 1, fontSize: 15, lineHeight: 24, color: '#000000', letterSpacing: -0.2 },
+  bulletTextMe: { flex: 1, fontSize: 15, lineHeight: 22, color: '#000000' },
+  table: { marginTop: 12, borderWidth: 1, borderColor: '#E5E5EA', borderRadius: 12, overflow: 'hidden', backgroundColor: '#FFFFFF' },
+  tableMe: { marginTop: 8, borderWidth: 1, borderColor: '#E5E5EA', borderRadius: 12, overflow: 'hidden', backgroundColor: '#F2F2F7' },
+  tableRow: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#F2F2F7' },
+  tableHeaderRow: { backgroundColor: '#F9F9FB' },
   tableLastRow: { borderBottomWidth: 0 },
-  tableCell: { flex: 1, paddingHorizontal: 8, paddingVertical: 8, borderRightWidth: 1, borderRightColor: '#F3F4F6' },
-  tableCellText: { fontSize: 12, lineHeight: 16, color: '#374151' },
-  tableCellTextMe: { fontSize: 12, lineHeight: 16, color: '#FFFFFF' },
-  tableHeaderText: { fontWeight: '800', color: '#111827', fontSize: 12 },
-  thinkingRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.primary },
-  thinkingText: { fontSize: 12, color: colors.muted, marginLeft: 4 },
-  composer: { flexDirection: 'row', gap: 8, paddingHorizontal: 12, paddingBottom: 16, paddingTop: 10, alignItems: 'flex-end', backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: '#E5E7EB' },
-  composerInput: { flex: 1, backgroundColor: '#F3F4F6', borderRadius: 20, borderWidth: 0, paddingHorizontal: 16, paddingVertical: 11, fontSize: 14, color: colors.ink, maxHeight: 110 },
-  sendBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
-  sendOff: { opacity: 0.45 },
+  tableCell: { flex: 1, paddingHorizontal: 10, paddingVertical: 10, borderRightWidth: 1, borderRightColor: '#F2F2F7' },
+  tableCellText: { fontSize: 13, lineHeight: 18, color: '#000000' },
+  tableCellTextMe: { fontSize: 13, lineHeight: 18, color: '#000000' },
+  tableHeaderText: { fontWeight: '700', color: '#000000', fontSize: 13 },
+  thinkingRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 4 },
+  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#000' },
+  composerWrapper: { paddingHorizontal: 12, paddingBottom: 20, paddingTop: 10, backgroundColor: '#FFFFFF', borderTopWidth: 0 },
+  composer: { flexDirection: 'row', alignItems: 'flex-end', backgroundColor: '#F2F2F7', borderRadius: 26, paddingHorizontal: 6, paddingVertical: 6, gap: 6, minHeight: 52 },
+  plusBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#E5E5EA' },
+  composerInput: { flex: 1, fontSize: 16, color: '#000', maxHeight: 110, paddingHorizontal: 8, paddingVertical: 8, letterSpacing: -0.2 },
+  sendBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#000000', alignItems: 'center', justifyContent: 'center' },
+  sendOff: { opacity: 0.3, backgroundColor: '#8E8E93' },
 });
