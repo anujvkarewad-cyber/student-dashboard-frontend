@@ -484,13 +484,31 @@ async function handleAction(action, payload, sheets, drive) {
       return { ok:false };
     }
     case 'app.version': {
+      // Try live latest.json first
+      try {
+        const latestRes = await fetch("https://raw.githubusercontent.com/anujvkarewad-cyber/UPM-Android-Releases/main/latest.json", { cache: "no-store" });
+        if (latestRes.ok) {
+          const latest = await latestRes.json();
+          if (latest && latest.versionCode) {
+            return {
+              version: latest.version || process.env.APP_ANDROID_VERSION || '1.11.8',
+              versionCode: Number(latest.versionCode || process.env.APP_ANDROID_VERSION_CODE || 30),
+              minimumVersionCode: Number(latest.minimumVersionCode || process.env.APP_ANDROID_MIN_VERSION_CODE || latest.versionCode || 30),
+              apkUrl: latest.apkUrl || process.env.APP_ANDROID_APK_URL || 'https://github.com/anujvkarewad-cyber/UPM-Android-Releases/releases/download/v1.11.8-30/UPM-v1.11.8-30-release.apk',
+              releaseNotes: latest.notes || process.env.APP_ANDROID_RELEASE_NOTES || 'ChatGPT-style AI assistant UI - headings, bold without stars, bullets, tables + typing fix',
+              forceUpdate: true,
+              publishedAt: latest.publishedAt || process.env.APP_ANDROID_PUBLISHED_AT || fmtDate(new Date())
+            };
+          }
+        }
+      } catch (e) { console.error("latest.json fetch failed", e && e.message); }
       return {
-        version: process.env.APP_ANDROID_VERSION || '1.10.2',
-        versionCode: Number(process.env.APP_ANDROID_VERSION_CODE || 16),
-        minimumVersionCode: Number(process.env.APP_ANDROID_MIN_VERSION_CODE || 15),
-        apkUrl: process.env.APP_ANDROID_APK_URL || '',
-        releaseNotes: process.env.APP_ANDROID_RELEASE_NOTES || '',
-        forceUpdate: String(process.env.APP_ANDROID_FORCE_UPDATE||'false').toLowerCase()==='true',
+        version: process.env.APP_ANDROID_VERSION || '1.11.8',
+        versionCode: Number(process.env.APP_ANDROID_VERSION_CODE || 30),
+        minimumVersionCode: Number(process.env.APP_ANDROID_MIN_VERSION_CODE || 30),
+        apkUrl: process.env.APP_ANDROID_APK_URL || 'https://github.com/anujvkarewad-cyber/UPM-Android-Releases/releases/download/v1.11.8-30/UPM-v1.11.8-30-release.apk',
+        releaseNotes: process.env.APP_ANDROID_RELEASE_NOTES || 'ChatGPT-style AI assistant UI - headings, bold without stars, bullets, tables + typing fix',
+        forceUpdate: true,
         publishedAt: process.env.APP_ANDROID_PUBLISHED_AT || fmtDate(new Date())
       };
     }
