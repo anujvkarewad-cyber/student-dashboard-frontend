@@ -137,7 +137,7 @@ export const StudyReceiptScreen = ({ route, navigation }: Props) => {
 
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           <LinearGradient colors={['#E9EFFF', '#F6F4FF']} style={styles.intro}>
             <View style={styles.introIcon}><Ionicons name="receipt-outline" size={28} color={colors.primary} /></View>

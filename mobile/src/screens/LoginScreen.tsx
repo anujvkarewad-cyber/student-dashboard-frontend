@@ -81,7 +81,7 @@ export const LoginScreen = ({ navigation }: Props) => {
   return (
     <LinearGradient colors={['#EEF3FF', '#F8FAFD', '#E9F8F5']} style={styles.flex}>
       <SafeAreaView style={styles.flex}>
-        <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}>
           <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
             <View style={styles.brandRow}>
               <Image source={require('../../assets/icon.png')} style={styles.logo} />

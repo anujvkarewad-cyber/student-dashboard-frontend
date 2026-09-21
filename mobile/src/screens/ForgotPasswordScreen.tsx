@@ -62,7 +62,7 @@ export const ForgotPasswordScreen = ({ navigation }: Props) => {
 
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
           <View style={styles.icon}><Ionicons name={copy[stage].icon} size={31} color={colors.primary} /></View>
           <Text style={styles.title}>{copy[stage].title}</Text>

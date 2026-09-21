@@ -4,7 +4,7 @@ import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useMemo } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Circle } from 'react-native-svg';
 import { Card, Chip, EmptyState, SectionHeader } from '../components/ui';
@@ -112,7 +112,8 @@ export const FocusTimerScreen = () => {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}>
+        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         <View style={styles.header}>
           <View><Text style={styles.eyebrow}>DEEP WORK ZONE</Text><Text style={styles.title}>Focus room</Text><Text style={styles.subtitle}>Start the clock. Put the phone down. Do the work.</Text></View>
           <View style={[styles.statusPill, status === 'running' && styles.statusRunning]}><View style={[styles.statusDot, status === 'running' && styles.runningDot]} /><Text style={styles.statusText}>{status.toUpperCase()}</Text></View>
@@ -224,7 +225,8 @@ export const FocusTimerScreen = () => {
         }) : <Card><EmptyState icon="timer-outline" title="No focus sessions yet" message="Choose a subject and start your first distraction-free session." /></Card>}
 
         <View style={styles.privacyNote}><Ionicons name="phone-portrait-outline" size={18} color={colors.primary} /><Text style={styles.privacyText}>Timer history stays on this device for now and does not write to the mentorship backend.</Text></View>
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 };

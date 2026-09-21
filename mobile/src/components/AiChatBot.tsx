@@ -161,7 +161,7 @@ export const AiChatBot = () => {
       </Pressable>
 
       <Modal visible={open} animationType="slide" transparent onRequestClose={() => setOpen(false)}>
-        <KeyboardAvoidingView style={styles.backdrop} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <KeyboardAvoidingView style={styles.backdrop} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}>
           <Pressable style={styles.backdropTap} onPress={() => setOpen(false)} accessibilityLabel="Close AI assistant" />
           <View style={styles.sheet}>
             <View style={styles.sheetHeader}>
@@ -175,7 +175,7 @@ export const AiChatBot = () => {
               </Pressable>
             </View>
 
-            <ScrollView ref={listRef} style={styles.chatArea} contentContainerStyle={styles.chatList} onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}>
+            <ScrollView ref={listRef} style={styles.chatArea} contentContainerStyle={styles.chatList} keyboardShouldPersistTaps="handled" onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}>
               {chat.map((m, i) => (
                 <View key={i} style={[styles.bubble, m.me ? styles.bubbleMe : styles.bubbleAi]}>
                   <Text style={[styles.bubbleText, m.me && { color: '#fff' }]}>{m.text}</Text>
@@ -194,6 +194,10 @@ export const AiChatBot = () => {
                 placeholderTextColor={colors.muted}
                 style={styles.composerInput}
                 onSubmitEditing={send}
+                selectionColor={colors.primary}
+                autoCorrect={false}
+                returnKeyType="send"
+                blurOnSubmit={false}
               />
               <Pressable style={[styles.sendBtn, (!input.trim() || thinking) && styles.sendOff]} onPress={send} disabled={!input.trim() || thinking}>
                 <Ionicons name="send" size={17} color="#fff" />

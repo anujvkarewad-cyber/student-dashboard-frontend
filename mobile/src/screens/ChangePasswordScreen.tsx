@@ -42,7 +42,7 @@ export const ChangePasswordScreen = ({ navigation }: Props) => {
 
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           <View style={styles.icon}><Ionicons name="shield-checkmark-outline" size={32} color={colors.primary} /></View>
           <Text style={styles.title}>{required ? 'Create your private password' : 'Keep your account secure'}</Text>

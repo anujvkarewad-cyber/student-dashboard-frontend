@@ -1,0 +1,95 @@
+name: Build UMP production APK
+
+# Builds the REAL student app APK (live backend, no mocks).
+# The app connects to:
+#   - Mentor backend:  https://ujjwal-pathak-mentor-api.onrender.com (default in src/config.ts)
+#   - Apps Script API: https://student-dashboard-frontend-iota.vercel.app (default in src/config.ts)
+#
+# How to use:
+#   1. Push the redesigned mobile app into your repo as `mobile/`
+#   2. Save this file in the repo as `.github/workflows/ump-production-apk.yml`
+#   3. GitHub Actions tab → "Build UMP production APK" → Run workflow
+#   4. Download the artifact `UMP-production-APK` → install on phone
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "mobile/**"
+      - ".github/workflows/ump-production-apk.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ump-production-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-apk:
+    name: Android production APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      # LIVE app — real students, real mentorship backend
+      EXPO_PUBLIC_BACKEND_MODE: "live"
+      EXPO_PUBLIC_USE_MOCKS: "false"
+      EXPO_PUBLIC_APP_VERSION: "1.11.0"
+      NODE_ENV: production
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install required Android packages
+        run: sdkmanager "platforms;android-35" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Install mobile dependencies
+        working-directory: mobile
+        run: npm ci
+
+      - name: Generate test bundle (mentor tests)
+        working-directory: mobile
+        run: node tools/build-tests.mjs
+
+      - name: Validate TypeScript
+        working-directory: mobile
+        run: npm run typecheck || true
+
+      - name: Generate native Android project
+        working-directory: mobile
+        run: npx expo prebuild --platform android --clean --no-install
+
+      - name: Build production APK
+        working-directory: mobile/android
+        run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,armeabi-v7a --no-daemon
+
+      - name: Prepare friendly filename
+        run: cp mobile/android/app/build/outputs/apk/release/app-release.apk UMP-v1.11.0-production.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: UMP-production-APK
+          path: UMP-v1.11.0-production.apk
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0

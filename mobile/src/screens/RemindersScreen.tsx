@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Notifications from 'expo-notifications';
 import React, { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Card, PrimaryButton } from '../components/ui';
 import { notifyReminderWhatsApp } from '../api/reformApi';
@@ -116,7 +116,8 @@ export const RemindersScreen = () => {
   );
 
   return (
-    <ScrollView contentContainerStyle={styles.content}>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}>
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
       <Card style={styles.head}>
         <Ionicons name="notifications" size={20} color={colors.primary} />
         <Text style={styles.headText}>In-app reminders are completely free — no WhatsApp needed. Add your own with the button below.</Text>
@@ -144,7 +145,8 @@ export const RemindersScreen = () => {
       ) : (
         <PrimaryButton label="+ Add reminder" icon="add-circle-outline" onPress={() => setAdding(true)} />
       )}
-    </ScrollView>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 };
 
