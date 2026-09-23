@@ -13,7 +13,9 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const RETRY_STATUSES = new Set([404, 408, 429, 500, 502, 503, 504]);
 const BUDGET_MS = 50000;
 const ATTEMPT_MS = 18000;
-const MENTOR_API_URL = (process.env.MENTOR_API_URL || "https://ujjwal-pathak-mentor-api.onrender.com").replace(/\/$/, "");
+// Live backend. Was pointing at the old Render service, which is suspended -
+// set MENTOR_API_URL in Vercel if you ever move the backend again.
+const MENTOR_API_URL = (process.env.MENTOR_API_URL || "https://ump-mentor-api.vercel.app").replace(/\/$/, "");
 const MONGO_DASHBOARD_ACTIONS = new Set([
   "getStats",
   "getStudyLog",
@@ -120,6 +122,10 @@ async function tryMongoLogin(req) {
     }
     if (result && result.code === "wrong_password") return { result };
     if (result && result.code === "group_closed") return { result };
+    // "Student ID not found" must reach the student. Previously it returned null,
+    // which the caller turned into "Sept 2026 access is closed" - so a simple typo
+    // in the ID looked like the exam cohort being shut down.
+    if (result && result.code === "not_found") return { result };
     return null;
   }
   if (action === "changePassword") {
@@ -141,7 +147,8 @@ async function tryMongoLogin(req) {
 }
 
 async function mirrorStudyLogToMongo(payload, gasResult) {
-  const hosts = [MENTOR_API_URL, "https://ujjwal-pathak-project.onrender.com"];
+  // Only the live host, and never the same host twice.
+  const hosts = Array.from(new Set([MENTOR_API_URL, "https://ump-mentor-api.vercel.app"]));
   const body = JSON.stringify({ action: "addStudyLog", payload, result: gasResult || {} });
   for (let i = 0; i < hosts.length; i++) {
     try {
@@ -205,8 +212,19 @@ export default async function handler(req, res) {
         const mongoHit = await tryMongoLogin(req);
         if (mongoHit) return res.status(200).json(mongoHit);
       } catch (mongoErr) {
-        console.error("Mongo login unavailable, Sept 2026 closed:", mongoErr && mongoErr.message);
+        // The backend could not be reached. This is an outage, NOT a cohort
+        // closure - reporting it as "Sept 2026 access is closed" hid the outage
+        // and would have told Jan 2027 students their exam was shut.
+        console.error("Mongo login unreachable:", mongoErr && mongoErr.message);
+        return res.status(200).json({
+          result: {
+            success: false,
+            code: "server_unreachable",
+            message: "Could not reach the server. Please check your internet and try again in a moment."
+          }
+        });
       }
+      // Reached the backend but it returned something unrecognised.
       return res.status(200).json(sept26Closed());
     }
 
