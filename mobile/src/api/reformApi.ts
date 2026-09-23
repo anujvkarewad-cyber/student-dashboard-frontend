@@ -101,16 +101,26 @@ export type AiAnswer = {
  * follow-ups like "explain more", "give an example" or "what about for a
  * private company?" and the backend keeps the thread's context.
  */
+/** A photographed question, or a small file the student picked. */
+export type AiAttachment = {
+  kind: 'image' | 'file';
+  name: string;
+  mime: string;
+  /** base64, with no "data:" prefix. */
+  data: string;
+};
+
 export const askAi = (
   studentId: string,
   question: string,
   chapterId?: string,
   history?: AiTurn[],
+  attachment?: AiAttachment | null,
 ) =>
   mentorFetch<AiAnswer>(`/api/ai/ask`, {
     method: 'POST',
     // Only the last 8 turns are sent - enough for context, small enough to be fast.
-    body: { studentId, question, chapterId, history: history?.slice(-8) },
+    body: { studentId, question, chapterId, history: history?.slice(-8), attachment },
   });
 
 /** Student ↔ mentor messenger thread. */

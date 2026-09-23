@@ -1,7 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { askAi, type AiTurn } from '../api/reformApi';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import * as DocumentPicker from 'expo-document-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
+import { askAi, type AiAttachment, type AiTurn } from '../api/reformApi';
 import { useAuth } from '../context/AuthContext';
 import { registerChatBotHandler, type ChatBotRequest } from '../services/chatBotBus';
 import { setChapterCompleted } from '../services/completedChapters';
@@ -214,12 +216,77 @@ const FormattedMessage = ({ text, isMe }: { text: string; isMe: boolean }) => {
   );
 };
 
+
+// ── Attachments ─────────────────────────────────────────────────────────────
+// A student photographs a question far more often than they type it out.
+//
+// Two hard limits shape this code:
+//   1. Vercel rejects request bodies over ~4.5 MB, so a raw phone photo has to
+//      be shrunk before it is sent. Images are resized to 1280px wide at 60%
+//      JPEG quality, which lands around 150-300 KB.
+//   2. Groq tokenises an image into a lot of tokens, and the free tier only
+//      allows 8,000 tokens per minute, so sending a 12-megapixel original
+//      would burn the whole minute on one question.
+const MAX_B64 = 4_800_000;
+const FREE_TIER_NOTE = 'That can happen on the free AI plan - please try again in a minute.';
+
+/** Alert.alert is a no-op in the browser, so fall back to window.alert. */
+const notify = (title: string, message?: string) => {
+  if (Platform.OS === 'web') {
+    try { (globalThis as any).alert(message ? `${title}\n\n${message}` : title); } catch { /* ignore */ }
+    return;
+  }
+  Alert.alert(title, message);
+};
+
+/** Read a web File object as base64 (expo returns a File in the browser). */
+const readFileAsBase64 = (file: any): Promise<string> =>
+  new Promise((resolve, reject) => {
+    try {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = String(reader.result || '');
+        resolve(result.includes(',') ? result.split(',')[1] : result);
+      };
+      reader.onerror = () => reject(new Error('read failed'));
+      reader.readAsDataURL(file);
+    } catch (e) {
+      reject(e);
+    }
+  });
+
+/** Shrink an image and return fresh base64. Falls back to the original. */
+const shrinkImage = async (uri: string): Promise<string> => {
+  try {
+    const M: any = ImageManipulator;
+    // expo-image-manipulator has two APIs depending on SDK; support both so a
+    // version bump cannot silently break the upload.
+    if (typeof M.manipulateAsync === 'function') {
+      const out = await M.manipulateAsync(uri, [{ resize: { width: 1280 } }],
+        { compress: 0.6, format: 'jpeg', base64: true });
+      if (out?.base64) return out.base64;
+    } else if (typeof M.manipulate === 'function') {
+      const ctx = M.manipulate(uri);
+      ctx.resize({ width: 1280 });
+      const img = await ctx.renderAsync();
+      const out = await img.saveAsync({ compress: 0.6, format: 'jpeg', base64: true });
+      if (out?.base64) return out.base64;
+    }
+  } catch (e) {
+    console.warn('image resize unavailable, sending the original', e);
+  }
+  return '';
+};
+
 export const AiChatBot = () => {
   const { student } = useAuth();
   const [open, setOpen] = useState(false);
   const [chat, setChat] = useState<Msg[]>([{ me: false, text: WELCOME }]);
   const [input, setInput] = useState('');
   const [thinking, setThinking] = useState(false);
+  const [attachSheet, setAttachSheet] = useState(false);
+  const [attached, setAttached] = useState<AiAttachment | null>(null);
+  const [preparing, setPreparing] = useState(false);
   const listRef = useRef<ScrollView>(null);
 
   const [revStage, setRevStage] = useState<RevStage>(null);
@@ -315,15 +382,76 @@ export const AiChatBot = () => {
     return false;
   }, [revStage, revIndex, revQuestions, revScore, revChapter, askQuestion, push]);
 
+  const pickAttachment = useCallback(async (kind: 'image' | 'file') => {
+    setAttachSheet(false);
+    try {
+      const res: any = await DocumentPicker.getDocumentAsync({
+        type: kind === 'image'
+          ? ['image/*']
+          : ['application/pdf', 'image/*', 'text/plain'],
+        base64: true,
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+      if (res?.canceled) return;
+      const asset: any = (res?.assets && res.assets[0]) || null;
+      if (!asset) return;
+
+      setPreparing(true);
+      const mime: string = asset.mimeType || asset.type
+        || (kind === 'image' ? 'image/jpeg' : 'application/octet-stream');
+      let data: string = asset.base64 || '';
+      if (!data && asset.file) data = await readFileAsBase64(asset.file);
+      if (!data) {
+        notify('Could not read that file', 'Please try again, or take a fresh photo of the question.');
+        return;
+      }
+
+      const isImage = mime.startsWith('image/');
+      // Shrink before sending: a raw phone photo is 3-6 MB and would be
+      // rejected by the API, and would burn the whole per-minute AI quota.
+      if (isImage && asset.uri) {
+        const shrunk = await shrinkImage(asset.uri);
+        if (shrunk) data = shrunk;
+      }
+      if (data.length > MAX_B64) {
+        notify('That file is a bit large',
+          'Please crop it to just the question, or retake the photo at a lower resolution.');
+        return;
+      }
+
+      setAttached({
+        kind: isImage ? 'image' : 'file',
+        name: asset.name || (isImage ? 'photo.jpg' : 'document'),
+        mime: isImage ? 'image/jpeg' : mime,
+        data,
+      });
+    } catch (e) {
+      console.warn('attach failed', e);
+      notify('Could not open that file', 'Please try again.');
+    } finally {
+      setPreparing(false);
+    }
+  }, []);
+
   const send = useCallback(async () => {
     const q = input.trim();
-    if (!q || thinking) return;
+    const att = attached;
+    if ((!q && !att) || thinking || preparing) return;
+    const asked = q || (att?.kind === 'file'
+      ? 'Please answer the question in my file.'
+      : 'Please solve the question in my photo.');
     setInput('');
-    push({ me: true, text: q });
+    setAttached(null);
+    push({ me: true, text: att
+      ? `${asked}\n\n[${att.kind === 'image' ? 'Photo' : 'File'} attached: ${att.name}]`
+      : asked });
 
-    if (handleRevisionReply(q)) return;
+    // A photo cannot be a revision reply or a quiz command, so those paths are
+    // skipped rather than run against the placeholder text.
+    if (!att && handleRevisionReply(q)) return;
 
-    const quizMatch = q.toLowerCase().match(/quiz (?:me )?on (.+)/);
+    const quizMatch = att ? null : asked.toLowerCase().match(/quiz (?:me )?on (.+)/);
     if (quizMatch) { startRevision(quizMatch[1]); return; }
 
     setThinking(true);
@@ -338,13 +466,18 @@ export const AiChatBot = () => {
 
     let answer: string | null = null;
     if (student) {
-      const live = await askAi(student.studentId, q, undefined, history);
+      const live = await askAi(student.studentId, asked, undefined, history, att);
       answer = live?.answer || null;
+      if (att && !answer) {
+        // Never answer a photograph from the offline notes - they cannot see
+        // it, and a confident text answer to a picture is worse than none.
+        answer = `Sorry, I could not read that question just now. ${FREE_TIER_NOTE}`;
+      }
     }
-    if (!answer) answer = answerFromSyllabus(q);
+    if (!answer) answer = answerFromSyllabus(asked);
     setThinking(false);
     push({ me: false, text: answer });
-  }, [input, thinking, student, chat, push, handleRevisionReply, startRevision]);
+  }, [input, thinking, preparing, attached, student, chat, push, handleRevisionReply, startRevision]);
 
   if (!student) return null;
 
@@ -410,9 +543,51 @@ export const AiChatBot = () => {
 
             {/* ChatGPT pill composer */}
             <View style={styles.composerWrapper}>
+              {attachSheet ? (
+                <View style={styles.attachSheet}>
+                  <Pressable style={styles.attachOption} onPress={() => pickAttachment('image')}>
+                    <View style={styles.attachIcon}><Ionicons name="camera-outline" size={19} color="#000" /></View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.attachTitle}>Photo of a question</Text>
+                      <Text style={styles.attachSub}>Snap or pick a picture - I will read it and solve it</Text>
+                    </View>
+                  </Pressable>
+                  <Pressable style={styles.attachOption} onPress={() => pickAttachment('file')}>
+                    <View style={styles.attachIcon}><Ionicons name="document-outline" size={19} color="#000" /></View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.attachTitle}>Upload a file</Text>
+                      <Text style={styles.attachSub}>PDF, notes or text</Text>
+                    </View>
+                  </Pressable>
+                </View>
+              ) : null}
+
+              {preparing ? (
+                <View style={styles.chip}>
+                  <ActivityIndicator size="small" color="#000" />
+                  <Text style={styles.chipText}>Preparing…</Text>
+                </View>
+              ) : attached ? (
+                <View style={styles.chip}>
+                  <Ionicons
+                    name={attached.kind === 'image' ? 'image-outline' : 'document-text-outline'}
+                    size={15}
+                    color="#000"
+                  />
+                  <Text style={styles.chipText} numberOfLines={1}>{attached.name}</Text>
+                  <Pressable onPress={() => setAttached(null)} hitSlop={10}>
+                    <Ionicons name="close" size={15} color="#000" />
+                  </Pressable>
+                </View>
+              ) : null}
+
               <View style={styles.composer}>
-                <Pressable style={styles.plusBtn}>
-                  <Ionicons name="add" size={22} color="#000" />
+                <Pressable
+                  style={[styles.plusBtn, attachSheet && styles.plusBtnOn]}
+                  onPress={() => setAttachSheet((v) => !v)}
+                  accessibilityLabel="Attach a photo or file"
+                >
+                  <Ionicons name={attachSheet ? 'close' : 'add'} size={22} color="#000" />
                 </Pressable>
                 <TextInput
                   value={input}
@@ -427,7 +602,11 @@ export const AiChatBot = () => {
                   blurOnSubmit={false}
                   multiline
                 />
-                <Pressable style={[styles.sendBtn, (!input.trim() || thinking) && styles.sendOff]} onPress={send} disabled={!input.trim() || thinking}>
+                <Pressable
+                  style={[styles.sendBtn, ((!input.trim() && !attached) || thinking || preparing) && styles.sendOff]}
+                  onPress={send}
+                  disabled={(!input.trim() && !attached) || thinking || preparing}
+                >
                   <Ionicons name="arrow-up" size={18} color="#fff" />
                 </Pressable>
               </View>
@@ -491,6 +670,24 @@ const styles = StyleSheet.create({
   composer: { flexDirection: 'row', alignItems: 'flex-end', backgroundColor: '#F2F2F7', borderRadius: 26, paddingHorizontal: 6, paddingVertical: 6, gap: 6, minHeight: 52 },
   plusBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#E5E5EA' },
   composerInput: { flex: 1, fontSize: 16, color: '#000', maxHeight: 110, paddingHorizontal: 8, paddingVertical: 8, letterSpacing: -0.2 },
+  attachSheet: {
+    backgroundColor: '#FFFFFF', borderRadius: 18, paddingVertical: 6, marginBottom: 8,
+    borderWidth: 1, borderColor: '#E5E5EA',
+  },
+  attachOption: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 11, paddingHorizontal: 14 },
+  attachIcon: {
+    width: 34, height: 34, borderRadius: 17, backgroundColor: '#F2F2F7',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  attachTitle: { fontSize: 14, fontWeight: '600', color: '#000000' },
+  attachSub: { fontSize: 12, color: '#8E8E93', marginTop: 1 },
+  chip: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, alignSelf: 'flex-start',
+    backgroundColor: '#F2F2F7', borderRadius: 14, paddingVertical: 7, paddingHorizontal: 11,
+    marginBottom: 8, maxWidth: '90%',
+  },
+  chipText: { fontSize: 13, color: '#000000', flexShrink: 1 },
+  plusBtnOn: { backgroundColor: '#E5E5EA' },
   sendBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#000000', alignItems: 'center', justifyContent: 'center' },
   sendOff: { opacity: 0.3, backgroundColor: '#8E8E93' },
 });
