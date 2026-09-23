@@ -9,6 +9,7 @@ export type MainTabParamList = {
   Home: undefined;
   Material: undefined;
   Timer: undefined;
+  Revision: undefined;
   Tracker: undefined;
   Profile: undefined;
 };

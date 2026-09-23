@@ -5,11 +5,15 @@ import { LinearGradient } from 'expo-linear-gradient';
 import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { ConfidencePrompt } from '../components/ConfidencePrompt';
 import { Card, Chip, EmptyState, PrimaryButton, SectionHeader } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
+import { useAdaptive } from '../context/AdaptiveContext';
 import { McqPracticeSession, PracticeConfig, PracticeDifficulty, PracticeGroup, PracticeMode, useMcqPractice } from '../context/McqPracticeContext';
 import { icaiContentManifest } from '../data/icaiContentManifest';
 import type { RootStackParamList } from '../navigation/types';
+import type { Confidence, MistakeType } from '../services/adaptiveEngine';
+import { primaryConcept } from '../services/conceptResolver';
 import { colors, radius, spacing } from '../theme';
 import { CaGroup, caGroupDetails, groupsForStudent, subjectGroup } from '../utils/caGroups';
 
@@ -31,6 +35,12 @@ const SetupRow = ({ title, children }: React.PropsWithChildren<{ title: string }
 export const McqPracticeScreen = ({ navigation }: Props) => {
   const { student } = useAuth();
   const { hydrated, activeSession, history, allQuestions, availableQuestions, questionsForSession, startPractice, answerQuestion, submitPractice, abandonPractice } = useMcqPractice();
+  const { recordAnswer, noteQuestionsSeen } = useAdaptive();
+  // Confidence and mistake type for the question currently on screen. Both are
+  // reset on navigation so the prompt never shows another question's state.
+  const [confidence, setConfidence] = useState<Confidence | undefined>();
+  const [mistakeType, setMistakeType] = useState<MistakeType | undefined>();
+  const [dismissed, setDismissed] = useState(false);
   const allowed = useMemo(() => groupsForStudent(student?.group), [student?.group]);
   const groupOptions: PracticeGroup[] = allowed.length > 1 ? ['Combined', ...allowed] : allowed;
   const [config, setConfig] = useState<PracticeConfig>({ group: groupOptions[0], subject: 'All Subjects', chapter: 'All Chapters', mode: 'Mixed', difficulty: 'Mixed', requestedCount: 10 });
@@ -42,6 +52,12 @@ export const McqPracticeScreen = ({ navigation }: Props) => {
   const session = activeSession;
   const sessionQuestions = session ? questionsForSession(session) : [];
   const question = sessionQuestions[index];
+
+  useEffect(() => {
+    setConfidence(undefined);
+    setMistakeType(undefined);
+    setDismissed(false);
+  }, [question?.id]);
   const answered = session ? Object.keys(session.answers).length : 0;
   const pool = availableQuestions(config);
 
@@ -80,6 +96,42 @@ export const McqPracticeScreen = ({ navigation }: Props) => {
     if (!question) return;
     Haptics.selectionAsync().catch(() => undefined);
     await answerQuestion(question.id, option);
+    // Clear any answer from a previous question, then open the prompt again.
+    setConfidence(undefined);
+    setMistakeType(undefined);
+    setDismissed(false);
+  };
+
+  const submitConfidence = (value: Confidence) => {
+    setConfidence(value);
+    if (!question) return;
+    // A correct answer is fully recorded now. A wrong one waits for the reason,
+    // which is the signal the mistake loop is built on.
+    const correct = session?.answers[question.id] === question.answer;
+    if (correct) {
+      recordAnswer({ question, correct: true, confidence: value }).catch(() => undefined);
+    }
+  };
+
+  const submitMistake = (value: MistakeType) => {
+    setMistakeType(value);
+    if (!question || confidence == null) return;
+    recordAnswer({ question, correct: false, confidence, mistakeType: value }).catch(() => undefined);
+  };
+
+  const skipPrompt = () => {
+    setDismissed(true);
+    if (!question || !session) return;
+    // Skipping must still record the attempt, otherwise the strength map would
+    // silently ignore questions the student answered quickly.
+    const answered = session.answers[question.id];
+    if (answered == null) return;
+    recordAnswer({
+      question,
+      correct: answered === question.answer,
+      confidence: confidence || 'Medium',
+      mistakeType: confidence == null ? undefined : mistakeType,
+    }).catch(() => undefined);
   };
 
   const finish = () => Alert.alert('Finish practice?', `${sessionQuestions.length - answered} unanswered question${sessionQuestions.length - answered === 1 ? '' : 's'} will count as incorrect.`, [
@@ -150,6 +202,17 @@ export const McqPracticeScreen = ({ navigation }: Props) => {
               const selected = session.answers[question.id] === optionIndex;
               return <Pressable key={option} onPress={() => select(optionIndex)} style={[styles.option, selected && styles.optionSelected]}><View style={[styles.letter, selected && styles.letterSelected]}><Text style={[styles.letterText, selected && styles.letterTextSelected]}>{letters[optionIndex]}</Text></View><Text style={[styles.optionText, selected && styles.optionTextSelected]}>{option}</Text>{selected ? <Ionicons name="checkmark-circle" size={20} color={colors.primary} /> : null}</Pressable>;
             })}</View>
+            {session.answers[question.id] != null && !dismissed ? (
+              <ConfidencePrompt
+                correct={session.answers[question.id] === question.answer}
+                confidence={confidence}
+                mistakeType={mistakeType}
+                conceptLabel={primaryConcept(question).label}
+                onConfidence={submitConfidence}
+                onMistake={submitMistake}
+                onSkip={skipPrompt}
+              />
+            ) : null}
           </Card>
 
           <View style={styles.quizActions}><PrimaryButton label="Previous" icon="arrow-back" variant="secondary" disabled={index === 0} onPress={() => setIndex((value) => Math.max(0, value - 1))} style={{ flex: 1 }} />{index < sessionQuestions.length - 1 ? <PrimaryButton label="Next" icon="arrow-forward" onPress={() => setIndex((value) => Math.min(sessionQuestions.length - 1, value + 1))} style={{ flex: 1 }} /> : <PrimaryButton label="Submit" icon="checkmark-done" onPress={finish} style={{ flex: 1 }} />}</View>

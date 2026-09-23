@@ -10,7 +10,6 @@ import Svg, { Circle } from 'react-native-svg';
 import { Card, Chip, EmptyState, SectionHeader } from '../components/ui';
 import { useFocusTimer } from '../context/FocusTimerContext';
 import { useStudyReceipts } from '../context/StudyReceiptContext';
-import { requestChatBot } from '../services/chatBotBus';
 import { colors, radius, spacing } from '../theme';
 
 const subjects = ['Accounts', 'Law', 'Taxation', 'Costing', 'Audit', 'FM', 'SM', 'Revision', 'Mock Test'];
@@ -91,7 +90,6 @@ export const FocusTimerScreen = () => {
         onPress: async () => {
           tap(Haptics.ImpactFeedbackStyle.Heavy);
           const session = await finish();
-          if (session) requestChatBot({ revisionTopic: `${session.subject} ${session.target}` });
         },
       },
     ],

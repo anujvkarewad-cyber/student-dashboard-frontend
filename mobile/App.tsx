@@ -2,6 +2,7 @@ import React from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { AdaptiveProvider } from './src/context/AdaptiveContext';
 import { AppUpdateProvider } from './src/context/AppUpdateContext';
 import { AuthProvider } from './src/context/AuthContext';
 import { DailyMcqProvider } from './src/context/DailyMcqContext';
@@ -24,16 +25,18 @@ export default function App() {
               <FocusTimerProvider>
                 <StudyReceiptsProvider>
                   <McqBankProvider>
-                    <DailyMcqProvider>
-                      <McqPracticeProvider>
-                        <ProgressSyncProvider>
-                          <NotificationsProvider>
-                            <StatusBar style="dark" />
-                            <AppNavigator />
-                          </NotificationsProvider>
-                        </ProgressSyncProvider>
-                      </McqPracticeProvider>
-                    </DailyMcqProvider>
+                    <AdaptiveProvider>
+                      <DailyMcqProvider>
+                        <McqPracticeProvider>
+                          <ProgressSyncProvider>
+                            <NotificationsProvider>
+                              <StatusBar style="dark" />
+                              <AppNavigator />
+                            </NotificationsProvider>
+                          </ProgressSyncProvider>
+                        </McqPracticeProvider>
+                      </DailyMcqProvider>
+                    </AdaptiveProvider>
                   </McqBankProvider>
                 </StudyReceiptsProvider>
               </FocusTimerProvider>

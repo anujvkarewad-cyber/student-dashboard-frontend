@@ -8,12 +8,12 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, BackHandler, Image, StyleSheet, Text, ToastAndroid, View } from 'react-native';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
-import { AiChatBot } from '../components/AiChatBot';
 import { AddStudyLogScreen } from '../screens/AddStudyLogScreen';
 import { ChangePasswordScreen } from '../screens/ChangePasswordScreen';
 import { DailyMcqScreen } from '../screens/DailyMcqScreen';
 import { DailyTargetScreen } from '../screens/DailyTargetScreen';
 import { DashboardScreen } from '../screens/DashboardScreen';
+import { RevisionDashboardScreen } from '../screens/RevisionDashboardScreen';
 import { FocusTimerScreen } from '../screens/FocusTimerScreen';
 import { ForgotPasswordScreen } from '../screens/ForgotPasswordScreen';
 import { LeaderboardScreen } from '../screens/LeaderboardScreen';
@@ -45,6 +45,7 @@ const tabIcons: Record<keyof MainTabParamList, { active: keyof typeof Ionicons.g
   Home: { active: 'home', idle: 'home-outline' },
   Material: { active: 'folder-open', idle: 'folder-open-outline' },
   Timer: { active: 'timer', idle: 'timer-outline' },
+  Revision: { active: 'refresh-circle', idle: 'refresh-circle-outline' },
   Tracker: { active: 'time', idle: 'time-outline' },
   Profile: { active: 'person', idle: 'person-outline' },
 };
@@ -74,6 +75,7 @@ const MainTabs = () => (
     <Tabs.Screen name="Home" component={DashboardScreen} options={{ title: 'Home' }} />
     <Tabs.Screen name="Material" component={NotesScreen} options={{ title: 'Material' }} />
     <Tabs.Screen name="Timer" component={FocusTimerScreen} options={{ title: 'Timer' }} />
+    <Tabs.Screen name="Revision" component={RevisionDashboardScreen} options={{ title: 'Revision' }} />
     <Tabs.Screen name="Tracker" component={TrackerScreen} options={{ title: 'Tracker' }} />
     <Tabs.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profile' }} />
   </Tabs.Navigator>
@@ -229,7 +231,6 @@ export const AppNavigator = () => {
           </>
         )}
       </RootStack.Navigator>
-      {student && !requiresPasswordChange ? <AiChatBot /> : null}
     </NavigationContainer>
   );
 };

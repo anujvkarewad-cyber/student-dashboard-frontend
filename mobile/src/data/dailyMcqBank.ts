@@ -10,6 +10,8 @@ export type DailyMcqQuestion = {
     title: string;
     passage: string;
   };
+  /** Emitted by the backend once the published bank carries them. */
+  conceptTags?: string[];
   sourceRef?: string;
   applicableAttempt?: string;
 };
