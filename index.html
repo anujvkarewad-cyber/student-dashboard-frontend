@@ -1047,10 +1047,13 @@
 <script src="api.js"></script>
 <script src="firebase-init.js"></script>
 <script src="learning-data.js"></script>
+<script src="mentor-host.js"></script>
 <script>
-  // Default host. mentor-api.js then picks whichever Render service actually
-  // has published MCQs so a restart on one box cannot blank the student bank.
-  window.MENTOR_API_URL = localStorage.getItem("ump_mentor_api_url") || "https://ujjwal-pathak-mentor-api.onrender.com";
+  // mentor-host.js has already resolved and published window.MENTOR_API_URL from
+  // the live deployment. This guard only matters if that file failed to load.
+  if (!window.MENTOR_API_URL) {
+    window.MENTOR_API_URL = localStorage.getItem("ump_mentor_api_url") || "https://ump-mentor-api.vercel.app";
+  }
 </script>
 <script src="mentor-api.js"></script>
 <script src="live-bank-loader.js"></script>

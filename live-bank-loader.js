@@ -8,15 +8,18 @@
 (function () {
   "use strict";
 
-    const DEFAULT_MENTOR_API = "https://ujjwal-pathak-mentor-api.onrender.com";
+    const DEFAULT_MENTOR_API = "https://ump-mentor-api.vercel.app";
+  // Prefer the shared resolver, which probes hosts and re-points itself if the
+  // live deployment ever moves. Everything below falls back in order.
   const MENTOR_API = (
+    (typeof window.UMP_MENTOR_API_URL === "function" && window.UMP_MENTOR_API_URL()) ||
     window.MENTOR_API_URL ||
     localStorage.getItem("ump_mentor_api_url") ||
     DEFAULT_MENTOR_API
   ).replace(/\/$/, "");
   const BANK_URL = `${MENTOR_API}/api/content/student/bank.json`;
   const BANK_META_URL = `${MENTOR_API}/api/content/student/bank-meta.json`;
-  const CACHE_KEY = "ump_live_published_bank_v1";
+  const CACHE_KEY = "ump_live_published_bank_v2";
   const CACHE_TTL = 24 * 60 * 60 * 1000;
   const FETCH_TIMEOUT_MS = 65 * 1000; // Render free-tier cold starts can exceed 30 seconds.
   const REVISION_POLL_MS = 10 * 1000;

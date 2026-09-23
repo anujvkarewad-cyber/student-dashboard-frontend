@@ -6,7 +6,7 @@
     return String(
       (window.UMP_MENTOR_API_URL && window.UMP_MENTOR_API_URL()) ||
       window.MENTOR_API_URL ||
-      "https://ujjwal-pathak-mentor-api.onrender.com"
+      "https://ump-mentor-api.vercel.app"
     ).replace(/\/$/, "");
   }
 

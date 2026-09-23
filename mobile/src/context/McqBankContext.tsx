@@ -1,14 +1,22 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { AppState } from 'react-native';
+import { config } from '../config';
 import { EnrichedMcqQuestion } from '../data/mcqMetadata';
 
+// The mentor API base is the single source of truth for content as well as
+// analytics, so a deployment change never has to be hunted down here. The
+// Render URLs are kept last as a legacy fallback only: they have been
+// returning 503, so they must never win the host probe.
 const HOSTS = [
+  config.mentorApiUrl,
   'https://ujjwal-pathak-mentor-api.onrender.com',
   'https://ujjwal-pathak-project.onrender.com',
-];
-const CACHE_KEY = 'ump_live_published_bank_v2';
-const HOST_KEY = 'ump_live_bank_host_v2';
+].filter(Boolean);
+
+// v2 cached whatever the dead hosts returned; bumping forces a clean refetch.
+const CACHE_KEY = 'ump_live_published_bank_v3';
+const HOST_KEY = 'ump_live_bank_host_v3';
 const REQUEST_TIMEOUT_MS = 90_000;
 const REVISION_POLL_MS = 15_000;
 
@@ -71,6 +79,8 @@ const fetchJson = async (url: string, ms: number) => {
 
 const pickHost = async (): Promise<string> => {
   const saved = await AsyncStorage.getItem(HOST_KEY);
+  // Every host is probed on each call, including the saved one, so a host that
+  // dies later is dropped instead of being retried forever.
   const ordered = [saved, ...HOSTS].filter(Boolean).filter((host, index, all) => all.indexOf(host) === index) as string[];
   const results = await Promise.all(ordered.map(async (host) => {
     try {
@@ -85,7 +95,8 @@ const pickHost = async (): Promise<string> => {
     await AsyncStorage.setItem(HOST_KEY, best.host);
     return best.host;
   }
-  return saved || HOSTS[0];
+  // Nothing answered. Prefer the configured host over a stale saved one.
+  return HOSTS[0];
 };
 
 export const McqBankProvider = ({ children }: PropsWithChildren) => {
