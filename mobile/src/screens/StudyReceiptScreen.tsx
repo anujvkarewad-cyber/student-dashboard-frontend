@@ -96,6 +96,25 @@ export const StudyReceiptScreen = ({ route, navigation }: Props) => {
             <View style={styles.detailRow}><Text style={styles.detailLabel}>Focused time</Text><Text style={styles.detailValue}>{formatDuration(receipt.focusedSeconds)}</Text></View>
             <View style={styles.line} />
             <View style={styles.detailRow}><Text style={styles.detailLabel}>Confidence</Text><Text style={styles.detailValue}>{receipt.confidence}</Text></View>
+          {/* The recall mark, once the marker has returned it. The receipt is
+              saved before grading finishes, so this appears on the next open. */}
+          {receipt.recallScore != null ? (
+            <View style={styles.gradeBlock}>
+              <View style={styles.gradeHead}>
+                <Text style={styles.gradeScore}>{receipt.recallScore}/10</Text>
+                <Text style={styles.gradeVerdict}>{receipt.recallVerdict}</Text>
+              </View>
+              <Text style={styles.gradeLabel}>Recall marked from your own answer</Text>
+              {receipt.missingPoints?.length ? (
+                <View style={styles.gradeMissing}>
+                  <Text style={styles.gradeMissingTitle}>The examiner expected</Text>
+                  {receipt.missingPoints.map((point) => (
+                    <Text key={point} style={styles.gradeMissingItem}>• {point}</Text>
+                  ))}
+                </View>
+              ) : null}
+            </View>
+          ) : null}
             <View style={styles.line} />
             <View style={styles.detailRow}><Text style={styles.detailLabel}>Source</Text><Text style={styles.selfRecallBadge}>SELF RECALL</Text></View>
           </Card>
@@ -180,6 +199,14 @@ export const StudyReceiptScreen = ({ route, navigation }: Props) => {
 };
 
 const styles = StyleSheet.create({
+  gradeBlock: { marginTop: 12, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#E5E5EA' },
+  gradeHead: { flexDirection: 'row', alignItems: 'baseline', gap: 10 },
+  gradeScore: { fontSize: 22, fontWeight: '900', color: '#000' },
+  gradeVerdict: { fontSize: 13, fontWeight: '800', color: '#3C3C43' },
+  gradeLabel: { fontSize: 11, color: '#8E8E93', marginTop: 2 },
+  gradeMissing: { marginTop: 10 },
+  gradeMissingTitle: { fontSize: 11, fontWeight: '800', color: '#9A6400', marginBottom: 4 },
+  gradeMissingItem: { fontSize: 12, color: '#3C3C43', lineHeight: 18 },
   safe: { flex: 1, backgroundColor: colors.canvas },
   content: { padding: spacing.lg, paddingBottom: 50 },
   missing: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.xxl },

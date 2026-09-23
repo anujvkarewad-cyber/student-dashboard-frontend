@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { evaluateAnswer } from '../services/answerEvaluator';
 import { useAuth } from './AuthContext';
 import type { FocusSession } from './FocusTimerContext';
 
@@ -38,6 +39,11 @@ export type StudyReceipt = {
   createdAt: number;
   nextReviewAt: number;
   review?: RetentionReview;
+  /** Real mark from the answer evaluator. Absent on receipts made before grading. */
+  recallScore?: number;
+  recallVerdict?: string;
+  missingPoints?: string[];
+  gradedConcept?: string;
 };
 
 type StudyReceiptsValue = {
@@ -72,35 +78,33 @@ const questionSet = (session: FocusSession): RecallQuestion[] => {
   const kind = sessionKind(session);
   const typedTarget = String(session.target || '').trim();
   const targetSuffix = typedTarget && typedTarget.toLowerCase() !== String(session.subject).toLowerCase()
-    ? ` for “${typedTarget}”`
+    ? ` on "${typedTarget}"`
     : '';
 
+  // The old version asked the student to describe the session back to itself
+  // ("Which mock did you attempt?", "When will you revise next?"). Those are
+  // journaling prompts, not recall: they need no retrieval from memory, so a
+  // student can answer them without having learned anything, and the score that
+  // came out of them was their own opinion of themselves.
+  //
+  // These ask for the content itself, with notes closed. That is the thing that
+  // actually strengthens memory, and it can be marked.
   if (kind === 'mock') {
     return [
       {
-        id: `${session.id}:mock-attempt`,
-        prompt: `Which mock test or paper did you attempt${targetSuffix}?`,
-        helper: 'Name the mock series, paper and section you attempted.',
+        id: `${session.id}:mock-provisions`,
+        prompt: `Notes closed. Write out the provisions, sections, standards or formats you used in this ${session.subject} paper${targetSuffix}, from memory.`,
+        helper: 'Name them precisely - section or SA numbers where they apply.',
       },
       {
-        id: `${session.id}:mock-performance`,
-        prompt: 'How did the exam go overall, and how many questions did you attempt?',
-        helper: 'Include how you felt about accuracy and whether you reached every question.',
+        id: `${session.id}:mock-wrong`,
+        prompt: 'Write out the questions you know you got wrong, and the correct answer or treatment for each.',
+        helper: 'Give the right answer, not just the topic. This is the one that matters.',
       },
       {
-        id: `${session.id}:mock-difficulty`,
-        prompt: 'Which section felt the most difficult, and why?',
-        helper: 'Name the topics or question types that slowed you down.',
-      },
-      {
-        id: `${session.id}:mock-time`,
-        prompt: 'How was your time management during the mock?',
-        helper: 'Note where you spent too much or too little time.',
-      },
-      {
-        id: `${session.id}:mock-improve`,
-        prompt: 'What mistakes did you make, and what will you improve in your next mock?',
-        helper: 'Be specific — silly errors, concept gaps or presentation issues.',
+        id: `${session.id}:mock-working`,
+        prompt: `Reproduce the working or format of one question from this paper${targetSuffix} without looking it up.`,
+        helper: 'Steps, figures and the final labelled answer.',
       },
     ];
   }
@@ -108,24 +112,19 @@ const questionSet = (session: FocusSession): RecallQuestion[] => {
   if (kind === 'revision') {
     return [
       {
-        id: `${session.id}:revise-topics`,
-        prompt: `Which chapters or topics did you revise${targetSuffix}?`,
-        helper: 'List the chapters, topics or past questions you covered.',
+        id: `${session.id}:revise-provisions`,
+        prompt: `Notes closed. Write the provisions, sections, rules or standards you revised in this ${session.subject} session${targetSuffix}, from memory.`,
+        helper: 'Quote them as precisely as you can.',
       },
       {
-        id: `${session.id}:revise-recall`,
-        prompt: 'Without opening your notes, what were you able to recall?',
-        helper: 'Write the points that came back to you from memory first.',
+        id: `${session.id}:revise-detail`,
+        prompt: `Now write the detail behind the most important one of those - the conditions, exceptions or limits.`,
+        helper: 'An examiner marks the detail, not the heading.',
       },
       {
-        id: `${session.id}:revise-gaps`,
-        prompt: 'Which concepts, formulas or rules do you still need to revise again?',
-        helper: 'Note the weak spots you noticed during recall.',
-      },
-      {
-        id: `${session.id}:revise-next`,
-        prompt: 'When will you do your next revision of this material?',
-        helper: 'Pick a realistic date or day and stick to it.',
+        id: `${session.id}:revise-apply`,
+        prompt: `Give one situation where this applies and state the correct treatment or conclusion.`,
+        helper: 'Application is what separates a pass from a distinction.',
       },
     ];
   }
@@ -133,18 +132,18 @@ const questionSet = (session: FocusSession): RecallQuestion[] => {
   return [
     {
       id: `${session.id}:core`,
-      prompt: `In your own words, explain the main concept you studied about “${target}” in this ${session.subject} session.`,
-      helper: 'Write it as if you were teaching a junior student.',
+      prompt: `Notes closed. Write everything you can recall about "${target}" from this ${session.subject} session.`,
+      helper: 'Provisions, formulae, steps, exceptions - whatever comes back.',
     },
     {
-      id: `${session.id}:details`,
-      prompt: `Recall the important rules, provisions, formulas or steps from this ${session.subject} session.`,
-      helper: 'Short bullet-style answers are enough.',
+      id: `${session.id}:detail`,
+      prompt: `Now the precise detail: the exact section, rule, standard or formula for "${target}".`,
+      helper: 'Vague descriptions score nothing in the real paper.',
     },
     {
-      id: `${session.id}:application`,
-      prompt: 'What is one mistake you could make on this topic in the exam, and how would you avoid it?',
-      helper: 'Use your own words. Accuracy verification will come from mentor-approved sources later.',
+      id: `${session.id}:apply`,
+      prompt: `State the conclusion or final treatment for a standard question on "${target}", and how you reach it.`,
+      helper: 'An answer with no conclusion loses marks even when the working is right.',
     },
   ];
 };
@@ -215,8 +214,46 @@ export const StudyReceiptsProvider = ({ children }: PropsWithChildren) => {
       nextReviewAt: now + DAY_MS,
     };
     await persist([receipt, ...receipts]);
+
+    // The receipt is saved first so the student never waits on the network.
+    // Grading then runs in the background and updates the stored receipt,
+    // turning a self-reported effort score into a real mark.
+    if (student) {
+      const recallText = [...answers]
+        .sort((a, b) => b.response.length - a.response.length)[0]?.response || '';
+      if (recallText.trim().length >= 40) {
+        const question = receipt.questions[0]?.prompt || `Recall everything about ${receipt.target}.`;
+        evaluateAnswer({
+          studentId: student.studentId,
+          question,
+          studentAnswer: recallText,
+          subject: receipt.subject,
+          concept: receipt.target,
+        })
+          .then((outcome) => {
+            if (!outcome.ok) return;
+            setReceipts((current) => {
+              const next = current.map((item) =>
+                item.id === receipt.id
+                  ? {
+                      ...item,
+                      recallScore: outcome.score,
+                      recallVerdict: outcome.verdict,
+                      missingPoints: outcome.missingKeyPoints.slice(0, 5),
+                      gradedConcept: receipt.target,
+                    }
+                  : item,
+              );
+              persist(next);
+              return next;
+            });
+          })
+          .catch(() => undefined);
+      }
+    }
+
     return receipt;
-  }, [persist, receipts]);
+  }, [persist, receipts, student]);
 
   const completeReview = useCallback(async (receiptId: string, response: string, confidence: RecallConfidence) => {
     const current = receipts.find((item) => item.id === receiptId);

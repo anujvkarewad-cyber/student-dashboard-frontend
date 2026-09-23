@@ -14,6 +14,7 @@ import { DailyMcqScreen } from '../screens/DailyMcqScreen';
 import { DailyTargetScreen } from '../screens/DailyTargetScreen';
 import { DashboardScreen } from '../screens/DashboardScreen';
 import { RevisionDashboardScreen } from '../screens/RevisionDashboardScreen';
+import { WrittenAnswerScreen } from '../screens/WrittenAnswerScreen';
 import { FocusTimerScreen } from '../screens/FocusTimerScreen';
 import { ForgotPasswordScreen } from '../screens/ForgotPasswordScreen';
 import { LeaderboardScreen } from '../screens/LeaderboardScreen';
@@ -208,6 +209,7 @@ export const AppNavigator = () => {
             <RootStack.Screen name="StudyReceipt" component={StudyReceiptScreen} options={{ title: 'Study Receipt' }} />
             <RootStack.Screen name="DailyMcq" component={DailyMcqScreen} options={{ title: 'Daily MCQ Challenge' }} />
             <RootStack.Screen name="McqPractice" component={McqPracticeScreen} options={{ title: 'Unlimited MCQ Practice' }} />
+            <RootStack.Screen name="WrittenAnswer" component={WrittenAnswerScreen} options={{ title: 'Written Answer' }} />
             <RootStack.Screen name="Reports" component={ReportsScreen} options={{ title: 'Weekly reports' }} />
             <RootStack.Screen name="Leaderboard" component={LeaderboardScreen} options={{ title: 'Leaderboard' }} />
             <RootStack.Screen name="AddStudyLog" component={AddStudyLogScreen} options={{ title: 'Log study hours', presentation: 'modal', animation: 'slide_from_bottom' }} />

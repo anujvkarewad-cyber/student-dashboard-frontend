@@ -103,10 +103,15 @@ export const RevisionDashboardScreen = () => {
               Answer a few practice questions and this screen fills itself in — your weak
               concepts, what is due today, and what keeps slipping.
             </Text>
-            <Pressable style={styles.cta} onPress={() => navigation.navigate('McqPractice')}>
-              <Text style={styles.ctaText}>Start practising</Text>
-              <Ionicons name="arrow-forward" size={16} color="#fff" />
-            </Pressable>
+            <View style={styles.ctaRow}>
+              <Pressable style={styles.cta} onPress={() => navigation.navigate('McqPractice')}>
+                <Text style={styles.ctaText}>Practise MCQs</Text>
+                <Ionicons name="arrow-forward" size={16} color="#fff" />
+              </Pressable>
+              <Pressable style={[styles.cta, styles.ctaAlt]} onPress={() => navigation.navigate('WrittenAnswer')}>
+                <Text style={[styles.ctaText, { color: '#000' }]}>Write an answer</Text>
+              </Pressable>
+            </View>
           </Card>
         ) : (
           <>
@@ -155,6 +160,15 @@ export const RevisionDashboardScreen = () => {
             </Card>
 
             {/* --- insights --- */}
+            <Pressable style={styles.writeRow} onPress={() => navigation.navigate('WrittenAnswer')}>
+              <Ionicons name="create-outline" size={18} color={colors.primary} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.writeTitle}>Write a full answer</Text>
+                <Text style={styles.writeSub}>Get it marked strictly, like an examiner would</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color="#C7C7CC" />
+            </Pressable>
+
             <SectionHeader title="Your pattern" />
             <Card>
               <Text style={styles.insightLead}>
@@ -210,6 +224,19 @@ export const RevisionDashboardScreen = () => {
 };
 
 const styles = StyleSheet.create({
+  ctaRow: { flexDirection: 'row', gap: spacing.sm, marginTop: 14, flexWrap: 'wrap' },
+  ctaAlt: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#D1D1D6' },
+  writeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    backgroundColor: '#FFFFFF',
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    marginTop: spacing.md,
+  },
+  writeTitle: { fontSize: 14, fontWeight: '800', color: '#000' },
+  writeSub: { fontSize: 11, color: '#8E8E93', marginTop: 2 },
   flex: { flex: 1, backgroundColor: '#F7F8FA' },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F7F8FA' },
   container: { padding: spacing.lg, paddingBottom: 48 },
@@ -256,7 +283,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: radius.md,
-    marginTop: 14,
   },
   ctaText: { color: '#fff', fontWeight: '600', fontSize: 14 },
 });

@@ -22,6 +22,7 @@ export type RootStackParamList = {
   StudyReceipt: { sessionId: string };
   DailyMcq: { group?: CaGroup } | undefined;
   McqPractice: undefined;
+  WrittenAnswer: undefined;
   Reports: undefined;
   Leaderboard: undefined;
   AddStudyLog: undefined;
