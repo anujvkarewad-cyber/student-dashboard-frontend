@@ -20,7 +20,13 @@
   const BANK_URL = `${MENTOR_API}/api/content/student/bank.json`;
   const BANK_META_URL = `${MENTOR_API}/api/content/student/bank-meta.json`;
   const CACHE_KEY = "ump_live_published_bank_v2";
-  const CACHE_TTL = 24 * 60 * 60 * 1000;
+  // The full bank is ~6.8 MB and localStorage caps near 5 MB per origin, so the
+  // old localStorage-only cache threw QuotaExceededError on every write, was
+  // caught, and was ignored. A returning student therefore re-downloaded the
+  // whole bank every time and had nothing to fall back on when the request
+  // failed. IndexedDB has a far larger quota, so the bank lives there now.
+  const IDB_NAME = "ump_published_bank";
+  const IDB_STORE = "banks";
   const FETCH_TIMEOUT_MS = 65 * 1000; // Render free-tier cold starts can exceed 30 seconds.
   const REVISION_POLL_MS = 10 * 1000;
   const originalData = window.UMP_LEARNING_DATA || {};
@@ -37,26 +43,96 @@
     }));
   }
 
-  function getCached() {
-    try {
-      const saved = JSON.parse(localStorage.getItem(CACHE_KEY) || "null");
-      if (!saved || !saved.payload || Date.now() - Number(saved.ts || 0) > CACHE_TTL) {
-        localStorage.removeItem(CACHE_KEY);
-        return null;
+  // Mirrored in memory so the rest of this file keeps reading it synchronously.
+  let cachedPayload = null;
+  let bankAppliedFromNetwork = false;
+
+  function openBankDb() {
+    return new Promise((resolve, reject) => {
+      if (typeof indexedDB === "undefined") {
+        reject(new Error("IndexedDB unavailable"));
+        return;
       }
-      return saved.payload;
+      const request = indexedDB.open(IDB_NAME, 1);
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        if (!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE);
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error || new Error("IndexedDB open failed"));
+    });
+  }
+
+  async function readCache() {
+    try {
+      const db = await openBankDb();
+      return await new Promise((resolve) => {
+        const tx = db.transaction(IDB_STORE, "readonly");
+        const req = tx.objectStore(IDB_STORE).get(CACHE_KEY);
+        req.onsuccess = () => resolve((req.result && req.result.payload) || null);
+        req.onerror = () => resolve(null);
+      });
     } catch (_) {
-      localStorage.removeItem(CACHE_KEY);
       return null;
     }
   }
 
-  function setCached(payload) {
+  async function writeCache(payload) {
     try {
-      localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), payload }));
+      const db = await openBankDb();
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(IDB_STORE, "readwrite");
+        tx.objectStore(IDB_STORE).put({ ts: Date.now(), payload }, CACHE_KEY);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+        tx.onabort = () => reject(tx.error);
+      });
+      return true;
     } catch (error) {
-      console.warn("[Published Bank] Cache save failed:", error);
+      console.warn("[Published Bank] IndexedDB cache write failed:", error);
+      return false;
     }
+  }
+
+  async function clearCache() {
+    cachedPayload = null;
+    try {
+      const db = await openBankDb();
+      await new Promise((resolve) => {
+        const tx = db.transaction(IDB_STORE, "readwrite");
+        tx.objectStore(IDB_STORE).delete(CACHE_KEY);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+        tx.onabort = () => resolve();
+      });
+    } catch (_) {
+      /* having nothing cached is a valid end state */
+    }
+  }
+
+  function getCached() {
+    return cachedPayload;
+  }
+
+  // Applied at startup so a student opening the app with no connection still
+  // gets the last published questions.
+  async function hydrateCache() {
+    if (bankAppliedFromNetwork) return;
+    const stored = await readCache();
+    if (!stored || !Array.isArray(stored.questions)) return;
+    cachedPayload = stored;
+    if (bankAppliedFromNetwork) return;
+    applyBank(stored, "cached");
+    setStatus("cached", { revision: stored.revision, count: stored.questions.length, cached: true });
+  }
+
+  // Only ever called after a successful network fetch, so this is the right
+  // place to record that the authoritative bank has landed.
+  // Not awaited: memory serves this session, disk is for the next one.
+  function setCached(payload) {
+    bankAppliedFromNetwork = true;
+    cachedPayload = payload;
+    writeCache(payload);
   }
 
   function chapterCatalog(questions) {
@@ -135,16 +211,17 @@
     return nextData;
   }
 
-  const cachedAtStartup = getCached();
-  if (cachedAtStartup) {
-    // This synchronous apply runs before learning-tools.js, so a returning
-    // student immediately starts with the last known published bank.
-    applyBank(cachedAtStartup, "cached");
+  if (cachedPayload) {
+    // Already in memory this session - applies before learning-tools.js runs.
+    applyBank(cachedPayload, "cached");
   } else {
     // Fail closed: do not expose bundled preview/previous questions while the
     // authoritative published bank is loading.
     applyBank({ revision: "published-loading", generatedAt: null, questions: [] }, "loading");
   }
+  // The disk read is asynchronous so it lands just after this, replacing the
+  // loading state. A warm connection usually wins the race anyway.
+  hydrateCache();
 
   let requestInFlight = null;
   async function fetchPublishedBank({ force = false } = {}) {
@@ -179,7 +256,7 @@
           ? "The content server took too long to wake up. Please retry."
           : String(error?.message || error);
         console.warn("[Published Bank] Fetch failed:", message, BANK_URL);
-        const stale = getCached();
+        const stale = getCached() || (await readCache());
         if (stale) {
           applyBank(stale, "stale");
           setStatus("stale", {
@@ -234,12 +311,10 @@
   }
 
   window.UMP_REFRESH_LIVE_BANK = function () {
-    localStorage.removeItem(CACHE_KEY);
-    return fetchPublishedBank({ force: true });
+    return clearCache().then(() => fetchPublishedBank({ force: true }));
   };
   window.UMP_CLEAR_LIVE_CACHE = function () {
-    localStorage.removeItem(CACHE_KEY);
-    console.log("[Published Bank] Cache cleared");
+    return clearCache().then(() => console.log("[Published Bank] Cache cleared"));
   };
 
   if (document.readyState === "loading") {
