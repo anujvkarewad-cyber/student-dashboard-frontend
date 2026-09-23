@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { askAi } from '../api/reformApi';
+import { askAi, type AiTurn } from '../api/reformApi';
 import { useAuth } from '../context/AuthContext';
 import { registerChatBotHandler, type ChatBotRequest } from '../services/chatBotBus';
 import { setChapterCompleted } from '../services/completedChapters';
@@ -327,15 +327,24 @@ export const AiChatBot = () => {
     if (quizMatch) { startRevision(quizMatch[1]); return; }
 
     setThinking(true);
+
+    // Build the conversation so far (excluding the welcome bubble) so the
+    // backend can answer follow-ups in context, exactly like a chat thread.
+    const history: AiTurn[] = chat
+      .slice(1)
+      .filter((m) => !!m.text?.trim())
+      .slice(-8)
+      .map((m) => ({ role: m.me ? ('user' as const) : ('assistant' as const), text: m.text }));
+
     let answer: string | null = null;
     if (student) {
-      const live = await askAi(student.studentId, q);
+      const live = await askAi(student.studentId, q, undefined, history);
       answer = live?.answer || null;
     }
     if (!answer) answer = answerFromSyllabus(q);
     setThinking(false);
     push({ me: false, text: answer });
-  }, [input, thinking, student, push, handleRevisionReply, startRevision]);
+  }, [input, thinking, student, chat, push, handleRevisionReply, startRevision]);
 
   if (!student) return null;
 

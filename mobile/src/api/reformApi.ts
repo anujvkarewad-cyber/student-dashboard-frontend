@@ -82,11 +82,35 @@ export const fetchDailyTarget = (studentId: string) =>
 export const completeTargetTask = (studentId: string, taskId: string) =>
   mentorFetch<{ ok: boolean }>(`/api/targets/complete`, { method: 'POST', body: { studentId, taskId } });
 
-/** Free-form syllabus doubt → Groq RAG over ICAI modules (live mode). */
-export const askAi = (studentId: string, question: string, chapterId?: string) =>
-  mentorFetch<{ answer: string }>(`/api/ai/ask`, {
+/** One earlier turn of the AI conversation, sent so follow-ups stay in context. */
+export type AiTurn = { role: 'user' | 'assistant'; text: string };
+
+export type AiAnswer = {
+  answer: string;
+  /** Which ICAI skeleton the backend used: theory | practical | distinguish | case_study */
+  answerFormat?: string;
+  /** How well the retrieved module material covered the question: full | partial | general */
+  grounding?: string;
+  mode?: string;
+};
+
+/**
+ * Free-form syllabus doubt → Groq RAG over ICAI modules (live mode).
+ *
+ * `history` carries the previous turns of this chat so the student can ask
+ * follow-ups like "explain more", "give an example" or "what about for a
+ * private company?" and the backend keeps the thread's context.
+ */
+export const askAi = (
+  studentId: string,
+  question: string,
+  chapterId?: string,
+  history?: AiTurn[],
+) =>
+  mentorFetch<AiAnswer>(`/api/ai/ask`, {
     method: 'POST',
-    body: { studentId, question, chapterId },
+    // Only the last 8 turns are sent - enough for context, small enough to be fast.
+    body: { studentId, question, chapterId, history: history?.slice(-8) },
   });
 
 /** Student ↔ mentor messenger thread. */
