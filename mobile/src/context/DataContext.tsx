@@ -59,28 +59,44 @@ export const DataProvider = ({ children }: PropsWithChildren) => {
     setError(null);
     const id = student.studentId;
     try {
-      const values = await Promise.all([
+      // Wave 1 paints the home screen. Wave 2 waits so 200 phones opening
+      // together do not fire 8 calls in the same second.
+      const first = await Promise.all([
         settle(api.getStats(id)),
         settle(api.getStudyLog(id)),
+        settle(api.getAnnouncements()),
+      ]);
+      setData((current) => {
+        const next: DashboardData = {
+          ...current,
+          stats: first[0].ok ? first[0].value || {} : current.stats,
+          studyLog: first[1].ok ? first[1].value || [] : current.studyLog,
+          announcements: first[2].ok ? first[2].value || [] : current.announcements,
+        };
+        persist(next);
+        return next;
+      });
+      await new Promise((resolve) => setTimeout(resolve, 700));
+      const rest = await Promise.all([
         settle(api.getLeaderboard()),
         settle(api.getWeeklyReports(id)),
-        settle(api.getAnnouncements()),
         settle(api.getStudentMentorNotes(id)),
         settle(api.getNotes(id)),
         settle(api.getMentorFeedback(id)),
       ]);
+      const values = [...first, rest[0], rest[1], rest[2], rest[3], rest[4]];
       const failures = values.filter((result) => !result.ok);
       if (failures.length === values.length) throw failures[0].error;
       setData((current) => {
         const next: DashboardData = {
-          stats: values[0].ok ? values[0].value || {} : current.stats,
-          studyLog: values[1].ok ? values[1].value || [] : current.studyLog,
-          leaderboard: values[2].ok ? values[2].value || [] : current.leaderboard,
-          reports: values[3].ok ? values[3].value || [] : current.reports,
-          announcements: values[4].ok ? values[4].value || [] : current.announcements,
-          mentorNotes: values[5].ok ? values[5].value || [] : current.mentorNotes,
-          studyNotes: values[6].ok ? values[6].value || [] : current.studyNotes,
-          feedback: values[7].ok ? values[7].value || [] : current.feedback,
+          stats: first[0].ok ? first[0].value || {} : current.stats,
+          studyLog: first[1].ok ? first[1].value || [] : current.studyLog,
+          announcements: first[2].ok ? first[2].value || [] : current.announcements,
+          leaderboard: rest[0].ok ? rest[0].value || [] : current.leaderboard,
+          reports: rest[1].ok ? rest[1].value || [] : current.reports,
+          mentorNotes: rest[2].ok ? rest[2].value || [] : current.mentorNotes,
+          studyNotes: rest[3].ok ? rest[3].value || [] : current.studyNotes,
+          feedback: rest[4].ok ? rest[4].value || [] : current.feedback,
         };
         persist(next);
         return next;

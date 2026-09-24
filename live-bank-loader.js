@@ -28,7 +28,7 @@
   const IDB_NAME = "ump_published_bank";
   const IDB_STORE = "banks";
   const FETCH_TIMEOUT_MS = 65 * 1000; // Render free-tier cold starts can exceed 30 seconds.
-  const REVISION_POLL_MS = 10 * 1000;
+  const REVISION_POLL_MS = 5 * 60 * 1000;
   const originalData = window.UMP_LEARNING_DATA || {};
 
   function setStatus(state, detail = {}) {

@@ -19,11 +19,8 @@
   "use strict";
 
   var LIVE_HOST = "https://ump-mentor-api.vercel.app";
-  var LEGACY_HOSTS = [
-    "https://ujjwal-pathak-mentor-api.onrender.com",
-    "https://ujjwal-pathak-project.onrender.com"
-  ];
-  var CANDIDATES = [LIVE_HOST].concat(LEGACY_HOSTS);
+  // Render hosts are suspended (503). Do not probe them.
+  var CANDIDATES = [LIVE_HOST];
   var PROBE_PATH = "/api/content/student/bank-meta.json";
   var CACHE_KEY = "ump_mentor_host_v2";
   var OVERRIDE_KEY = "ump_mentor_api_url";

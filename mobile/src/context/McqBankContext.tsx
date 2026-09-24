@@ -4,21 +4,15 @@ import { AppState } from 'react-native';
 import { config } from '../config';
 import { EnrichedMcqQuestion } from '../data/mcqMetadata';
 
-// The mentor API base is the single source of truth for content as well as
-// analytics, so a deployment change never has to be hunted down here. The
-// Render URLs are kept last as a legacy fallback only: they have been
-// returning 503, so they must never win the host probe.
-const HOSTS = [
-  config.mentorApiUrl,
-  'https://ujjwal-pathak-mentor-api.onrender.com',
-  'https://ujjwal-pathak-project.onrender.com',
-].filter(Boolean);
+// Only the live Vercel host. The two Render URLs answer 503 and must not be
+// probed — 200 open apps were hitting them every 15 seconds.
+const HOSTS = [config.mentorApiUrl].filter(Boolean);
 
 // v2 cached whatever the dead hosts returned; bumping forces a clean refetch.
 const CACHE_KEY = 'ump_live_published_bank_v3';
 const HOST_KEY = 'ump_live_bank_host_v3';
 const REQUEST_TIMEOUT_MS = 90_000;
-const REVISION_POLL_MS = 15_000;
+const REVISION_POLL_MS = 5 * 60 * 1000;
 
 type PublishedBankPayload = {
   revision: string;
@@ -68,7 +62,7 @@ const fetchJson = async (url: string, ms: number) => {
   try {
     const response = await fetch(url, {
       signal: controller.signal,
-      headers: { Accept: 'application/json', 'Cache-Control': 'no-cache' },
+      headers: { Accept: 'application/json' },
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return await response.json();
@@ -79,9 +73,9 @@ const fetchJson = async (url: string, ms: number) => {
 
 const pickHost = async (): Promise<string> => {
   const saved = await AsyncStorage.getItem(HOST_KEY);
-  // Every host is probed on each call, including the saved one, so a host that
-  // dies later is dropped instead of being retried forever.
-  const ordered = [saved, ...HOSTS].filter(Boolean).filter((host, index, all) => all.indexOf(host) === index) as string[];
+  const ordered = [saved, ...HOSTS]
+    .filter((host): host is string => Boolean(host) && !/onrender\.com/i.test(host))
+    .filter((host, index, all) => all.indexOf(host) === index);
   const results = await Promise.all(ordered.map(async (host) => {
     try {
       const meta = await fetchJson(`${host}/api/content/student/bank-meta.json`, 12_000);

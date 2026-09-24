@@ -49,17 +49,111 @@ async function attemptOnce(url, body, timeoutMs) {
   }
 }
 
+// 429/503/504 means Apps Script is already full. A retry doubles the pile-up.
+const NO_RETRY_STATUSES = new Set([429, 503, 504]);
+
 async function postAppsScript(url, body) {
   const started = Date.now();
   const first = await attemptOnce(url, body, ATTEMPT_MS);
   const elapsed = Date.now() - started;
-  const retryable = !first.response.ok && RETRY_STATUSES.has(first.response.status);
+  const retryable = !first.response.ok
+    && RETRY_STATUSES.has(first.response.status)
+    && !NO_RETRY_STATUSES.has(first.response.status);
   const remaining = BUDGET_MS - elapsed;
   if (retryable && elapsed < 12000 && remaining > 14000) {
     await sleep(800 + Math.floor(Math.random() * 800));
     return attemptOnce(url, body, Math.min(ATTEMPT_MS, BUDGET_MS - (Date.now() - started)));
   }
   return first;
+}
+
+// Dashboard reads are the open-app storm: 200 students x 8 calls.
+// Shared reads (leaderboard, announcements) are identical, so one warm
+// instance serves them from memory. A Mongo miss must NOT fall through to
+// Apps Script — that is the 30-concurrent wall. Empty is correct for a
+// student who has not logged study yet.
+const READ_CACHE = new Map();
+const READ_INFLIGHT = new Map();
+const SHARED_READS = new Set(["getLeaderboard", "getAnnouncements"]);
+
+function emptyReadResult(action) {
+  return action === "getStats" ? {} : [];
+}
+
+function readCacheKey(action, req) {
+  if (SHARED_READS.has(action)) return "shared:" + action;
+  const payload = (req.body && req.body.payload) || {};
+  const id = String(payload.studentId || (req.body && req.body.studentId) || "").trim().toUpperCase();
+  return action + ":" + id;
+}
+
+function readTtlMs(action) {
+  return SHARED_READS.has(action) ? 5 * 60 * 1000 : 45 * 1000;
+}
+
+function readCacheGet(key) {
+  const hit = READ_CACHE.get(key);
+  if (!hit) return null;
+  if (Date.now() > hit.until) {
+    READ_CACHE.delete(key);
+    return null;
+  }
+  return hit.body;
+}
+
+function readCachePut(key, body, ttl) {
+  if (!body || body.error) return;
+  READ_CACHE.set(key, { until: Date.now() + ttl, body: body });
+  if (READ_CACHE.size > 500) {
+    const oldest = READ_CACHE.keys().next().value;
+    READ_CACHE.delete(oldest);
+  }
+}
+
+async function mongoDashboardRead(action, req) {
+  const payload = studyLogPayload(req);
+  const dashRes = await fetch(`${MENTOR_API_URL}/api/student-dashboard/get`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: action,
+      payload: payload,
+      studentId: payload.studentId || ""
+    })
+  });
+  const dashData = await dashRes.json();
+  if (dashData && dashData.found) return { result: dashData.result };
+  return { result: emptyReadResult(action) };
+}
+
+async function serveScaledRead(req, res, action) {
+  if (!MONGO_DASHBOARD_ACTIONS.has(action)) return false;
+  const key = readCacheKey(action, req);
+  const ttl = readTtlMs(action);
+  const cached = readCacheGet(key);
+  if (cached) {
+    res.status(200).json(cached);
+    return true;
+  }
+
+  let job = READ_INFLIGHT.get(key);
+  if (!job) {
+    job = mongoDashboardRead(action, req).then(function (body) {
+      readCachePut(key, body, ttl);
+      return body;
+    });
+    READ_INFLIGHT.set(key, job);
+    job.finally(function () { READ_INFLIGHT.delete(key); });
+  }
+
+  try {
+    const body = await job;
+    res.status(200).json(body);
+  } catch (err) {
+    console.error("Scaled read failed:", action, err && err.message);
+    res.status(200).json({ result: emptyReadResult(action) });
+  }
+  return true;
 }
 
 function isSept2026(value) {
@@ -171,6 +265,7 @@ async function mirrorStudyLogToMongo(payload, gasResult) {
 export default async function handler(req, res) {
   try {
     const updateAction = req.body?.action || req.query?.action;
+    if (await serveScaledRead(req, res, updateAction)) return;
     if (updateAction === "app.version") {
       // Try live latest.json from releases repo first (always up-to-date), fallback to env vars
       try {
