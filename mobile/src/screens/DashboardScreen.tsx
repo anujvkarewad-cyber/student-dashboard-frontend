@@ -35,6 +35,8 @@ const notificationVisual: Record<NotificationType, { icon: keyof typeof Ionicons
   feedback: { icon: 'mail-unread', tint: '#B36A16', soft: colors.amberSoft },
   memory: { icon: 'refresh-circle', tint: colors.purple, soft: colors.purpleSoft },
   mcq: { icon: 'help-circle', tint: colors.primary, soft: colors.primarySoft },
+  target: { icon: 'flag', tint: colors.amber, soft: colors.amberSoft },
+  log: { icon: 'time', tint: colors.teal, soft: colors.tealSoft },
 };
 
 const Metric = ({ icon, label, value, tint, soft }: { icon: keyof typeof Ionicons.glyphMap; label: string; value: string; tint: string; soft: string }) => (
