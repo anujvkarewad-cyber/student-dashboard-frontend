@@ -43,6 +43,8 @@ const APP_VERSION = "2.6.1";
     dashboard: "Dashboard",
     tracker: "Daily Study Tracker",
     focus: "Focus Room",
+    tutor: "Tutor & Messages",
+    tests: "Tests",
     mcq: "Daily & Practice MCQ",
     performance: "Performance",
     leaderboard: "Leaderboard",
@@ -720,6 +722,94 @@ const APP_VERSION = "2.6.1";
       return;
     }
     window.UMP_LEARNING_TOOLS.renderFocus(root, state.student);
+  }
+
+  function renderTutor() {
+    const student = state.student;
+    if (!student) return;
+    const target = $("#tutor-target");
+    const thread = $("#tutor-thread");
+    callAPI("ai.dailyTarget", { studentId: student.studentId }).then((data) => {
+      const tasks = (data && data.tasks) || [];
+      if (data && data.locked) {
+        target.textContent = data.lockReason || "Today's target is locked until yesterday is complete.";
+        return;
+      }
+      if (!tasks.length) {
+        target.textContent = "No target is published for today yet.";
+        return;
+      }
+      target.innerHTML = tasks.map((task) => "<div style='padding:8px 0;border-bottom:1px solid #eef2f7;'><b>" + escapeHtml(task.title || task.task || "Task") + "</b><div class='muted'>" + escapeHtml(task.detail || task.subject || "") + "</div></div>").join("");
+    }).catch(() => { target.textContent = "Today's target could not be loaded. Please try again."; });
+
+    const paintThread = (messages) => {
+      if (!messages || !messages.length) {
+        thread.textContent = "No messages yet.";
+        return;
+      }
+      thread.innerHTML = messages.map((msg) => "<div style='padding:8px 0;border-bottom:1px solid #eef2f7;'><b>" + (msg.from === "student" ? "You" : "Mentor") + "</b><div>" + escapeHtml(msg.text || "") + "</div></div>").join("");
+    };
+    callAPI("messages.thread", { studentId: student.studentId }).then((data) => paintThread((data && data.messages) || [])).catch(() => { thread.textContent = "Messages could not be loaded."; });
+
+    $("#tutor-ask").onclick = () => {
+      const question = ($("#tutor-question").value || "").trim();
+      const box = $("#tutor-answer");
+      if (!question) { box.textContent = "Type a question first."; return; }
+      box.textContent = "Checking the study material...";
+      callAPI("ai.ask", { studentId: student.studentId, question: question }).then((data) => {
+        box.textContent = (data && data.answer) || "No answer was returned.";
+      }).catch(() => { box.textContent = "The tutor is busy. Please try again."; });
+    };
+    $("#tutor-send").onclick = () => {
+      const text = ($("#tutor-message").value || "").trim();
+      if (!text) return;
+      callAPI("messages.send", { studentId: student.studentId, studentName: student.studentName || student.name || "", text: text }).then(() => {
+        $("#tutor-message").value = "";
+        return callAPI("messages.thread", { studentId: student.studentId });
+      }).then((data) => paintThread((data && data.messages) || [])).catch(() => { thread.textContent = "The message could not be sent."; });
+    };
+  }
+
+  function renderTests() {
+    const list = $("#tests-list");
+    const player = $("#tests-player");
+    const tests = window.UMP_WEB_TESTS || [];
+    if (!list) return;
+    if (!tests.length) {
+      list.textContent = "No mentor test is published yet.";
+      return;
+    }
+    list.innerHTML = tests.map((test) => "<button type='button' class='btn-primary sm' data-test='" + escapeHtml(test.id) + "' style='margin:0 8px 8px 0;'>" + escapeHtml(test.title) + "</button>").join("")
+      + "<button type='button' class='btn-primary sm' id='open-paper-test' style='margin:0 8px 8px 0;'>Accounting Standards — Batch Test</button>";
+    list.querySelectorAll("[data-test]").forEach((btn) => {
+      btn.onclick = () => startWebTest(tests.find((item) => item.id === btn.dataset.test), player);
+    });
+    const paper = $("#open-paper-test");
+    if (paper) paper.onclick = () => {
+      player.innerHTML = "<h3>Accounting Standards — Batch Test</h3><p class='muted'>Write your answers on paper, then reveal the answer key.</p><img alt='Test paper' src='assets/tests/paper-1.jpg' style='max-width:100%;border-radius:12px;'/><button type='button' class='btn-primary sm' id='reveal-key' style='margin-top:12px;'>Show answer key</button>";
+      $("#reveal-key").onclick = () => {
+        player.insertAdjacentHTML("beforeend", "<h3 style='margin-top:16px;'>Answer key</h3><img alt='Answer key' src='assets/tests/answer-key-1.jpg' style='max-width:100%;border-radius:12px;'/>");
+      };
+    };
+  }
+
+  function startWebTest(test, player) {
+    if (!test) return;
+    player.innerHTML = "<h3>" + escapeHtml(test.title) + "</h3><p class='muted'>" + escapeHtml(test.subject) + " · " + test.durationMin + " min · " + test.maxMarks + " marks</p>"
+      + test.questions.map((q, index) => "<div style='margin:14px 0;'><b>" + (index + 1) + ". " + escapeHtml(q.prompt) + "</b>" + q.options.map((opt) => "<label style='display:block;margin-top:6px;'><input type='radio' name='" + q.id + "' value='" + opt.id + "'/> " + escapeHtml(opt.id) + ". " + escapeHtml(opt.text) + "</label>").join("") + "</div>").join("")
+      + "<button type='button' class='btn-primary sm' id='submit-web-test'>Submit</button><div id='web-test-result' style='margin-top:12px;'></div>";
+    $("#submit-web-test").onclick = () => {
+      let score = 0;
+      let max = 0;
+      const lines = test.questions.map((q) => {
+        max += q.marks || 0;
+        const picked = player.querySelector("input[name='" + q.id + "']:checked");
+        const ok = picked && picked.value === q.correctOptionId;
+        if (ok) score += q.marks || 0;
+        return "<div style='margin-top:10px;'><b>" + escapeHtml(q.prompt) + "</b><div>" + (ok ? "Correct." : "Correct option: " + q.correctOptionId) + " " + escapeHtml(q.explanation || "") + "</div></div>";
+      });
+      $("#web-test-result").innerHTML = "<b>Score: " + score + " / " + max + "</b>" + lines.join("");
+    };
   }
 
   function renderMCQ() {
@@ -2034,8 +2124,8 @@ const APP_VERSION = "2.6.1";
     localStorage.setItem(storageKey, "1");
     pushNotif(
       "fa-fire",
-      "Streak break ho sakta hai!",
-      "Aaj abhi tak study log nahi kiya hai — abhi Log study hours pe jaake entry daal do.",
+      "Your streak may break tonight",
+      "You have not logged study hours today. Open Daily Study Tracker and add today's entry.",
       { desc: "Maintain your daily streak by logging study hours before midnight.", type: "streak", nav: "#tracker" }
     );
   }

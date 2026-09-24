@@ -265,6 +265,10 @@ async function mirrorStudyLogToMongo(payload, gasResult) {
 export default async function handler(req, res) {
   try {
     const updateAction = req.body?.action || req.query?.action;
+    if (updateAction === "ai.ask" || updateAction === "ai.dailyTarget" || updateAction === "messages.thread" || updateAction === "messages.send") {
+      await serveMentorTool(req, res, updateAction);
+      return;
+    }
     if (await serveScaledRead(req, res, updateAction)) return;
     if (updateAction === "app.version") {
       // Try live latest.json from releases repo first (always up-to-date), fallback to env vars

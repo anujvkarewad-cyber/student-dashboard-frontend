@@ -1,5 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import React, { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { Platform } from 'react-native';
+import { fetchMessages } from '../api/reformApi';
+import { notifyNow, syncDailyNotifications } from '../services/dailyNotifications';
 import { NativePushStatus, registerNativePush, subscribeToNativeTokenChanges } from '../services/pushNotifications';
 import { CaGroup, groupsForStudent } from '../utils/caGroups';
 import { useAuth } from './AuthContext';
@@ -7,8 +10,8 @@ import { useDailyMcq } from './DailyMcqContext';
 import { useData } from './DataContext';
 import { useStudyReceipts } from './StudyReceiptContext';
 
-export type NotificationType = 'announcement' | 'mentor' | 'material' | 'report' | 'feedback' | 'memory' | 'mcq';
-export type NotificationTarget = 'home' | 'notes' | 'reports' | 'receipt' | 'mcq';
+export type NotificationType = 'announcement' | 'mentor' | 'material' | 'report' | 'feedback' | 'memory' | 'mcq' | 'target' | 'log';
+export type NotificationTarget = 'home' | 'notes' | 'reports' | 'receipt' | 'mcq' | 'target' | 'tracker' | 'messages';
 
 export type AppNotification = {
   id: string;
@@ -48,6 +51,11 @@ export const NotificationsProvider = ({ children }: PropsWithChildren) => {
   const [readIds, setReadIds] = useState<Set<string>>(new Set());
   const [clearedIds, setClearedIds] = useState<Set<string>>(new Set());
   const [pushStatus, setPushStatus] = useState<NativePushStatus>('idle');
+  // Mentor replies and the day's own state are not in `data`, so they are tracked
+  // here rather than being faked from other screens' state.
+  const [mentorReplies, setMentorReplies] = useState<{ id: string; text: string }[]>([]);
+  const [targetDoneToday, setTargetDoneToday] = useState(false);
+  const seenMentorIds = useRef<Set<string> | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -80,11 +88,74 @@ export const NotificationsProvider = ({ children }: PropsWithChildren) => {
       if (mounted) setPushStatus(status);
     });
     const tokenSubscription = subscribeToNativeTokenChanges(student.studentId);
+    // The target unlocks at 00:00, so its notification is scheduled with the OS
+    // rather than derived in-app - it has to arrive with the phone locked.
+    syncDailyNotifications().catch(() => undefined);
     return () => {
       mounted = false;
       tokenSubscription.remove();
     };
   }, [backendMode, student]);
+
+  // ── mentor replies ────────────────────────────────────────────────────────
+  // A reply the student never notices is the same as no reply. Polling lives
+  // here, not on the Messages screen, so it fires wherever they are in the app.
+  useEffect(() => {
+    if (!student) {
+      setMentorReplies([]);
+      seenMentorIds.current = null;
+      return;
+    }
+    let mounted = true;
+
+    const poll = async () => {
+      const res = await fetchMessages(student.studentId);
+      if (!mounted || !res?.messages) return;
+      const fromMentor = res.messages.filter((m) => m.from === 'mentor');
+      if (!fromMentor.length) return;
+
+      // First pass only records what already exists - the student must not be
+      // notified about a conversation they have already read.
+      if (seenMentorIds.current === null) {
+        seenMentorIds.current = new Set(fromMentor.map((m) => m.id));
+        return;
+      }
+
+      const fresh = fromMentor.filter((m) => !seenMentorIds.current?.has(m.id));
+      if (!fresh.length) return;
+      fresh.forEach((m) => seenMentorIds.current?.add(m.id));
+      setMentorReplies((current) => [...fresh.map((m) => ({ id: m.id, text: m.text })), ...current].slice(0, 20));
+
+      const newest = fresh[fresh.length - 1];
+      // Bring the reply to the phone itself: the student is not sitting on the
+      // Messages screen, which is the whole reason a notification is needed.
+      await notifyNow('Reply from your mentor', newest.text);
+    };
+
+    poll();
+    const timer = setInterval(poll, 30_000);
+    return () => { mounted = false; clearInterval(timer); };
+  }, [student]);
+
+  // ── today's target ────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!student) return;
+    let mounted = true;
+    const read = async () => {
+      const key = new Date().toISOString().slice(0, 10);
+      try {
+        const raw = await AsyncStorage.getItem(`ump_target_${key}`);
+        const map = raw ? JSON.parse(raw) : {};
+        const done = Boolean(map.mcq) && Boolean(map.tracker) && Boolean(map.revise);
+        if (mounted) setTargetDoneToday(done);
+      } catch {
+        if (mounted) setTargetDoneToday(false);
+      }
+    };
+    read();
+    const timer = setInterval(read, 60_000);
+    return () => { mounted = false; clearInterval(timer); };
+  }, [student]);
 
   const enablePush = useCallback(async () => {
     if (!student || backendMode !== 'live') return;
@@ -118,6 +189,48 @@ export const NotificationsProvider = ({ children }: PropsWithChildren) => {
         order: order--,
       });
     });
+    // The day's own business, sent from the app rather than waiting for the
+    // student to go looking for it.
+    if (!targetDoneToday) {
+      const dayKey = new Date().toISOString().slice(0, 10);
+      addIfUnique({
+        id: `target:${dayKey}`,
+        type: 'target',
+        title: 'Today\'s target is open',
+        body: 'Three tasks waiting. It stays open all day - finish whenever you sit down.',
+        date: 'Today',
+        target: 'target',
+        order: order--,
+      });
+    }
+
+    // Only in the evening: asking at 10 in the morning is nagging, not helping.
+    if (new Date().getHours() >= 21) {
+      const dayKey = new Date().toISOString().slice(0, 10);
+      const loggedToday = (data.studyLog || []).some((entry) => String(entry.date || '').startsWith(dayKey));
+      if (!loggedToday) {
+        addIfUnique({
+          id: `log:${dayKey}`,
+          type: 'log',
+          title: 'Today\'s study log is still pending',
+          body: 'Log your hours so your mentor can see the work behind the marks.',
+          date: 'Tonight',
+          target: 'tracker',
+          order: order--,
+        });
+      }
+    }
+
+    mentorReplies.forEach((reply) => addIfUnique({
+      id: `mentorreply:${reply.id}`,
+      type: 'mentor',
+      title: 'Reply from your mentor',
+      body: reply.text,
+      date: 'Now',
+      target: 'messages',
+      order: order--,
+    }));
+
     dueReceipts.forEach((item) => addIfUnique({
       id: `memory:${item.id}`,
       type: 'memory',
@@ -175,7 +288,7 @@ export const NotificationsProvider = ({ children }: PropsWithChildren) => {
     }));
 
     return items.sort((a, b) => b.order - a.order).slice(0, 50).filter(i => !clearedIds.has(i.id));
-  }, [dailyMcqAttempts, dailyMcqDate, data.announcements, data.feedback, data.mentorNotes, data.reports, data.studyNotes, dueReceipts, student?.group, clearedIds]);
+  }, [dailyMcqAttempts, dailyMcqDate, data.announcements, data.feedback, data.mentorNotes, data.reports, data.studyLog, data.studyNotes, dueReceipts, mentorReplies, student?.group, targetDoneToday, clearedIds]);
 
   const persist = useCallback(async (next: Set<string>) => {
     setReadIds(next);

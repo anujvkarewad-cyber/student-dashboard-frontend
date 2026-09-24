@@ -206,6 +206,16 @@
                 <span>Focus Room</span>
             </a>
 
+            <a href="#tutor" class="nav-item" data-view="tutor" data-testid="nav-tutor">
+                <i class="fa-solid fa-comments"></i>
+                <span>Tutor &amp; Messages</span>
+            </a>
+
+            <a href="#tests" class="nav-item" data-view="tests" data-testid="nav-tests">
+                <i class="fa-solid fa-file-pen"></i>
+                <span>Tests</span>
+            </a>
+
             <a href="#mcq" class="nav-item" data-view="mcq" data-testid="nav-mcq">
                 <i class="fa-solid fa-list-check"></i>
                 <span>Daily &amp; Practice MCQ</span>
@@ -541,6 +551,37 @@
 <template id="tpl-focus">
   <div class="view" data-testid="view-focus">
     <div id="focus-root"></div>
+  </div>
+</template>
+
+<template id="tpl-tutor">
+  <div class="view" data-testid="view-tutor">
+    <div class="card">
+      <div class="card-head"><h3>Today's target</h3><span class="muted">Same list as the Android app</span></div>
+      <div id="tutor-target" class="muted">Loading today's target...</div>
+    </div>
+    <div class="card" style="margin-top:16px;">
+      <div class="card-head"><h3>Ask the tutor</h3><span class="muted">English only. ICAI study material.</span></div>
+      <textarea id="tutor-question" rows="4" style="width:100%;border:1px solid #e5e7eb;border-radius:12px;padding:12px;font:inherit;" placeholder="Ask a CA Intermediate question"></textarea>
+      <button type="button" class="btn-primary sm" id="tutor-ask" style="margin-top:10px;">Ask</button>
+      <div id="tutor-answer" style="margin-top:14px;white-space:pre-wrap;line-height:1.6;"></div>
+    </div>
+    <div class="card" style="margin-top:16px;">
+      <div class="card-head"><h3>Messages</h3><span class="muted">Write to your mentor</span></div>
+      <div id="tutor-thread" class="muted">Loading messages...</div>
+      <textarea id="tutor-message" rows="3" style="width:100%;border:1px solid #e5e7eb;border-radius:12px;padding:12px;font:inherit;margin-top:12px;" placeholder="Write a message in English"></textarea>
+      <button type="button" class="btn-primary sm" id="tutor-send" style="margin-top:10px;">Send</button>
+    </div>
+  </div>
+</template>
+
+<template id="tpl-tests">
+  <div class="view" data-testid="view-tests">
+    <div class="card">
+      <div class="card-head"><h3>Tests</h3><span class="muted">Same mentor tests as the Android app</span></div>
+      <div id="tests-list"></div>
+      <div id="tests-player" style="margin-top:16px;"></div>
+    </div>
   </div>
 </template>
 
@@ -1059,6 +1100,7 @@
 <script src="mcq-cloud-sync.js"></script>
 <script src="mcq-progress-share.js"></script>
 <script src="learning-tools.js"></script>
+<script src="web-tests.js"></script>
 <script src="app.js"></script>
 <script>
 
