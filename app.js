@@ -739,7 +739,7 @@ const APP_VERSION = "2.6.1";
         target.textContent = "No target is published for today yet.";
         return;
       }
-      target.innerHTML = tasks.map((task) => "<div style='padding:8px 0;border-bottom:1px solid #eef2f7;'><b>" + escapeHtml(task.title || task.task || "Task") + "</b><div class='muted'>" + escapeHtml(task.detail || task.subject || "") + "</div></div>").join("");
+      target.innerHTML = tasks.map((task) => "<div style='padding:8px 0;border-bottom:1px solid #eef2f7;'><b>" + escapeHtml(task.label || task.title || task.task || "Task") + "</b><div class='muted'>" + escapeHtml(task.detail || task.subject || "") + "</div></div>").join("");
     }).catch(() => { target.textContent = "Today's target could not be loaded. Please try again."; });
 
     const paintThread = (messages) => {

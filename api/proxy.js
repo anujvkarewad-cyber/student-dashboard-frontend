@@ -159,8 +159,8 @@ async function serveMentorTool(req, res, action) {
         text: payload.text || ""
       });
     } else if (action === "ai.dailyTarget") {
-      res.status(200).json({ result: { tasks: [], locked: false, unavailable: true } });
-      return;
+      url += "/api/ai/daily-target?studentId=" + encodeURIComponent(payload.studentId || "");
+      init = { method: "GET", signal: controller.signal };
     } else {
       res.status(400).json({ error: "Unknown tool." });
       return;
