@@ -742,6 +742,46 @@ const APP_VERSION = "2.6.1";
       target.innerHTML = tasks.map((task) => "<div style='padding:8px 0;border-bottom:1px solid #eef2f7;'><b>" + escapeHtml(task.label || task.title || task.task || "Task") + "</b><div class='muted'>" + escapeHtml(task.detail || task.subject || "") + "</div></div>").join("");
     }).catch(() => { target.textContent = "Today's target could not be loaded. Please try again."; });
 
+    const revisionBox = $("#tutor-revision");
+    const paintPlan = (plan) => {
+      const chapters = (plan && plan.chapters) || [];
+      if (!revisionBox) return;
+      if (!chapters.length) {
+        revisionBox.textContent = "No chapter mark is saved yet.";
+        return;
+      }
+      revisionBox.innerHTML = chapters.map((item) => "<div style='padding:8px 0;border-bottom:1px solid #eef2f7;'><b>" + escapeHtml(item.concept || "Chapter") + "</b> · " + escapeHtml(item.strength || "") + "<div class='muted'>Revise on " + escapeHtml(item.dueOn || "") + ". " + escapeHtml(item.reminder || "") + "</div></div>").join("");
+    };
+    callAPI("revision.plan", { studentId: student.studentId }).then(paintPlan).catch(() => { if (revisionBox) revisionBox.textContent = "Revision dates could not be loaded."; });
+
+    const saveReceipt = $("#tutor-receipt-save");
+    if (saveReceipt) {
+      saveReceipt.onclick = () => {
+        const answer = ($("#tutor-receipt-answer").value || "").trim();
+        const firstTask = ($("#tutor-target").innerText || "").split("\n").map((line) => line.trim()).find((line) => line && line !== "Loading today's target..." && line !== "No target is published for today yet.");
+        if (answer.length < 20) {
+          revisionBox.textContent = "Write the receipt answer before saving the mark.";
+          return;
+        }
+        revisionBox.textContent = "Marking the receipt answer...";
+        callAPI("ai.evaluate", {
+          studentId: student.studentId,
+          question: firstTask || "Today's target",
+          studentAnswer: answer,
+          concept: firstTask || "Today's target",
+          confidence: "Medium"
+        }).then((marked) => {
+          if (!marked || marked.ok === false) {
+            revisionBox.textContent = (marked && marked.error) || "The mark could not be saved. Please try again.";
+            return;
+          }
+          const when = marked.revision && marked.revision.dueOn ? " Revision date: " + marked.revision.dueOn + "." : "";
+          revisionBox.textContent = "Saved as " + ((marked.revision && marked.revision.strength) || "marked") + "." + when;
+          return callAPI("revision.plan", { studentId: student.studentId });
+        }).then((plan) => { if (plan) paintPlan(plan); }).catch(() => { revisionBox.textContent = "The mark could not be saved. Please try again."; });
+      };
+    }
+
     const paintThread = (messages) => {
       if (!messages || !messages.length) {
         thread.textContent = "No messages yet.";

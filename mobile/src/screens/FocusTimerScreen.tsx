@@ -4,13 +4,14 @@ import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useMemo } from 'react';
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Circle } from 'react-native-svg';
 import { Card, Chip, EmptyState, SectionHeader } from '../components/ui';
 import { useFocusTimer } from '../context/FocusTimerContext';
 import { useStudyReceipts } from '../context/StudyReceiptContext';
 import { colors, radius, spacing } from '../theme';
+import { showDialog } from '../utils/dialog';
 
 const subjects = ['Accounts', 'Law', 'Taxation', 'Costing', 'Audit', 'FM', 'SM', 'Revision', 'Mock Test'];
 const DAILY_GOAL_SECONDS = 8 * 60 * 60;
@@ -57,15 +58,21 @@ export const FocusTimerScreen = () => {
   const hourProgress = (elapsedSeconds % 3600) / 3600;
   const circumference = 2 * Math.PI * 124;
 
+  // The target is compulsory, and this used to fail silently: on web the alert
+  // never rendered, so pressing Start did nothing at all and looked broken.
+  // Inline feedback works the same on every platform and cannot be missed.
+  const [targetError, setTargetError] = React.useState('');
+
   const tap = (style: Haptics.ImpactFeedbackStyle = Haptics.ImpactFeedbackStyle.Medium) => {
     Haptics.impactAsync(style).catch(() => undefined);
   };
 
   const startTimer = async () => {
     if (!target.trim()) {
-      Alert.alert('Set a session target', 'Write exactly what you plan to understand or complete before starting the timer.');
+      setTargetError('Write what you are studying first — the timer needs a target to log the session against.');
       return;
     }
+    setTargetError('');
     tap();
     await start();
   };
@@ -80,7 +87,7 @@ export const FocusTimerScreen = () => {
     await resume();
   };
 
-  const confirmFinish = () => Alert.alert(
+  const confirmFinish = () => showDialog(
     'Finish this focus session?',
     `${formatCompact(elapsedSeconds)} of ${subject} will be saved to your focus history.`,
     [
@@ -90,12 +97,16 @@ export const FocusTimerScreen = () => {
         onPress: async () => {
           tap(Haptics.ImpactFeedbackStyle.Heavy);
           const session = await finish();
+          // The point of the session is the recall that follows it. Ending the
+          // timer and stopping here left the student on an idle screen with the
+          // quiz never opened.
+          if (session) navigation.navigate('StudyReceipt', { sessionId: session.id });
         },
       },
     ],
   );
 
-  const confirmDiscard = () => Alert.alert(
+  const confirmDiscard = () => showDialog(
     'Discard current timer?',
     'This unfinished focus time will not be added to your history.',
     [
@@ -113,7 +124,7 @@ export const FocusTimerScreen = () => {
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}>
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         <View style={styles.header}>
-          <View><Text style={styles.eyebrow}>DEEP WORK ZONE</Text><Text style={styles.title}>Focus room</Text><Text style={styles.subtitle}>Start the clock. Put the phone down. Do the work.</Text></View>
+          <View><Text style={styles.eyebrow}>DEEP WORK ZONE</Text><Text style={styles.title}>Focus room</Text><Text style={styles.subtitle}>Do today's target on this timer. When you finish, answer the receipt questions.</Text></View>
           <View style={[styles.statusPill, status === 'running' && styles.statusRunning]}><View style={[styles.statusDot, status === 'running' && styles.runningDot]} /><Text style={styles.statusText}>{status.toUpperCase()}</Text></View>
         </View>
 
@@ -162,14 +173,20 @@ export const FocusTimerScreen = () => {
           <Text style={styles.targetLabel}>WHAT ARE YOU STUDYING? (COMPULSORY)</Text>
           <TextInput
             value={target}
-            onChangeText={setTarget}
+            onChangeText={(text) => { setTarget(text); if (targetError) setTargetError(''); }}
             editable={status === 'idle'}
             placeholder="e.g. Accounts — Chapter 3: Accounting Standards"
             placeholderTextColor={colors.muted}
             maxLength={140}
-            style={[styles.targetInput, status !== 'idle' && styles.targetInputLocked]}
+            style={[styles.targetInput, targetError ? styles.targetInputError : null, status !== 'idle' && styles.targetInputLocked]}
           />
-          {status !== 'idle' ? <Text style={styles.lockedHint}><Ionicons name="lock-closed" size={11} /> Subject and target are locked while a session is active.</Text> : <Text style={styles.targetHelp}>Compulsory before start. When the session ends, the AI assistant opens and quizzes you on what you studied.</Text>}
+          {targetError ? (
+            <View style={styles.targetErrorRow}>
+              <Ionicons name="alert-circle" size={13} color="#B3261E" />
+              <Text style={styles.targetErrorText}>{targetError}</Text>
+            </View>
+          ) : null}
+          {status !== 'idle' ? <Text style={styles.lockedHint}><Ionicons name="lock-closed" size={11} /> Subject and target are locked while a session is active.</Text> : <Text style={styles.targetHelp}>Compulsory before start. When you finish, you answer real questions on this topic from memory — no notes, and marked like the paper.</Text>}
         </Card>
 
         {dueReceipts.length ? (
@@ -213,7 +230,7 @@ export const FocusTimerScreen = () => {
                   <Pressable onPress={() => navigation.navigate('StudyReceipt', { sessionId: session.id })} style={[styles.receiptButton, receipt && styles.receiptButtonDone]}>
                     <Ionicons name={receipt ? 'receipt' : 'receipt-outline'} size={16} color={receipt ? colors.success : colors.primary} />
                   </Pressable>
-                  <Pressable hitSlop={10} onPress={() => Alert.alert('Remove session?', 'This only removes the local focus record.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Remove', style: 'destructive', onPress: () => removeSession(session.id) }])}>
+                  <Pressable hitSlop={10} onPress={() => showDialog('Remove session?', 'This only removes the local focus record.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Remove', style: 'destructive', onPress: () => removeSession(session.id) }])}>
                     <Ionicons name="trash-outline" size={16} color={colors.muted} />
                   </Pressable>
                 </View>
@@ -262,6 +279,9 @@ const styles = StyleSheet.create({
   lightActionText: { color: colors.primary },
   pressed: { opacity: 0.82, transform: [{ scale: 0.99 }] },
   discard: { paddingTop: spacing.md, paddingHorizontal: spacing.lg },
+  targetInputError: { borderColor: '#B3261E', borderWidth: 1.5 },
+  targetErrorRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: spacing.sm },
+  targetErrorText: { flex: 1, color: '#B3261E', fontSize: 11, fontWeight: '700', lineHeight: 15 },
   discardText: { color: 'rgba(255,255,255,0.6)', fontSize: 10, fontWeight: '700', textDecorationLine: 'underline' },
   subjectCard: { marginBottom: spacing.xxl, shadowOpacity: 0.04 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },

@@ -136,7 +136,7 @@ async function mongoDashboardRead(action, req) {
 async function serveMentorTool(req, res, action) {
   const payload = (req.body && req.body.payload) || {};
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 25000);
+  const timer = setTimeout(() => controller.abort(), action === "ai.evaluate" ? 50000 : 25000);
   try {
     let url = MENTOR_API_URL;
     let init = { method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal };
@@ -161,6 +161,20 @@ async function serveMentorTool(req, res, action) {
     } else if (action === "ai.dailyTarget") {
       url += "/api/ai/daily-target?studentId=" + encodeURIComponent(payload.studentId || "");
       init = { method: "GET", signal: controller.signal };
+    } else if (action === "revision.plan") {
+      url += "/api/revision/plan?studentId=" + encodeURIComponent(payload.studentId || "");
+      init = { method: "GET", signal: controller.signal };
+    } else if (action === "ai.evaluate") {
+      url += "/api/ai/evaluate";
+      init.body = JSON.stringify({
+        studentId: payload.studentId || "",
+        question: payload.question || "",
+        studentAnswer: payload.studentAnswer || "",
+        subject: payload.subject || "",
+        chapterId: payload.chapterId || "",
+        concept: payload.concept || "",
+        confidence: payload.confidence || ""
+      });
     } else {
       res.status(400).json({ error: "Unknown tool." });
       return;
@@ -315,7 +329,7 @@ async function mirrorStudyLogToMongo(payload, gasResult) {
 export default async function handler(req, res) {
   try {
     const updateAction = req.body?.action || req.query?.action;
-    if (updateAction === "ai.ask" || updateAction === "ai.dailyTarget" || updateAction === "messages.thread" || updateAction === "messages.send") {
+    if (updateAction === "ai.ask" || updateAction === "ai.dailyTarget" || updateAction === "ai.evaluate" || updateAction === "revision.plan" || updateAction === "messages.thread" || updateAction === "messages.send") {
       await serveMentorTool(req, res, updateAction);
       return;
     }

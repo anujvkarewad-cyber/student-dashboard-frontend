@@ -557,8 +557,12 @@
 <template id="tpl-tutor">
   <div class="view" data-testid="view-tutor">
     <div class="card">
-      <div class="card-head"><h3>Today's target</h3><span class="muted">Set by your mentor. The revision line is only a reminder.</span></div>
+      <div class="card-head"><h3>Today's target</h3><span class="muted">Do this on the timer. Receipt answers set the revision date.</span></div>
       <div id="tutor-target" class="muted">Loading today's target...</div>
+      <p class="muted" style="margin-top:12px;">Do the target on the timer. When you finish, answer one receipt question below. The mark is saved as weak, average, or strong, and that sets the revision date.</p>
+      <textarea id="tutor-receipt-answer" rows="4" style="width:100%;border:1px solid #e5e7eb;border-radius:12px;padding:12px;font:inherit;margin-top:10px;" placeholder="Write the receipt answer in your own words"></textarea>
+      <button type="button" class="btn-primary sm" id="tutor-receipt-save" style="margin-top:10px;">Save receipt mark</button>
+      <div id="tutor-revision" class="muted" style="margin-top:12px;"></div>
     </div>
     <div class="card" style="margin-top:16px;">
       <div class="card-head"><h3>Ask the tutor</h3><span class="muted">English only. ICAI study material.</span></div>
