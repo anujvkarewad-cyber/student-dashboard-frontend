@@ -72,12 +72,6 @@ export const LoginScreen = ({ navigation }: Props) => {
     }
   };
 
-  const openDemo = () => {
-    setStudentId('UMP2407');
-    setPassword('demo123');
-    submit('UMP2407', 'demo123');
-  };
-
   return (
     <LinearGradient colors={['#EEF3FF', '#F8FAFD', '#E9F8F5']} style={styles.flex}>
       <SafeAreaView style={styles.flex}>
@@ -102,38 +96,13 @@ export const LoginScreen = ({ navigation }: Props) => {
             </View>
 
             <View style={styles.formCard}>
-              {config.allowModeSelection ? (
-                <View style={styles.modeSection}>
-                  <Text style={styles.modeLabel}>DATA SOURCE</Text>
-                  <View style={styles.modeSwitch}>
-                    <Pressable onPress={() => changeMode('mock')} style={[styles.modeOption, backendMode === 'mock' && styles.modeOptionActive]}>
-                      <Ionicons name="shield-checkmark-outline" size={19} color={backendMode === 'mock' ? colors.primary : colors.muted} />
-                      <View style={styles.modeCopy}><Text style={[styles.modeTitle, backendMode === 'mock' && styles.modeTitleActive]}>Safe demo</Text><Text style={styles.modeSub}>Local sample data · no backend access</Text></View>
-                      {backendMode === 'mock' ? <Ionicons name="checkmark-circle" size={19} color={colors.primary} /> : null}
-                    </Pressable>
-                    <Pressable onPress={() => changeMode('live-readonly')} style={[styles.modeOption, backendMode === 'live-readonly' && styles.liveModeActive]}>
-                      <Ionicons name="eye-outline" size={19} color={backendMode === 'live-readonly' ? colors.success : colors.muted} />
-                      <View style={styles.modeCopy}><Text style={[styles.modeTitle, backendMode === 'live-readonly' && styles.liveModeTitle]}>Live preview</Text><Text style={styles.modeSub}>Real data · backend changes blocked</Text></View>
-                      {backendMode === 'live-readonly' ? <Ionicons name="checkmark-circle" size={19} color={colors.success} /> : null}
-                    </Pressable>
-                    <Pressable onPress={() => changeMode('live')} style={[styles.modeOption, backendMode === 'live' && styles.fullLiveModeActive]}>
-                      <Ionicons name="cloud-done-outline" size={19} color={backendMode === 'live' ? colors.primary : colors.muted} />
-                      <View style={styles.modeCopy}><Text style={[styles.modeTitle, backendMode === 'live' && styles.fullLiveModeTitle]}>Full live</Text><Text style={styles.modeSub}>Real data · submissions and account updates enabled</Text></View>
-                      {backendMode === 'live' ? <Ionicons name="checkmark-circle" size={19} color={colors.primary} /> : null}
-                    </Pressable>
-                  </View>
-                  {backendMode === 'live-readonly' ? <View style={styles.readOnlyNotice}><Ionicons name="lock-closed" size={14} color={colors.success} /><Text style={styles.readOnlyNoticeText}>Connected to the existing backend for reads only. No server record can be changed.</Text></View> : null}
-                  {backendMode === 'live' ? <View style={styles.fullLiveNotice}><Ionicons name="sync-circle" size={16} color={colors.primary} /><Text style={styles.fullLiveNoticeText}>Full live connection enabled. Your submitted changes will sync with the existing student dashboard.</Text></View> : null}
-                </View>
-              ) : (
-                <View style={styles.lockedLive}><View style={styles.lockedLiveIcon}><Ionicons name={backendMode === 'live-readonly' ? 'eye' : 'cloud-done'} size={21} color={colors.success} /></View><View style={styles.modeCopy}><Text style={styles.lockedLiveTitle}>{backendMode === 'live-readonly' ? 'Secure live preview' : 'Secure live connection'}</Text><Text style={styles.lockedLiveText}>{backendMode === 'live-readonly' ? 'Real data with backend changes blocked' : 'Connected to Ujjwal Pathak Mentorship'}</Text></View></View>
-              )}
-              <Text style={styles.formTitle}>{backendMode === 'mock' ? 'Sign in to safe demo' : backendMode === 'live-readonly' ? 'Sign in to live preview' : 'Sign in to your account'}</Text>
+              <View style={styles.lockedLive}><View style={styles.lockedLiveIcon}><Ionicons name="cloud-done" size={21} color={colors.success} /></View><View style={styles.modeCopy}><Text style={styles.lockedLiveTitle}>Secure live connection</Text><Text style={styles.lockedLiveText}>Connected to Ujjwal Pathak Mentorship</Text></View></View>
+              <Text style={styles.formTitle}>Sign in to your account</Text>
               <FormInput
                 label="Student ID"
                 value={studentId}
                 onChangeText={(value) => setStudentId(value.toUpperCase())}
-                placeholder="e.g. UMP2407"
+                placeholder="Your student ID"
                 autoCapitalize="characters"
                 autoCorrect={false}
                 returnKeyType="next"
@@ -171,13 +140,7 @@ export const LoginScreen = ({ navigation }: Props) => {
 
               <PrimaryButton label="Sign in" icon="arrow-forward" loading={loading} onPress={() => submit()} />
 
-              {backendMode === 'mock' ? (
-                <View style={styles.demoArea}>
-                  <View style={styles.divider}><View style={styles.line} /><Text style={styles.or}>SAFE PREVIEW</Text><View style={styles.line} /></View>
-                  <PrimaryButton label="Explore demo dashboard" variant="secondary" icon="phone-portrait-outline" onPress={openDemo} disabled={loading} />
-                  <Text style={styles.demoNote}>Demo mode uses local sample data and does not touch the live backend.</Text>
-                </View>
-              ) : null}
+
             </View>
 
             <Text style={styles.footer}>Build discipline. Create momentum. Achieve the rank.</Text>

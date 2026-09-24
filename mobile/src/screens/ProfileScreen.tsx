@@ -94,13 +94,7 @@ export const ProfileScreen = () => {
           </View>
         </Card>
 
-        {backendMode === 'mock' ? (
-          <View style={styles.safeMode}><Ionicons name="shield-checkmark" size={20} color={colors.success} /><View style={{ flex: 1 }}><Text style={styles.safeTitle}>Safe demo mode</Text><Text style={styles.safeText}>Live backend reads and writes are disabled. All dashboard data is local sample data.</Text></View></View>
-        ) : backendMode === 'live-readonly' ? (
-          <View style={styles.readOnlyMode}><Ionicons name="eye-outline" size={20} color={colors.primary} /><View style={{ flex: 1 }}><Text style={styles.readOnlyTitle}>Live preview mode</Text><Text style={styles.safeText}>Displaying real backend data. Every server-side write action is blocked by the mobile API client.</Text></View></View>
-        ) : (
-          <View style={styles.fullLiveMode}><Ionicons name="cloud-done" size={20} color={colors.success} /><View style={{ flex: 1 }}><Text style={styles.fullLiveTitle}>Full live connection</Text><Text style={styles.safeText}>Real dashboard data is connected. Study submissions and account updates sync with the existing backend.</Text></View></View>
-        )}
+        <View style={styles.fullLiveMode}><Ionicons name="cloud-done" size={20} color={colors.success} /><View style={{ flex: 1 }}><Text style={styles.fullLiveTitle}>Full live connection</Text><Text style={styles.safeText}>Real dashboard data is connected. Study submissions and account updates sync with the existing backend.</Text></View></View>
 
         {backendMode === 'live' ? <View style={[styles.pushCard, pushEnabled && styles.pushCardEnabled]}><View style={[styles.pushIcon, pushEnabled && styles.pushIconEnabled]}><Ionicons name={pushEnabled ? 'notifications' : 'notifications-outline'} size={20} color={pushEnabled ? colors.success : colors.primary} /></View><View style={{ flex: 1 }}><Text style={[styles.pushTitle, pushEnabled && { color: colors.success }]}>{pushEnabled ? 'Live notifications enabled' : 'Live notifications'}</Text><Text style={styles.pushText}>{pushMessage}</Text></View>{!pushEnabled && pushStatus !== 'requesting' ? <Pressable onPress={() => enablePush()} style={styles.pushButton}><Text style={styles.pushButtonText}>Enable</Text></Pressable> : null}</View> : null}
 

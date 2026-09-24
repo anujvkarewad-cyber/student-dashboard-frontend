@@ -95,7 +95,7 @@ export const NotePreviewScreen = ({ route }: Props) => {
         <View style={styles.unavailable}>
           <View style={styles.unavailableIcon}><Ionicons name="lock-closed" size={28} color={colors.primary} /></View>
           <Text style={styles.unavailableTitle}>Protected preview unavailable</Text>
-          <Text style={styles.unavailableText}>This sample note has no connected Drive preview. Live notes with a valid Drive file ID will open here without an app download button.</Text>
+          <Text style={styles.unavailableText}>This note has no connected Drive preview.</Text>
         </View>
       </SafeAreaView>
     );

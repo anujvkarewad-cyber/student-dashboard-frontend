@@ -68,7 +68,7 @@ export const ForgotPasswordScreen = ({ navigation }: Props) => {
           <Text style={styles.title}>{copy[stage].title}</Text>
           <Text style={styles.subtitle}>{copy[stage].subtitle}</Text>
 
-          {backendMode === 'mock' && stage === 'otp' ? <Text style={styles.demoHint}>Safe demo OTP: 123456</Text> : null}
+
 
           <View style={styles.form}>
             {stage === 'identity' ? (

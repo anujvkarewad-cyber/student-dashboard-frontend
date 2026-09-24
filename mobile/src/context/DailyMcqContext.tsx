@@ -159,7 +159,7 @@ export const DailyMcqProvider = ({ children }: PropsWithChildren) => {
 
   const questionsForGroup = useCallback((group: CaGroup) => {
     const attempt = attemptForGroup(group);
-    const ids = attempt?.questionIds || dailyQuestionIds(mcqBank, dateKey, student?.studentId || 'demo', group);
+    const ids = attempt?.questionIds || dailyQuestionIds(mcqBank, dateKey, student?.studentId || 'student', group);
     return ids.map((id) => mcqBank.find((question) => question.id === id)).filter((question): question is EnrichedMcqQuestion => Boolean(question));
   }, [attemptForGroup, dateKey, mcqBank, student?.studentId]);
 

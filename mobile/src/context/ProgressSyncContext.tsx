@@ -1,7 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { dailyMcqBank } from '../data/dailyMcqBank';
-import { enrichMcqQuestion, EnrichedMcqQuestion } from '../data/mcqMetadata';
+import { EnrichedMcqQuestion } from '../data/mcqMetadata';
 import { buildProgressPayload, getShareChoice, setMentorSharing, syncProgress, ProgressSummary, ProgressTrendPoint } from '../services/progressSync';
 import { syncTestHistory } from '../services/testHistorySync';
 import { useAuth } from './AuthContext';
@@ -36,12 +35,6 @@ export const ProgressSyncProvider = ({ children }: PropsWithChildren) => {
   const questionLookup = useMemo<Map<string, EnrichedMcqQuestion>>(() => {
     const lookup = new Map<string, EnrichedMcqQuestion>();
     for (const question of liveQuestions) if (question?.id) lookup.set(question.id, question);
-    for (const question of dailyMcqBank) {
-      try {
-        const enriched = enrichMcqQuestion(question);
-        if (enriched?.id && !lookup.has(enriched.id)) lookup.set(enriched.id, enriched);
-      } catch { /* bundled preview bank may have unmapped ids — ignore */ }
-    }
     return lookup;
   }, [liveQuestions]);
 

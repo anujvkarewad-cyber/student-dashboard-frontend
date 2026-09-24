@@ -1,12 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Card, SectionHeader } from '../components/ui';
-import { uploadedPaperTests, uploadedTests } from '../data/uploadedTests';
 import { useAuth } from '../context/AuthContext';
 import type { RootStackParamList } from '../navigation/types';
+import { targetsHaveStarted } from '../services/programGate';
 import { colors, radius, spacing } from '../theme';
 
 /**
@@ -17,11 +17,16 @@ import { colors, radius, spacing } from '../theme';
 export const TestsScreen = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { student } = useAuth();
-  const batch = String(student?.batch || '');
-  const visible = (batches: string[]) =>
-    batch === 'ALL' || Boolean((student as any)?.master) || batches.includes('All Batches') || (batch !== '' && batches.includes(batch));
-  const myPaper = uploadedPaperTests.filter((x) => visible(x.batches));
-  const myMcq = uploadedTests.filter((x) => visible((x as any).batches || ['All Batches']));
+  const [targetsStarted, setTargetsStarted] = useState(false);
+  useEffect(() => {
+    if (!student?.studentId) {
+      setTargetsStarted(false);
+      return;
+    }
+    let alive = true;
+    targetsHaveStarted(student.studentId).then((started) => { if (alive) setTargetsStarted(started); });
+    return () => { alive = false; };
+  }, [student?.studentId]);
 
   return (
     <View style={styles.page}>
@@ -42,51 +47,13 @@ export const TestsScreen = () => {
           </Card>
         </Pressable>
 
-        <SectionHeader title={`Mentor Tests${batch ? ` · ${batch}` : ''}`} />
-        {myPaper.map((t) => (
-          <Pressable key={t.id} onPress={() => navigation.navigate('TestPaper', { testId: t.id })}>
-            <Card style={styles.testCard}>
-              <View style={styles.testIconBox}><Ionicons name="newspaper-outline" size={20} color={colors.purple} /></View>
-              <View style={styles.testCopy}>
-                <Text style={styles.testTitle}>{t.title}</Text>
-                <Text style={styles.testMeta}>{t.subject} · {t.durationMin} min{t.maxMarks ? ` · ${t.maxMarks} marks` : ''}</Text>
-                <View style={styles.testChips}>
-                  {t.batches.map((b) => <Text key={b} style={[styles.testChip, { color: colors.purple, backgroundColor: colors.purpleSoft }]}>{b}</Text>)}
-                  <Text style={[styles.testChip, { color: colors.success }]}>Answer key ✓</Text>
-                </View>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color={colors.muted} />
-            </Card>
-          </Pressable>
-        ))}
-        {myMcq.length ? myMcq.map((t) => (
-          <Pressable key={t.id} onPress={() => navigation.navigate('TestPlayer', { testId: t.id })}>
-            <Card style={styles.testCard}>
-              <View style={styles.testIconBox}><Ionicons name="document-text" size={20} color={colors.primary} /></View>
-              <View style={styles.testCopy}>
-                <Text style={styles.testTitle}>{t.title}</Text>
-                <Text style={styles.testMeta}>{t.subject} · {t.chapter}</Text>
-                <View style={styles.testChips}>
-                  <Text style={styles.testChip}>{t.questions.length} questions</Text>
-                  <Text style={styles.testChip}>{t.maxMarks} marks</Text>
-                  <Text style={styles.testChip}>{t.durationMin} min</Text>
-                  <Text style={[styles.testChip, { color: colors.success }]}>Answer key ✓</Text>
-                </View>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color={colors.muted} />
-            </Card>
-          </Pressable>
-        )) : null}
-        {!myPaper.length && !myMcq.length ? (
-          <Card style={styles.testCard}><Text style={styles.testMeta}>No tests published for your batch yet.</Text></Card>
-        ) : null}
+        <SectionHeader title="Mentor tests" />
+        <Card style={styles.testCard}><Text style={styles.testMeta}>{targetsStarted ? 'No tests published for your attempt yet.' : 'Tests start when your mentor publishes the daily target. Until then nothing is listed here.'}</Text></Card>
 
         <SectionHeader title="Practice" />
         {([
           ['flame', 'Daily MCQ Challenge', '10 questions for today — do them daily', colors.amber, colors.amberSoft, () => navigation.navigate('DailyMcq')],
-          ['barbell', 'Unlimited MCQ Practice', 'Chapter / difficulty wise practice', colors.primary, colors.primarySoft, () => navigation.navigate('McqPractice')],
-          ['trophy', 'Leaderboard', 'See your rank in the batch', colors.teal, colors.tealSoft, () => navigation.navigate('Leaderboard')],
-          ['document-text', 'Mentor Weekly Summary', 'Progress, streak and rank from your mentor', colors.success, colors.tealSoft, () => navigation.navigate('Reports')],
+          ['trophy', 'Leaderboard', 'Ranked on your test marks and Daily MCQ score', colors.teal, colors.tealSoft, () => navigation.navigate('Leaderboard')],
         ] as Array<[keyof typeof Ionicons.glyphMap, string, string, string, string, () => void]>).map(([icon, title, sub, tint, soft, go]) => (
           <Pressable key={title} onPress={go}>
             <Card style={styles.row}>

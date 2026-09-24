@@ -8,18 +8,9 @@ const normalizeApiUrl = (value: string) => {
 };
 
 const requestedMode = process.env.EXPO_PUBLIC_BACKEND_MODE;
-const productionRelease = process.env.NODE_ENV === 'production';
-const legacyUseMocks = process.env.EXPO_PUBLIC_USE_MOCKS !== 'false';
-const legacyReadOnly = process.env.EXPO_PUBLIC_READ_ONLY !== 'false';
-const defaultApiMode: BackendDefaultMode = requestedMode === 'mock' || requestedMode === 'live-readonly' || requestedMode === 'live'
+const defaultApiMode: BackendDefaultMode = requestedMode === 'live-readonly' || requestedMode === 'live'
   ? requestedMode
-  : productionRelease
-    ? 'live'
-    : legacyUseMocks
-      ? 'mock'
-      : legacyReadOnly
-        ? 'live-readonly'
-        : 'live';
+  : 'live';
 const requestedModeSwitch = process.env.EXPO_PUBLIC_ALLOW_MODE_SWITCH;
 
 export const config = {
@@ -32,7 +23,7 @@ export const config = {
   defaultApiMode,
   // Student release bundles are locked to Full Live by default. Explicit EAS
   // preview/read-only profiles still override both values through environment.
-  allowModeSelection: requestedModeSwitch === 'true' ? true : requestedModeSwitch === 'false' ? false : !productionRelease,
+  allowModeSelection: requestedModeSwitch === 'true',
   requestTimeoutMs: 60_000,
   appVersion: (process.env.EXPO_PUBLIC_APP_VERSION || '1.11.0').trim(),
 };

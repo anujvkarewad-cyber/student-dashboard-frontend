@@ -1,4 +1,4 @@
-import { DailyMcqQuestion } from './dailyMcqBank';
+import type { DailyMcqQuestion } from './dailyMcqBank';
 import { officialMcqChapterById, OfficialMcqChapter } from './icaiChapterCatalog';
 
 export type McqDifficulty = 'Easy' | 'Medium' | 'Hard';

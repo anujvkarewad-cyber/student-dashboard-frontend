@@ -44,6 +44,7 @@ jobs:
     env:
       EXPO_PUBLIC_USE_MOCKS: "false"
       EXPO_PUBLIC_BACKEND_MODE: "live"
+      EXPO_PUBLIC_ALLOW_MODE_SWITCH: "false"
       NODE_ENV: production
     steps:
       - name: Checkout

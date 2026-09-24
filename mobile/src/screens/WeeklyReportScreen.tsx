@@ -4,7 +4,6 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Card, SectionHeader } from '../components/ui';
-import { useAuth } from '../context/AuthContext';
 import { useDailyMcq } from '../context/DailyMcqContext';
 import { useFocusTimer } from '../context/FocusTimerContext';
 import { useMcqPractice } from '../context/McqPracticeContext';
@@ -17,8 +16,7 @@ import { colors, radius, spacing } from '../theme';
  *   2. TESTS GIVEN: mentor tests attempted (MCQ score / paper self-marks)
  *   3. MCQ REPORT: daily challenge + practice accuracy of the week
  * Weeks run Monday → Sunday; ◀ ▶ moves between weeks.
- * In demo (mock) mode an empty week shows labelled sample data so the
- * report's look can be evaluated; real data replaces it automatically.
+ * An empty week shows the student's own records only.
  */
 
 type DaySession = { subject: string; durationSeconds: number; endedAt: number };
@@ -44,34 +42,7 @@ const fmtHours = (ms: number) => {
 };
 const dayName = (ts: number) => new Date(ts).toLocaleDateString('en-IN', { weekday: 'short' });
 
-const sampleData = (weekStart: Date) => {
-  const at = (dayIdx: number, hour: number, min = 0) => weekStart.getTime() + dayIdx * 86400000 + hour * 3600000 + min * 60000;
-  const dateStr = (dayIdx: number) => new Date(at(dayIdx, 12)).toISOString().slice(0, 10);
-  const sessions: DaySession[] = [
-    { subject: 'Accounts', durationSeconds: 2 * 3600 + 10 * 60, endedAt: at(0, 19) },
-    { subject: 'Law', durationSeconds: 1 * 3600 + 45 * 60, endedAt: at(1, 18) },
-    { subject: 'Accounts', durationSeconds: 3 * 3600, endedAt: at(2, 20) },
-    { subject: 'Taxation', durationSeconds: 1 * 3600 + 20 * 60, endedAt: at(3, 17) },
-    { subject: 'Accounts', durationSeconds: 2 * 3600 + 30 * 60, endedAt: at(4, 19, 30) },
-  ];
-  const tests: TestHistoryEntry[] = [
-    { id: 'demo-mcq', testId: 'demo-mcq', kind: 'mcq-test', title: 'Accounting Standards — Test 1', subject: 'Accounts', at: new Date(at(3, 21)).toISOString(), score: 12, total: 16, scorePct: 75 },
-    { id: 'demo-paper', testId: 'demo-paper', kind: 'paper-test', title: 'Accounting Standards — Batch Test', subject: 'Accounts', at: new Date(at(5, 11)).toISOString(), score: 38, total: 60, selfMarks: true },
-  ];
-  const daily: DayDaily[] = [
-    { date: dateStr(0), group: 'Group I', score: 8, total: 10, completedAt: at(0, 21) },
-    { date: dateStr(2), group: 'Group I', score: 7, total: 10, completedAt: at(2, 21, 30) },
-    { date: dateStr(4), group: 'Group II', score: 9, total: 10, completedAt: at(4, 22) },
-  ];
-  const practice: DayPractice[] = [
-    { id: 'demo-p1', config: { subject: 'Accounts — AS 1 to AS 10' }, score: 17, total: 20, completedAt: at(1, 20) },
-    { id: 'demo-p2', config: { subject: 'Law — Contract Act' }, score: 11, total: 15, completedAt: at(4, 20, 45) },
-  ];
-  return { sessions, tests, daily, practice };
-};
-
 export const WeeklyReportScreen = () => {
-  const { backendMode } = useAuth();
   const [weekOffset, setWeekOffset] = useState(0); // 0 = current week
   const { sessions } = useFocusTimer();
   const { history: dailyHistory } = useDailyMcq();
@@ -100,14 +71,10 @@ export const WeeklyReportScreen = () => {
   const rawDaily = useMemo(() => dailyHistory.filter((a) => a.completedAt && inWeek(a.completedAt) && a.score != null), [dailyHistory, inWeek]);
   const rawPractice = useMemo(() => practiceHistory.filter((p) => p.completedAt && inWeek(p.completedAt) && p.score != null), [practiceHistory, inWeek]);
 
-  // Demo mode: if the week is completely empty, show labelled sample data.
-  const showSample = backendMode === 'mock' && !rawSessions.length && !rawTests.length && !rawDaily.length && !rawPractice.length;
-  const sample = useMemo(() => (showSample ? sampleData(weekStart) : null), [showSample, weekStart]);
-
-  const weekSessions: DaySession[] = (sample ? sample.sessions : rawSessions) as DaySession[];
-  const weekTests = sample ? sample.tests : rawTests;
-  const weekDaily: DayDaily[] = (sample ? sample.daily : rawDaily) as DayDaily[];
-  const weekPractice: DayPractice[] = (sample ? sample.practice : rawPractice) as DayPractice[];
+  const weekSessions: DaySession[] = rawSessions;
+  const weekTests = rawTests;
+  const weekDaily = rawDaily as DayDaily[];
+  const weekPractice = rawPractice as DayPractice[];
 
   // ---- 1. STUDY ----
   const studySeconds = weekSessions.reduce((acc, s) => acc + s.durationSeconds, 0);
@@ -171,9 +138,6 @@ export const WeeklyReportScreen = () => {
               <Text style={styles.heroStatLabel}>MCQ ACCURACY</Text>
             </View>
           </View>
-          {showSample ? (
-            <View style={styles.sampleChip}><Ionicons name="sparkles-outline" size={12} color={colors.amber} /><Text style={styles.sampleChipText}>SAMPLE DATA — this is how your report will look</Text></View>
-          ) : null}
         </LinearGradient>
 
         {nothing ? (

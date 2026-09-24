@@ -168,7 +168,7 @@ export const AddStudyLogScreen = ({ navigation }: Props) => {
           </Field>
 
           {error ? <View style={styles.error}><Ionicons name="alert-circle" size={20} color={colors.red} /><Text style={styles.errorText}>{error}</Text></View> : null}
-          <PrimaryButton label={backendMode === 'live' ? 'Submit to mentorship' : 'Save demo study log'} icon="checkmark-circle-outline" onPress={submit} loading={loading} />
+          <PrimaryButton label="Submit to mentorship" icon="checkmark-circle-outline" onPress={submit} loading={loading} />
           <Text style={styles.privacy}>Your entry is shared only with your mentorship team.</Text>
         </ScrollView>
       </KeyboardAvoidingView>
