@@ -112,18 +112,68 @@ function readCachePut(key, body, ttl) {
 
 async function mongoDashboardRead(action, req) {
   const payload = studyLogPayload(req);
-  const dashRes = await fetch(`${MENTOR_API_URL}/api/student-dashboard/get`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      action: action,
-      payload: payload,
-      studentId: payload.studentId || ""
-    })
-  });
-  const dashData = await dashRes.json();
-  if (dashData && dashData.found) return { result: dashData.result };
-  return { result: emptyReadResult(action) };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 4000);
+  try {
+    const dashRes = await fetch(`${MENTOR_API_URL}/api/student-dashboard/get`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: action,
+        payload: payload,
+        studentId: payload.studentId || ""
+      }),
+      signal: controller.signal
+    });
+    const dashData = await dashRes.json();
+    if (dashData && dashData.found) return { result: dashData.result };
+    return { result: emptyReadResult(action) };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function serveMentorTool(req, res, action) {
+  const payload = (req.body && req.body.payload) || {};
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 25000);
+  try {
+    let url = MENTOR_API_URL;
+    let init = { method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal };
+    if (action === "ai.ask") {
+      url += "/api/ai/ask";
+      init.body = JSON.stringify({
+        studentId: payload.studentId || "",
+        question: payload.question || "",
+        chapterId: payload.chapterId || "",
+        history: payload.history || []
+      });
+    } else if (action === "messages.thread") {
+      url += "/api/messages/thread?studentId=" + encodeURIComponent(payload.studentId || "");
+      init = { method: "GET", signal: controller.signal };
+    } else if (action === "messages.send") {
+      url += "/api/messages/send";
+      init.body = JSON.stringify({
+        studentId: payload.studentId || "",
+        studentName: payload.studentName || "",
+        text: payload.text || ""
+      });
+    } else if (action === "ai.dailyTarget") {
+      res.status(200).json({ result: { tasks: [], locked: false, unavailable: true } });
+      return;
+    } else {
+      res.status(400).json({ error: "Unknown tool." });
+      return;
+    }
+    const response = await fetch(url, init);
+    const data = await response.json();
+    res.status(200).json({ result: data });
+  } catch (err) {
+    console.error("Mentor tool failed:", action, err && err.message);
+    res.status(200).json({ result: { ok: false, error: "The tutor service is busy. Please try again." } });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function serveScaledRead(req, res, action) {
