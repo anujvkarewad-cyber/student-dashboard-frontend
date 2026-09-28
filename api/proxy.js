@@ -193,6 +193,18 @@ async function serveMentorTool(req, res, action) {
 
 async function serveScaledRead(req, res, action) {
   if (!MONGO_DASHBOARD_ACTIONS.has(action)) return false;
+  // A mentor deletion must be reflected on the very next student refresh.
+  // Do not serve announcement results from the old five-minute shared cache.
+  if (action === "getAnnouncements") {
+    res.setHeader("Cache-Control", "no-store");
+    try {
+      res.status(200).json(await mongoDashboardRead(action, req));
+    } catch (err) {
+      console.error("Announcement read failed:", err && err.message);
+      res.status(200).json({ result: [] });
+    }
+    return true;
+  }
   const key = readCacheKey(action, req);
   const ttl = readTtlMs(action);
   const cached = readCacheGet(key);
