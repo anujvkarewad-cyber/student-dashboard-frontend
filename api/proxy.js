@@ -74,7 +74,8 @@ async function postAppsScript(url, body) {
 // student who has not logged study yet.
 const READ_CACHE = new Map();
 const READ_INFLIGHT = new Map();
-const SHARED_READS = new Set(["getLeaderboard", "getAnnouncements"]);
+// Leaderboard responses are student-specific; never share their cache/in-flight key.
+const SHARED_READS = new Set(["getAnnouncements"]);
 
 function emptyReadResult(action) {
   return action === "getStats" ? {} : [];
