@@ -4,9 +4,8 @@ import { AppState } from 'react-native';
 import { config } from '../config';
 import { EnrichedMcqQuestion } from '../data/mcqMetadata';
 
-// Only the live Vercel host. The two Render URLs answer 503 and must not be
-// probed — 200 open apps were hitting them every 15 seconds.
-const HOSTS = [config.mentorApiUrl].filter(Boolean);
+// Published-bank requests use only the encrypted Cloudflare gateway route.
+const HOSTS = [config.mentorApiUrl].filter((host): host is string => typeof host === 'string' && host.length > 0);
 
 // v2 cached whatever the dead hosts returned; bumping forces a clean refetch.
 const CACHE_KEY = 'ump_live_published_bank_v3';
@@ -74,8 +73,9 @@ const fetchJson = async (url: string, ms: number) => {
 const pickHost = async (): Promise<string> => {
   const saved = await AsyncStorage.getItem(HOST_KEY);
   const ordered = [saved, ...HOSTS]
-    .filter((host): host is string => Boolean(host) && !/onrender\.com/i.test(host))
+    .filter((host): host is string => typeof host === 'string' && host.length > 0)
     .filter((host, index, all) => all.indexOf(host) === index);
+  if (!ordered.length) throw new Error('Cloudflare gateway is not configured');
   const results = await Promise.all(ordered.map(async (host) => {
     try {
       const meta = await fetchJson(`${host}/api/content/student/bank-meta.json`, 12_000);

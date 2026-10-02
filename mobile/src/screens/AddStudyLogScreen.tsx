@@ -6,11 +6,13 @@ import React, { useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Chip, FormInput, PrimaryButton } from '../components/ui';
+import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
+import { getSavedSession } from '../storage/session';
 import type { RootStackParamList } from '../navigation/types';
 import { colors, radius, spacing } from '../theme';
-import type { ProofFile, StudyLogPayload } from '../types';
+import type { StudyLogPayload } from '../types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'AddStudyLog'>;
 type Planned = StudyLogPayload['studiedAsPlanned'] | '';
@@ -20,9 +22,9 @@ type PickedProof = { uri: string; name: string; mimeType: string; size: number }
 const subjectsList = ['Accounts', 'Law', 'Taxation', 'Costing', 'Audit', 'FM', 'SM', 'Revision', 'Mock Test', 'Question Bank Practice'];
 const reasons = ['Health Issue', 'Family Function', 'Office / Job', 'College', 'Travelling', 'Power / Internet Issue', 'Personal Work', 'Low Motivation', 'Other'];
 const supportOptions = ['No', 'Subject Doubt', 'Time Management', 'Motivation', 'Study Planning', 'Personal Discussion'];
-// Base64 expands files by roughly one third; 2.75 MB stays below the
-// existing proxy's 4 MB JSON body limit without changing the backend.
-const MAX_PROOF_BYTES = 2.75 * 1024 * 1024;
+// The Cloudflare gateway streams the original binary to Drive, avoiding the
+// old base64/JSON expansion. Keep this in sync with cloudflare/src/worker.js.
+const MAX_PROOF_BYTES = 10 * 1024 * 1024;
 const localDateKey = () => {
   const date = new Date();
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -66,7 +68,7 @@ export const AddStudyLogScreen = ({ navigation }: Props) => {
     const asset = result.assets[0];
     const size = asset.size || 0;
     if (size > MAX_PROOF_BYTES) {
-      setError('Study proof must be 2.75 MB or smaller.');
+      setError('Study proof must be 10 MB or smaller.');
       return;
     }
     setProof({ uri: asset.uri, name: asset.name, mimeType: asset.mimeType || 'application/octet-stream', size });
@@ -95,10 +97,19 @@ export const AddStudyLogScreen = ({ navigation }: Props) => {
     setError('');
     setLoading(true);
     try {
-      let proofFile: ProofFile | null = null;
+      let proofUrl = '';
       if (proof) {
+        const saved = await getSavedSession();
+        if (!saved) throw new Error('Your saved session expired. Sign in again before uploading proof.');
         const file = new File(proof.uri);
-        proofFile = { fileName: proof.name, mimeType: proof.mimeType, base64: await file.base64() };
+        const uploaded = await api.uploadProof({
+          studentId: saved.studentId,
+          password: saved.password,
+          fileName: proof.name,
+          mimeType: proof.mimeType,
+          bytes: await file.arrayBuffer(),
+        });
+        proofUrl = uploaded.proofUrl;
       }
       await submitStudyLog({
         date,
@@ -109,7 +120,7 @@ export const AddStudyLogScreen = ({ navigation }: Props) => {
         targetCompleted: planned === 'No' ? '' : targetCompleted,
         tomorrowTarget: planned === 'No' ? '' : tomorrowTarget.trim(),
         mentorSupport,
-        proofFile,
+        proofUrl,
       });
       Alert.alert('Study log saved', 'Your progress has been added successfully.', [{ text: 'Done', onPress: () => navigation.goBack() }]);
     } catch (e) {
@@ -154,7 +165,7 @@ export const AddStudyLogScreen = ({ navigation }: Props) => {
                   <View style={styles.uploadIcon}><Ionicons name={proof ? 'checkmark' : 'cloud-upload-outline'} size={24} color={proof ? colors.success : colors.primary} /></View>
                   <View style={styles.uploadBody}>
                     <Text style={styles.uploadTitle} numberOfLines={1}>{proof?.name || 'Choose a photo or PDF'}</Text>
-                    <Text style={styles.uploadText}>{proof ? `${(proof.size / 1024 / 1024).toFixed(2)} MB selected` : 'Maximum file size: 2.75 MB'}</Text>
+                    <Text style={styles.uploadText}>{proof ? `${(proof.size / 1024 / 1024).toFixed(2)} MB selected` : 'Maximum file size: 10 MB'}</Text>
                   </View>
                   <Ionicons name="chevron-forward" size={19} color={colors.muted} />
                 </Pressable>

@@ -5,11 +5,11 @@ A separate React Native + Expo Android client for the existing student dashboard
 ## Safety boundary
 
 - The original web app files are not imported or modified by this app.
-- The existing Apps Script, Sheets and Vercel proxy are not modified.
+- The existing Sheets remain in place; connected traffic enters through the Cloudflare gateway.
 - Mock mode remains the local-development default, so development cannot write production data accidentally.
 - Connected modes consume the same existing `POST /api/proxy` action/payload contract used by `api.js`; no Apps Script, Sheet or proxy change is required.
 - **Live preview** authenticates and reads real data while the API client blocks every mutation.
-- **Full live** enables the existing backend’s study-log, proof, password-recovery/change and feedback-read writes after an explicit runtime warning. The production APK profile starts directly in Full live and locks out mode switching.
+- **Full live** enables the gateway-backed study-log, proof, password-recovery/change and feedback-read writes after an explicit runtime warning. The production APK profile starts directly in Full live and locks out mode switching.
 - Focus, Study Receipt and Daily MCQ remain intentionally device-local because the current backend has no corresponding endpoints.
 
 ## Current native flows
@@ -74,14 +74,14 @@ OTP:        123456
 
 Mock mode is used when `EXPO_PUBLIC_BACKEND_MODE` is absent. A safe build can explicitly switch between Mock, Live preview and Full live from the login screen.
 
-## Run against the existing API
+## Run against the Cloudflare gateway
 
 Create `mobile/.env.local` (ignored by Git). Start with read-only validation:
 
 ```env
 EXPO_PUBLIC_BACKEND_MODE=live-readonly
 EXPO_PUBLIC_ALLOW_MODE_SWITCH=false
-EXPO_PUBLIC_API_BASE_URL=https://student-dashboard-frontend-iota.vercel.app
+EXPO_PUBLIC_API_BASE_URL=https://upm-emergency-gateway.YOUR-SUBDOMAIN.workers.dev
 ```
 
 After read validation with a designated test student, enable the full existing contract:
@@ -89,7 +89,7 @@ After read validation with a designated test student, enable the full existing c
 ```env
 EXPO_PUBLIC_BACKEND_MODE=live
 EXPO_PUBLIC_ALLOW_MODE_SWITCH=false
-EXPO_PUBLIC_API_BASE_URL=https://student-dashboard-frontend-iota.vercel.app
+EXPO_PUBLIC_API_BASE_URL=https://upm-emergency-gateway.YOUR-SUBDOMAIN.workers.dev
 ```
 
 `EXPO_PUBLIC_API_BASE_URL` can be either the deployment origin or a complete `/api/proxy` URL. Full live supports the existing login, dashboard, tracker, proof upload, leaderboard, reports, announcements, mentor notes, study material, feedback-read, OTP reset and password-change actions. Test mutations only with the dedicated test student before wider distribution.
@@ -105,7 +105,7 @@ npm run validate
 
 ## Direct APK updates outside Play Store
 
-Version 1.10.0 is the one-time manually installed updater baseline. In Full Live mode the app checks the existing API on startup and when returning to foreground. If `app.version` reports a higher Android version code, the app shows an optional or mandatory update modal, downloads the HTTPS APK into private cache and opens Android's installer. Android always asks the student to confirm the final installation.
+Version 1.10.0 is the one-time manually installed updater baseline. In Full Live mode the app checks the Cloudflare gateway on startup and when returning to foreground. If `app.version` reports a higher Android version code, the app shows an optional or mandatory update modal, downloads the HTTPS APK into private cache and opens Android's installer. Android always asks the student to confirm the final installation.
 
 The release APK must be hosted at a permanent public HTTPS download URL; private/expiring GitHub Actions artifacts are not valid updater URLs. Firebase Storage plus Apps Script Properties is the configured publishing model. Backend and release instructions are in `docs/APP_UPDATE_BACKEND_SETUP.md`.
 

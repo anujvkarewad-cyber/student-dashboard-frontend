@@ -1,6 +1,7 @@
 export type Student = {
   success?: boolean;
   message?: string;
+  code?: 'wrong_password' | 'not_found' | 'group_closed' | 'server_unreachable' | string;
   forcePasswordChange?: boolean;
   studentId: string;
   studentName: string;
@@ -100,7 +101,10 @@ export type StudyLogPayload = {
   targetCompleted: string;
   tomorrowTarget: string;
   mentorSupport: string;
-  proofFile: ProofFile | null;
+  /** Cloudflare uploads the binary directly to Drive before this JSON write. */
+  proofUrl?: string;
+  /** Legacy field retained only for old mock fixtures during migration. */
+  proofFile?: ProofFile | null;
 };
 
 export type ApiSuccess = {

@@ -13,9 +13,9 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const RETRY_STATUSES = new Set([404, 408, 429, 500, 502, 503, 504]);
 const BUDGET_MS = 50000;
 const ATTEMPT_MS = 18000;
-// Live backend. Was pointing at the old Render service, which is suspended -
-// set MENTOR_API_URL in Vercel if you ever move the backend again.
-const MENTOR_API_URL = (process.env.MENTOR_API_URL || "https://ump-mentor-api.vercel.app").replace(/\/$/, "");
+// Legacy deployments must configure this explicitly. There is intentionally no
+// provider fallback: production APK traffic now enters through Cloudflare.
+const MENTOR_API_URL = String(process.env.MENTOR_API_URL || "").replace(/\/$/, "");
 const MONGO_DASHBOARD_ACTIONS = new Set([
   "getStats",
   "getStudyLog",
@@ -318,8 +318,8 @@ async function tryMongoLogin(req) {
 }
 
 async function mirrorStudyLogToMongo(payload, gasResult) {
-  // Only the live host, and never the same host twice.
-  const hosts = Array.from(new Set([MENTOR_API_URL, "https://ump-mentor-api.vercel.app"]));
+  // Only the explicitly configured host; never fail over to retired providers.
+  const hosts = MENTOR_API_URL ? [MENTOR_API_URL] : [];
   const body = JSON.stringify({ action: "addStudyLog", payload, result: gasResult || {} });
   for (let i = 0; i < hosts.length; i++) {
     try {

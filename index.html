@@ -1094,10 +1094,10 @@
 <script src="learning-data.js"></script>
 <script src="mentor-host.js"></script>
 <script>
-  // mentor-host.js has already resolved and published window.MENTOR_API_URL from
-  // the live deployment. This guard only matters if that file failed to load.
+  // Provider origins are not exposed to browsers. This guard uses only the
+  // same-origin Cloudflare gateway if the resolver failed to load.
   if (!window.MENTOR_API_URL) {
-    window.MENTOR_API_URL = localStorage.getItem("ump_mentor_api_url") || "https://ump-mentor-api.vercel.app";
+    window.MENTOR_API_URL = "/api/mentor";
   }
 </script>
 <script src="live-bank-loader.js"></script>

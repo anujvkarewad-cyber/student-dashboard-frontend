@@ -1,12 +1,15 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
+import type { Student } from '../types';
 
 const SESSION_KEY = 'ump_mobile_session_v1';
 
 export type SavedSession = {
   studentId: string;
   password: string;
+  /** Last server-validated profile, used only while the gateway is unavailable. */
+  student?: Student;
 };
 
 export const getSavedSession = async (): Promise<SavedSession | null> => {
