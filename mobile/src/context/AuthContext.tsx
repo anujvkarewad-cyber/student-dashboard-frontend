@@ -33,14 +33,22 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
       }
       try {
         const result = await api.validateLogin(saved.studentId, saved.password);
-        if (result.success === false || (result.forcePasswordChange && mode === 'live-readonly')) {
+        if (result.success === false) {
+          // Only a definitive credential/account response may erase a session.
+          // An outage response keeps both credentials and the cached profile.
+          const definitive = ['wrong_password', 'not_found', 'group_closed'].includes(String(result.code || ''));
+          if (definitive) await clearSavedSession();
+          else if (mounted && saved.student) setStudent(saved.student);
+        } else if (result.forcePasswordChange && mode === 'live-readonly') {
           await clearSavedSession();
-        } else if (mounted) {
-          setStudent(result);
+        } else {
+          await saveSession({ studentId: saved.studentId, password: saved.password, student: result });
+          if (mounted) setStudent(result);
         }
       } catch {
-        // Keep the encrypted session for a later retry, but show login now instead
-        // of trapping the user behind a permanent loading screen.
+        // A validated encrypted session remains usable during a gateway/server
+        // outage. Network access will retry normally when each screen refreshes.
+        if (mounted && saved.student) setStudent(saved.student);
       } finally {
         if (mounted) setBooting(false);
       }
@@ -65,7 +73,7 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
     if (result.forcePasswordChange && backendMode === 'live-readonly') {
       throw new Error('Your account requires a password change. Select Full live to complete it securely.');
     }
-    await saveSession({ studentId: normalizedId, password });
+    await saveSession({ studentId: normalizedId, password, student: result });
     setStudent(result);
     return result;
   }, [backendMode]);
@@ -77,7 +85,7 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
 
   const updateSavedPassword = useCallback(async (newPassword: string) => {
     if (!student) return;
-    await saveSession({ studentId: student.studentId, password: newPassword });
+    await saveSession({ studentId: student.studentId, password: newPassword, student });
   }, [student]);
 
   const completeRequiredPasswordChange = useCallback(() => {

@@ -307,7 +307,9 @@ async function handleAction(action, payload, sheets, drive) {
       const students = await readStudents(sheets);
       const s = students.find(x=>x.id===sid);
       if(!s) return { success:false, message:'Student not found.' };
-      let proofUrl='';
+      // 1.14.4 uploads the binary through Cloudflare directly to Drive and
+      // submits only its authenticated URL. Keep base64 for older clients.
+      let proofUrl=String(payload.proofUrl||'');
       if(payload.proofFile?.base64){
         try {
           const folderId = await getOrCreateProofFolder(drive);

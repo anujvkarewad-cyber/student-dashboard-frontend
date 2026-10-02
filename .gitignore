@@ -1,5 +1,6 @@
-.vercel
+.vercel/
 .env*
-
-.vercel
-.env*
+node_modules/
+dist/
+test_reports/
+.wrangler/

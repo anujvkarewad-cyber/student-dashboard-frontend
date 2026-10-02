@@ -57,6 +57,7 @@ class ApiClient {
   }
 
   private async call<T>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
+    if (!config.apiUrl) throw new Error('Cloudflare gateway is not configured for this build.');
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), config.requestTimeoutMs);
 
@@ -136,6 +137,31 @@ class ApiClient {
   async deleteStudyLog(studentId: string, entry: { date: string; hours: number; topic?: string }): Promise<ApiSuccess> {
     this.blockBackendWrite('Study-log delete');
     return this.call<ApiSuccess>('deleteStudyLog', { studentId, ...entry });
+  }
+
+  async uploadProof(input: { studentId: string; password: string; fileName: string; mimeType: string; bytes: ArrayBuffer }): Promise<{ proofUrl: string }> {
+    this.blockBackendWrite('Proof upload');
+    if (!config.proofUploadUrl) throw new Error('Cloudflare proof upload is not configured for this build.');
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), config.requestTimeoutMs);
+    try {
+      const response = await fetch(config.proofUploadUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': input.mimeType,
+          'X-Student-Id': input.studentId,
+          'X-Session-Password': input.password,
+          'X-File-Name': encodeURIComponent(input.fileName),
+        },
+        body: input.bytes,
+        signal: controller.signal,
+      });
+      const result = await response.json() as { proofUrl?: string; error?: string };
+      if (!response.ok || !result.proofUrl) throw new Error(result.error || `Proof upload failed (${response.status}).`);
+      return { proofUrl: result.proofUrl };
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   async addStudyLog(studentId: string, entry: StudyLogPayload): Promise<ApiSuccess> {

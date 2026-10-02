@@ -1,11 +1,9 @@
 export type BackendDefaultMode = 'mock' | 'live-readonly' | 'live';
 
-const defaultBaseUrl = 'https://student-dashboard-frontend-iota.vercel.app';
+const configuredBaseUrl = (process.env.EXPO_PUBLIC_API_BASE_URL || '').trim();
 
-const normalizeApiUrl = (value: string) => {
-  const clean = value.trim().replace(/\/+$/, '');
-  return clean.endsWith('/api/proxy') ? clean : `${clean}/api/proxy`;
-};
+const normalizeGatewayOrigin = (value: string) => value.trim().replace(/\/+$/, '').replace(/\/api\/proxy$/, '');
+const gatewayOrigin = normalizeGatewayOrigin(configuredBaseUrl);
 
 const requestedMode = process.env.EXPO_PUBLIC_BACKEND_MODE;
 const defaultApiMode: BackendDefaultMode = requestedMode === 'live-readonly' || requestedMode === 'live'
@@ -14,8 +12,12 @@ const defaultApiMode: BackendDefaultMode = requestedMode === 'live-readonly' || 
 const requestedModeSwitch = process.env.EXPO_PUBLIC_ALLOW_MODE_SWITCH;
 
 export const config = {
-  apiUrl: normalizeApiUrl(process.env.EXPO_PUBLIC_API_BASE_URL || defaultBaseUrl),
-  mentorApiUrl: (process.env.EXPO_PUBLIC_MENTOR_API_URL || 'https://ump-mentor-api.vercel.app').replace(/\/+$/, ''),
+  // Production builds receive this value from encrypted EAS environment
+  // variables. There is deliberately no legacy hosting fallback.
+  gatewayOrigin,
+  apiUrl: gatewayOrigin ? `${gatewayOrigin}/api/proxy` : '',
+  proofUploadUrl: gatewayOrigin ? `${gatewayOrigin}/api/proof-upload` : '',
+  mentorApiUrl: gatewayOrigin ? `${gatewayOrigin}/api/mentor` : '',
   // Shared secret for computing the /api/progress-sync HMAC token. Leave blank
   // when the mentor backend has no SYNC_SECRET configured (dev mode accepts any
   // token); set it to the same value as the backend's SYNC_SECRET otherwise.
@@ -25,5 +27,5 @@ export const config = {
   // preview/read-only profiles still override both values through environment.
   allowModeSelection: requestedModeSwitch === 'true',
   requestTimeoutMs: 60_000,
-  appVersion: (process.env.EXPO_PUBLIC_APP_VERSION || '1.11.0').trim(),
+  appVersion: (process.env.EXPO_PUBLIC_APP_VERSION || '1.14.4').trim(),
 };

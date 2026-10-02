@@ -2,10 +2,10 @@ import { config } from '../config';
 
 /**
  * v1.11.0 Reform API client.
- * All calls go to the Render mentor API (`/api/ai/*`, `/api/targets/*`,
- * `/api/messages/*`). Every helper returns `null` when the backend route is
- * not deployed yet, so the UI can show a friendly "setup pending" state
- * instead of crashing. Secrets (GROQ_API_KEY) live ONLY in Render env vars.
+ * All calls go through the Cloudflare gateway (`/api/mentor/*`); the upstream
+ * origin and AI credentials remain encrypted server-side. Every helper returns
+ * `null` when a route is unavailable, so the UI can show a friendly setup state
+ * instead of crashing.
  */
 
 export type AiMcq = {

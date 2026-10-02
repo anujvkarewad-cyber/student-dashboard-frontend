@@ -1,25 +1,17 @@
 /**
  * Single source of truth for the mentor API host.
  *
- * This used to be hardcoded in three separate files, all pointing at two Render
- * services. Both of those are gone (they answer 503), so every one of those
- * copies silently fell back to the small preview bank bundled in
- * learning-data.js and students never saw the published questions.
+ * Provider URLs are never shipped to the browser. Requests use the same-origin
+ * Cloudflare gateway route, whose encrypted MENTOR_ORIGIN secret selects the
+ * upstream service.
  *
- * Resolution order:
- *   1. an explicit override in localStorage (support / staging)
- *   2. a host cached by a previous successful probe
- *   3. the live deployment
- *
- * A background probe re-checks every candidate and re-points the cache if the
- * live host ever stops answering, so a future move does not need a code change.
- * The probe never blocks: callers get a usable host synchronously.
+ * A background probe checks the same-origin route without exposing or selecting
+ * provider hosts. Moving an upstream requires only a Worker secret rotation.
  */
 (function () {
   "use strict";
 
-  var LIVE_HOST = "https://ump-mentor-api.vercel.app";
-  // Render hosts are suspended (503). Do not probe them.
+  var LIVE_HOST = "/api/mentor";
   var CANDIDATES = [LIVE_HOST];
   var PROBE_PATH = "/api/content/student/bank-meta.json";
   var CACHE_KEY = "ump_mentor_host_v2";
@@ -46,11 +38,9 @@
     return String(host || "").replace(/\/+$/, "");
   }
 
-  /** Synchronous, always returns a usable host. */
+  /** Provider origins are server-side secrets; clients always use the gateway. */
   function current() {
-    var override = trim(read(OVERRIDE_KEY));
-    if (override) return override;
-    return trim(read(CACHE_KEY)) || LIVE_HOST;
+    return LIVE_HOST;
   }
 
   function probe(host) {

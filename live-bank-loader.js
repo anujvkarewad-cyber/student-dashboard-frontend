@@ -8,9 +8,9 @@
 (function () {
   "use strict";
 
-    const DEFAULT_MENTOR_API = "https://ump-mentor-api.vercel.app";
-  // Prefer the shared resolver, which probes hosts and re-points itself if the
-  // live deployment ever moves. Everything below falls back in order.
+  const DEFAULT_MENTOR_API = "/api/mentor";
+  // Prefer the shared resolver. Provider origins stay encrypted in Cloudflare;
+  // browser code only knows the same-origin gateway path.
   const MENTOR_API = (
     (typeof window.UMP_MENTOR_API_URL === "function" && window.UMP_MENTOR_API_URL()) ||
     window.MENTOR_API_URL ||
@@ -27,7 +27,7 @@
   // failed. IndexedDB has a far larger quota, so the bank lives there now.
   const IDB_NAME = "ump_published_bank";
   const IDB_STORE = "banks";
-  const FETCH_TIMEOUT_MS = 65 * 1000; // Render free-tier cold starts can exceed 30 seconds.
+  const FETCH_TIMEOUT_MS = 65 * 1000; // allow an upstream cold start behind the gateway
   const REVISION_POLL_MS = 5 * 60 * 1000;
   const originalData = window.UMP_LEARNING_DATA || {};
 
