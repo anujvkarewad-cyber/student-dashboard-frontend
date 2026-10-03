@@ -310,9 +310,16 @@ async function tryMongoLogin(req) {
       })
     });
     const data = await response.json();
-    const result = data.result || data;
-    if (result && result.success === true) return { result };
-    return null;
+    if (!response.ok) {
+      throw new Error(data?.detail || data?.error || `Password service failed (${response.status}).`);
+    }
+    // A rejected password change is still an authoritative backend response.
+    // Returning null here used to fall through to the retired Apps Script;
+    // Cloud Run has no APPS_SCRIPT_URL, so students saw a misleading HTTP 503
+    // instead of "current password is incorrect" or "student not found".
+    const result = Object.prototype.hasOwnProperty.call(data || {}, "result") ? data.result : data;
+    if (result && typeof result === "object") return { result };
+    throw new Error("Password service returned an invalid response.");
   }
   return null;
 }

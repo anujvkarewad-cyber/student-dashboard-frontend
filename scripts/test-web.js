@@ -14,12 +14,12 @@
  *
  * Exits non-zero on the first failed assertion so it can gate CI/deploys.
  */
-"use strict";
+import fs from "node:fs";
+import path from "node:path";
+import vm from "node:vm";
+import { fileURLToPath } from "node:url";
 
-const fs = require("node:fs");
-const path = require("node:path");
-const vm = require("node:vm");
-
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
 const DAY_MS = 24 * 60 * 60 * 1000;
 
