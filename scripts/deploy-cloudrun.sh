@@ -19,6 +19,11 @@ MENTOR_API_URL="${MENTOR_API_URL:-https://ujjwal-pathak-app-566076646952.asia-so
 # error instead of falling over.
 APPS_SCRIPT_URL="${APPS_SCRIPT_URL:-}"
 
+# Optional: study-proof uploads to Google Drive (needed by the Android app).
+# Set DRIVE_PROOF_FOLDER_ID plus either GOOGLE_SERVICE_ACCOUNT_JSON or the
+# email/private-key pair. Prefer Secret Manager for the private key in prod.
+DRIVE_PROOF_FOLDER_ID="${DRIVE_PROOF_FOLDER_ID:-}"
+
 cd "$(dirname "$0")/.."
 
 echo "==> Project : $PROJECT"
@@ -36,6 +41,9 @@ gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregi
 ENV_VARS="MENTOR_API_URL=${MENTOR_API_URL}"
 if [[ -n "$APPS_SCRIPT_URL" ]]; then
   ENV_VARS="${ENV_VARS},APPS_SCRIPT_URL=${APPS_SCRIPT_URL}"
+fi
+if [[ -n "$DRIVE_PROOF_FOLDER_ID" ]]; then
+  ENV_VARS="${ENV_VARS},DRIVE_PROOF_FOLDER_ID=${DRIVE_PROOF_FOLDER_ID}"
 fi
 
 echo "==> Building and deploying from source"

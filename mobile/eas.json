@@ -12,7 +12,7 @@
       "env": {
         "EXPO_PUBLIC_BACKEND_MODE": "mock",
         "EXPO_PUBLIC_ALLOW_MODE_SWITCH": "true",
-        "EXPO_PUBLIC_APP_VERSION": "1.14.4"
+        "EXPO_PUBLIC_APP_VERSION": "1.14.5"
       },
       "environment": "preview"
     },
@@ -24,7 +24,7 @@
       "env": {
         "EXPO_PUBLIC_BACKEND_MODE": "live-readonly",
         "EXPO_PUBLIC_ALLOW_MODE_SWITCH": "false",
-        "EXPO_PUBLIC_APP_VERSION": "1.14.4"
+        "EXPO_PUBLIC_APP_VERSION": "1.14.5"
       },
       "environment": "preview"
     },
@@ -36,7 +36,7 @@
       "env": {
         "EXPO_PUBLIC_BACKEND_MODE": "live",
         "EXPO_PUBLIC_ALLOW_MODE_SWITCH": "false",
-        "EXPO_PUBLIC_APP_VERSION": "1.14.4"
+        "EXPO_PUBLIC_APP_VERSION": "1.14.5"
       },
       "environment": "production"
     }

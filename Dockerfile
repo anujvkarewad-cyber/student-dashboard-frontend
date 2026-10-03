@@ -13,6 +13,7 @@ WORKDIR /app
 # Server + the Vercel function it wraps
 COPY package.json server.js ./
 COPY api ./api
+COPY lib ./lib
 
 # Static PWA
 COPY index.html manifest.json style.css ./

@@ -26,6 +26,7 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { handleProofUpload } from "./lib/proof-upload.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -394,6 +395,30 @@ async function handleMentor(req, res, url) {
 }
 
 /* ------------------------------------------------------------------ *
+ * /api/proof-upload — study proof to Google Drive (ported from the worker)
+ * ------------------------------------------------------------------ */
+
+async function handleProofUploadRoute(req, res) {
+  try {
+    const { status, body } = await handleProofUpload({
+      method: req.method,
+      headers: req.headers,
+      readBody: (limit) => readBody(req, limit),
+      mentorApiUrl: MENTOR_API_URL,
+      env: process.env,
+    });
+    sendJson(res, status, body);
+  } catch (err) {
+    if (err && err.statusCode === 413) {
+      sendJson(res, 413, { error: "Proof must be 10 MB or smaller" });
+      return;
+    }
+    console.error("[proof] upload failed:", err && err.message);
+    sendJson(res, 502, { error: "Proof upload failed. Please try again." });
+  }
+}
+
+/* ------------------------------------------------------------------ *
  * /api/sheets — legacy Google Sheets function, loaded only on demand
  * ------------------------------------------------------------------ */
 
@@ -485,13 +510,8 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    // Study-proof uploads still live in the Cloudflare worker (they need the
-    // Google Drive service-account secrets). Say so in JSON instead of letting
-    // the client parse a 404 page.
     if (pathname === "/api/proof-upload") {
-      sendJson(res, 501, {
-        error: "Proof upload is not available on this host. Please update the app.",
-      });
+      await handleProofUploadRoute(req, res);
       return;
     }
 

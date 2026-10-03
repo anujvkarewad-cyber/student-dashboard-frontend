@@ -159,16 +159,10 @@ Network me `/api/proxy` par `200` + `application/json` dikhna chahiye.
    ```
    Phir DNS me jo record gcloud batata hai wo daal dijiye.
 
-2. **Android APK** — `mobile/src/config.ts` origin `EXPO_PUBLIC_API_BASE_URL`
-   se leta hai. Naye build me EAS variable ko Cloud Run URL par set kijiye:
-   ```
-   EXPO_PUBLIC_API_BASE_URL=https://student-dashboard-xxxxx.asia-south1.run.app
-   ```
-   > **Dhyan dein:** study-proof upload (`/api/proof-upload`) abhi bhi
-   > Cloudflare worker me hai (usme Google Drive service-account secrets hain).
-   > Cloud Run par wo route saaf JSON 501 deta hai. Agar APK ko Cloud Run par
-   > shift karna hai to ya to proof upload worker par hi rakhein, ya wo route
-   > `server.js` me port karein.
+2. **Android APK** — purana APK (v1.14.2/37) ke bundle me Vercel URL baked hai,
+   isliye naya build zaroori hai. Pura tarika: **`APK_CLOUD_RUN_REBUILD.md`**.
+   Proof upload (`/api/proof-upload`) ab Cloud Run par bhi maujood hai
+   (`lib/proof-upload.js`) — bas Drive ke secrets set karne honge.
 
 3. **Service worker** — `index.html`, `service-worker.js`,
    `firebase-messaging-sw.js`, `manifest.json` `no-store` ke saath serve hote
