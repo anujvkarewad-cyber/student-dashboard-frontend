@@ -85,7 +85,7 @@ const MainTabs = () => (
 const Splash = () => (
   <View style={styles.splash}>
     <Image source={require('../../assets/icon.png')} style={styles.splashLogo} />
-    <Text style={styles.splashTitle}>Ujjwal Pathak Mentorship</Text>
+    <Text style={styles.splashTitle}>Super 75 by Ujjwal</Text>
     <ActivityIndicator color={colors.primary} style={styles.splashLoader} />
   </View>
 );

@@ -29,7 +29,7 @@ async function scheduleAll(prefs: ReminderPref[]) {
     for (const p of prefs.filter((x) => x.on && timeOk(x.time))) {
       const [hour, minute] = p.time.split(':').map(Number);
       await Notifications.scheduleNotificationAsync({
-        content: { title: 'Ujjwal Pathak Mentorship', body: p.sub || p.label },
+        content: { title: 'Super 75 by Ujjwal', body: p.sub || p.label },
         trigger: { hour, minute, repeats: true } as never,
       });
     }

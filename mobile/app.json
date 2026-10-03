@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Ujjwal Pathak Mentorship",
+    "name": "Super 75",
     "slug": "ujjwal-pathak-mentorship",
     "version": "1.14.5",
     "orientation": "portrait",
@@ -56,7 +56,7 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Allow Ujjwal Pathak Mentorship to use your location only for local weather and adaptive dashboard themes.",
+          "locationWhenInUsePermission": "Allow Super 75 by Ujjwal to use your location only for local weather and adaptive dashboard themes.",
           "isAndroidBackgroundLocationEnabled": false,
           "isAndroidForegroundServiceEnabled": false
         }

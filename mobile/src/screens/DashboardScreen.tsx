@@ -106,7 +106,7 @@ export const DashboardScreen = () => {
         <View style={styles.header}>
           <View style={styles.brandMark}><Text style={styles.brandMarkText}>UP</Text></View>
           <View style={styles.headerCopy}>
-            <Text style={styles.eyebrow}>UJJWAL PATHAK MENTORSHIP</Text>
+            <Text style={styles.eyebrow}>SUPER 75 BY UJJWAL</Text>
             <Text style={styles.dashboardLabel}>Student dashboard</Text>
           </View>
           <Pressable style={styles.notificationButton} onPress={() => setNotificationsVisible(true)} accessibilityLabel="Open notifications popup">
