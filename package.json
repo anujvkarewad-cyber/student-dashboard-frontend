@@ -2,7 +2,14 @@
   "name": "student-dashboard-frontend",
   "version": "1.0.0",
   "type": "module",
-  "dependencies": {
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "optionalDependencies": {
     "googleapis": "^128.0.0"
   }
 }

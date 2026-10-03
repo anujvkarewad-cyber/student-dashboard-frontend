@@ -80,8 +80,8 @@ export const LoginScreen = ({ navigation }: Props) => {
             <View style={styles.brandRow}>
               <Image source={require('../../assets/icon.png')} style={styles.logo} />
               <View>
-                <Text style={styles.brand}>Ujjwal Pathak</Text>
-                <Text style={styles.brandSub}>MENTORSHIP</Text>
+                <Text style={styles.brand}>Super 75</Text>
+                <Text style={styles.brandSub}>BY UJJWAL</Text>
               </View>
             </View>
 
@@ -96,7 +96,7 @@ export const LoginScreen = ({ navigation }: Props) => {
             </View>
 
             <View style={styles.formCard}>
-              <View style={styles.lockedLive}><View style={styles.lockedLiveIcon}><Ionicons name="cloud-done" size={21} color={colors.success} /></View><View style={styles.modeCopy}><Text style={styles.lockedLiveTitle}>Secure live connection</Text><Text style={styles.lockedLiveText}>Connected to Ujjwal Pathak Mentorship</Text></View></View>
+              <View style={styles.lockedLive}><View style={styles.lockedLiveIcon}><Ionicons name="cloud-done" size={21} color={colors.success} /></View><View style={styles.modeCopy}><Text style={styles.lockedLiveTitle}>Secure live connection</Text><Text style={styles.lockedLiveText}>Connected to Super 75 by Ujjwal</Text></View></View>
               <Text style={styles.formTitle}>Sign in to your account</Text>
               <FormInput
                 label="Student ID"

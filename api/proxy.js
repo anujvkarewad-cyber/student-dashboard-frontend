@@ -453,8 +453,15 @@ export default async function handler(req, res) {
     }
 
     if (!process.env.APPS_SCRIPT_URL) {
-      return res.status(500).json({
-        error: "Server misconfigured: APPS_SCRIPT_URL is missing."
+      // Cloud Run runs without Apps Script: the FastAPI backend is the source
+      // of truth. A study log must still be saved rather than failing the
+      // student with a misconfiguration error.
+      if (updateAction === "addStudyLog") {
+        await mirrorStudyLogToMongo(studyLogPayload(req), {});
+        return res.status(200).json({ result: { success: true } });
+      }
+      return res.status(503).json({
+        error: `This action is not available right now (${updateAction || "unknown"}).`
       });
     }
 

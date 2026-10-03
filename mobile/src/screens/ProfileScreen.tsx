@@ -9,6 +9,7 @@ import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import { useNotifications } from '../context/NotificationsContext';
 import { useProgressSync } from '../context/ProgressSyncContext';
+import { config } from '../config';
 import { colors, radius, spacing } from '../theme';
 
 const InfoRow = ({ icon, label, value }: { icon: keyof typeof Ionicons.glyphMap; label: string; value?: string }) => (
@@ -162,7 +163,7 @@ export const ProfileScreen = () => {
         </Card>
 
         <PrimaryButton label="Sign out" icon="log-out-outline" variant="secondary" onPress={confirmLogout} style={styles.logout} />
-        <Text style={styles.version}>Ujjwal Pathak Mentorship · Mobile v1.10.2</Text>
+        <Text style={styles.version}>Super 75 by Ujjwal · Mobile v{config.appVersion}</Text>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
