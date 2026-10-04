@@ -23,6 +23,11 @@ COPY api.js app.js firebase-init.js firebase-messaging-sw.js learning-data.js \
 COPY assets ./assets
 COPY icon ./icon
 
+# `gcloud run deploy --source` preserves local source permissions. A restrictive
+# shell umask can otherwise copy root-owned 0600 JavaScript files into the
+# image, where the unprivileged Node user cannot read them (EACCES at startup).
+RUN chmod -R a+rX /app
+
 USER node
 
 EXPOSE 8080
