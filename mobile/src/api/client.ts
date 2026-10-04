@@ -143,7 +143,7 @@ class ApiClient {
     this.blockBackendWrite('Proof upload');
     if (!config.proofUploadUrl) throw new Error('Cloudflare proof upload is not configured for this build.');
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), config.requestTimeoutMs);
+    const timeout = setTimeout(() => controller.abort(), config.proofUploadTimeoutMs);
     try {
       const response = await fetch(config.proofUploadUrl, {
         method: 'PUT',
@@ -156,9 +156,22 @@ class ApiClient {
         body: input.bytes,
         signal: controller.signal,
       });
-      const result = await response.json() as { proofUrl?: string; error?: string };
+      let result: { proofUrl?: string; error?: string };
+      try {
+        result = await response.json() as { proofUrl?: string; error?: string };
+      } catch {
+        throw new Error('Proof server returned an unreadable response. Please try again.');
+      }
       if (!response.ok || !result.proofUrl) throw new Error(result.error || `Proof upload failed (${response.status}).`);
       return { proofUrl: result.proofUrl };
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error('Proof upload is taking too long. Try a smaller file or a stronger connection.');
+      }
+      if (error instanceof TypeError) {
+        throw new Error('Could not connect for proof upload. Check your internet and try again.');
+      }
+      throw error;
     } finally {
       clearTimeout(timeout);
     }

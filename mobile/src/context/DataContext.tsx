@@ -189,7 +189,10 @@ export const DataProvider = ({ children }: PropsWithChildren) => {
     if (!student) throw new Error('Please log in again.');
     const result = await api.addStudyLog(student.studentId, entry);
     if (!result?.success) throw new Error(result?.message || 'The study log could not be saved.');
-    await refreshTracker();
+    // The write is already authoritative. Do not keep the Submit button
+    // spinning while two follow-up reads cross a slow mobile connection.
+    // Refresh in the background; the tracker also refreshes on navigation.
+    refreshTracker().catch(() => undefined);
   }, [refreshTracker, student]);
 
   const deleteStudyLog = useCallback(async (entry: { date: string; hours: number; topic?: string }) => {

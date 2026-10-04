@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as DocumentPicker from 'expo-document-picker';
 import { File } from 'expo-file-system';
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Chip, FormInput, PrimaryButton } from '../components/ui';
@@ -25,6 +25,50 @@ const supportOptions = ['No', 'Subject Doubt', 'Time Management', 'Motivation', 
 // The Cloudflare gateway streams the original binary to Drive, avoiding the
 // old base64/JSON expansion. Keep this in sync with cloudflare/src/worker.js.
 const MAX_PROOF_BYTES = 10 * 1024 * 1024;
+const PROOF_READ_TIMEOUT_MS = 20_000;
+const SUPPORTED_PROOF_TYPES = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/webp']);
+
+const proofMimeType = (name: string, provided?: string | null) => {
+  const declared = String(provided || '').split(';')[0].trim().toLowerCase();
+  if (SUPPORTED_PROOF_TYPES.has(declared)) return declared;
+  const extension = name.toLowerCase().split('.').pop();
+  if (extension === 'pdf') return 'application/pdf';
+  if (extension === 'jpg' || extension === 'jpeg') return 'image/jpeg';
+  if (extension === 'png') return 'image/png';
+  if (extension === 'webp') return 'image/webp';
+  return declared || 'application/octet-stream';
+};
+
+const within = <T,>(promise: Promise<T>, milliseconds: number) => new Promise<T>((resolve, reject) => {
+  const timer = setTimeout(() => reject(new Error('file-read-timeout')), milliseconds);
+  promise.then(
+    (value) => { clearTimeout(timer); resolve(value); },
+    (error) => { clearTimeout(timer); reject(error); },
+  );
+});
+
+const readProofBytes = async (uri: string) => {
+  try {
+    return await within(new File(uri).arrayBuffer(), PROOF_READ_TIMEOUT_MS);
+  } catch {
+    // A few old Android document providers expose a content URI that the new
+    // File API cannot read. React Native fetch uses a different native path and
+    // is a useful bounded fallback instead of leaving the submit spinner stuck.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), PROOF_READ_TIMEOUT_MS);
+    try {
+      const response = await fetch(uri, { signal: controller.signal });
+      const bytes = await response.arrayBuffer();
+      if (!bytes.byteLength) throw new Error('empty-file');
+      return bytes;
+    } catch {
+      throw new Error('This phone could not read the selected proof. Choose a smaller JPG, PNG or PDF from Gallery or Downloads and try again.');
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+};
+
 const localDateKey = () => {
   const date = new Date();
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -54,6 +98,10 @@ export const AddStudyLogScreen = ({ navigation }: Props) => {
   const [tomorrowTarget, setTomorrowTarget] = useState('');
   const [mentorSupport, setMentorSupport] = useState('');
   const [proof, setProof] = useState<PickedProof | null>(null);
+  // Keep an immediate reference as well as render state. On memory-constrained
+  // Android devices this prevents a fast Submit tap from observing stale state
+  // just after DocumentPicker returns.
+  const proofRef = useRef<PickedProof | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -71,14 +119,21 @@ export const AddStudyLogScreen = ({ navigation }: Props) => {
       setError('Study proof must be 10 MB or smaller.');
       return;
     }
-    setProof({ uri: asset.uri, name: asset.name, mimeType: asset.mimeType || 'application/octet-stream', size });
+    const mimeType = proofMimeType(asset.name, asset.mimeType);
+    if (!SUPPORTED_PROOF_TYPES.has(mimeType)) {
+      setError('Choose a PDF, JPG, PNG or WebP proof file.');
+      return;
+    }
+    const selected = { uri: asset.uri, name: asset.name, mimeType, size };
+    proofRef.current = selected;
+    setProof(selected);
   };
 
   const toggleSubject = (value: string) => {
     setSubjects((current) => current.includes(value) ? current.filter((item) => item !== value) : [...current, value]);
   };
 
-  const validate = () => {
+  const validate = (selectedProof: PickedProof | null) => {
     const parsedHours = Number(hours);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(new Date(date).getTime())) return 'Enter a valid date in YYYY-MM-DD format.';
     if (!parsedHours || parsedHours <= 0 || parsedHours > 24) return 'Study hours must be between 0 and 24.';
@@ -87,27 +142,31 @@ export const AddStudyLogScreen = ({ navigation }: Props) => {
     if (planned === 'No' && reason === 'Other' && !otherReason.trim()) return 'Please specify the reason.';
     if (planned !== 'No' && !subjects.length) return 'Select at least one subject.';
     if (planned !== 'No' && !targetCompleted) return 'Select whether today’s target was completed.';
-    if (planned !== 'No' && !proof) return 'Attach today’s study proof (photo or PDF).';
+    if (planned !== 'No' && !selectedProof) return 'Attach today’s study proof (photo or PDF).';
     return '';
   };
 
   const submit = async () => {
-    const validationError = validate();
+    const selectedProof = proofRef.current || proof;
+    const validationError = validate(selectedProof);
     if (validationError) { setError(validationError); return; }
     setError('');
     setLoading(true);
     try {
       let proofUrl = '';
-      if (proof) {
+      if (selectedProof) {
         const saved = await getSavedSession();
         if (!saved) throw new Error('Your saved session expired. Sign in again before uploading proof.');
-        const file = new File(proof.uri);
+        const bytes = await readProofBytes(selectedProof.uri);
+        if (!bytes.byteLength || bytes.byteLength > MAX_PROOF_BYTES) {
+          throw new Error('Study proof must be between 1 byte and 10 MB.');
+        }
         const uploaded = await api.uploadProof({
           studentId: saved.studentId,
           password: saved.password,
-          fileName: proof.name,
-          mimeType: proof.mimeType,
-          bytes: await file.arrayBuffer(),
+          fileName: selectedProof.name,
+          mimeType: selectedProof.mimeType,
+          bytes,
         });
         proofUrl = uploaded.proofUrl;
       }
