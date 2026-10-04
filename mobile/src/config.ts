@@ -27,5 +27,8 @@ export const config = {
   // preview/read-only profiles still override both values through environment.
   allowModeSelection: requestedModeSwitch === 'true',
   requestTimeoutMs: 60_000,
+  // Proof upload authenticates with Mongo and then writes through Apps Script;
+  // slower mobile networks need a larger bound than ordinary JSON calls.
+  proofUploadTimeoutMs: 120_000,
   appVersion: (process.env.EXPO_PUBLIC_APP_VERSION || '1.14.5').trim(),
 };

@@ -13,6 +13,23 @@ test('Apps Script proof configuration works without a Drive service-account key'
   assert.equal(config.configured, true);
 });
 
+test('old Android generic MIME is inferred from an allow-listed file extension', async () => {
+  const result = await handleProofUpload({
+    method: 'PUT',
+    headers: {
+      'content-type': 'application/octet-stream',
+      'x-file-name': 'scan.pdf',
+      // Invalid on purpose: reaching this check proves MIME passed validation.
+      'x-student-id': '!',
+    },
+    readBody: async () => Buffer.from('not-read'),
+    mentorApiUrl: 'https://mentor.example',
+    env: { APPS_SCRIPT_URL: 'https://script.example/exec', PROOF_UPLOAD_KEY: 'key' },
+  });
+  assert.equal(result.status, 400);
+  assert.equal(result.body.error, 'Invalid student ID');
+});
+
 test('authenticated proof bytes are forwarded to the owner Apps Script', async (t) => {
   const originalFetch = globalThis.fetch;
   t.after(() => { globalThis.fetch = originalFetch; });
