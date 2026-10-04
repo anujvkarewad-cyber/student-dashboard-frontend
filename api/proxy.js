@@ -329,21 +329,24 @@ async function mirrorStudyLogToMongo(payload, gasResult) {
   const hosts = MENTOR_API_URL ? [MENTOR_API_URL] : [];
   const body = JSON.stringify({ action: "addStudyLog", payload, result: gasResult || {} });
   for (let i = 0; i < hosts.length; i++) {
+    const controller = new AbortController();
+    const timer = setTimeout(function () { controller.abort(); }, 12000);
     try {
-      const controller = new AbortController();
-      const timer = setTimeout(function () { controller.abort(); }, 12000);
       const response = await fetch(hosts[i] + "/api/student-dashboard/write", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body,
         signal: controller.signal
       });
-      clearTimeout(timer);
-      if (response.ok) return;
+      if (response.ok) return true;
+      console.error("Mongo study-log write rejected:", hosts[i], response.status);
     } catch (err) {
       console.error("Mongo study-log mirror failed:", hosts[i], err && err.message);
+    } finally {
+      clearTimeout(timer);
     }
   }
+  return false;
 }
 
 export default async function handler(req, res) {
@@ -440,7 +443,16 @@ export default async function handler(req, res) {
     }
 
     if (updateAction === "addStudyLog") {
-      await mirrorStudyLogToMongo(studyLogPayload(req), {});
+      // Mongo is the production source of truth. APPS_SCRIPT_URL now points to
+      // the narrowly scoped password-reset/proof service, so forwarding this
+      // action there would save the row in Mongo and then misleadingly tell the
+      // student "This option is not available." Return the authoritative write
+      // result immediately instead.
+      const saved = await mirrorStudyLogToMongo(studyLogPayload(req), {});
+      if (saved) return res.status(200).json({ result: { success: true } });
+      return res.status(502).json({
+        result: { success: false, message: "Could not save your study log. Please try again." }
+      });
     }
 
     if (updateAction === "deleteStudyLog") {
