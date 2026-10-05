@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as DocumentPicker from 'expo-document-picker';
-import { File } from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import React, { useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -22,9 +22,21 @@ type PickedProof = { uri: string; name: string; mimeType: string; size: number }
 const subjectsList = ['Accounts', 'Law', 'Taxation', 'Costing', 'Audit', 'FM', 'SM', 'Revision', 'Mock Test', 'Question Bank Practice'];
 const reasons = ['Health Issue', 'Family Function', 'Office / Job', 'College', 'Travelling', 'Power / Internet Issue', 'Personal Work', 'Low Motivation', 'Other'];
 const supportOptions = ['No', 'Subject Doubt', 'Time Management', 'Motivation', 'Study Planning', 'Personal Discussion'];
-// The Cloudflare gateway streams the original binary to Drive, avoiding the
-// old base64/JSON expansion. Keep this in sync with cloudflare/src/worker.js.
+// Cloud Run accepts the original binary and enforces the same limit/type list.
+// Keep this in sync with lib/proof-upload.js.
 const MAX_PROOF_BYTES = 10 * 1024 * 1024;
+const PROOF_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+const proofMimeType = (name: string, reported?: string | null) => {
+  const mime = String(reported || '').split(';')[0].toLowerCase();
+  if (PROOF_MIME_TYPES.includes(mime)) return mime;
+  const extension = name.toLowerCase().split('.').pop();
+  if (extension === 'jpg' || extension === 'jpeg') return 'image/jpeg';
+  if (extension === 'png') return 'image/png';
+  if (extension === 'webp') return 'image/webp';
+  if (extension === 'pdf') return 'application/pdf';
+  return '';
+};
+const safeCacheName = (name: string) => name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-100) || 'proof';
 const localDateKey = () => {
   const date = new Date();
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -59,19 +71,49 @@ export const AddStudyLogScreen = ({ navigation }: Props) => {
 
   const chooseProof = async () => {
     setError('');
-    const result = await DocumentPicker.getDocumentAsync({
-      type: ['image/*', 'application/pdf'],
-      copyToCacheDirectory: true,
-      multiple: false,
-    });
-    if (result.canceled) return;
-    const asset = result.assets[0];
-    const size = asset.size || 0;
-    if (size > MAX_PROOF_BYTES) {
-      setError('Study proof must be 10 MB or smaller.');
-      return;
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        // Do not offer HEIC or provider-specific image formats that the server
+        // cannot safely display. Old Android providers often misreport MIME,
+        // so the extension is checked below as a fallback.
+        type: PROOF_MIME_TYPES,
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+      if (result.canceled) return;
+      const asset = result.assets[0];
+      const mimeType = proofMimeType(asset.name, asset.mimeType);
+      if (!mimeType) {
+        setProof(null);
+        setError('Choose a JPEG, PNG, WebP or PDF proof file.');
+        return;
+      }
+
+      // Most devices already return a file:// cache copy. A few old Android
+      // document providers return content:// even when copying was requested;
+      // copy that stream into our cache before validating it.
+      let uri = asset.uri;
+      if (!uri.startsWith('file://')) {
+        if (!FileSystem.cacheDirectory) throw new Error('App cache is unavailable on this phone.');
+        const destination = `${FileSystem.cacheDirectory}proof-${Date.now()}-${safeCacheName(asset.name)}`;
+        await FileSystem.copyAsync({ from: uri, to: destination });
+        uri = destination;
+      }
+
+      const info = await FileSystem.getInfoAsync(uri);
+      if (!info.exists) throw new Error('The selected proof could not be read. Choose it again from Downloads or Gallery.');
+      const size = Number(('size' in info && info.size) || asset.size || 0);
+      if (size > MAX_PROOF_BYTES) {
+        setProof(null);
+        setError('Study proof must be 10 MB or smaller.');
+        return;
+      }
+      if (size <= 0) throw new Error('The selected proof is empty or unreadable. Choose another file.');
+      setProof({ uri, name: asset.name, mimeType, size });
+    } catch (error) {
+      setProof(null);
+      setError(error instanceof Error ? error.message : 'Could not read this proof file. Choose it again.');
     }
-    setProof({ uri: asset.uri, name: asset.name, mimeType: asset.mimeType || 'application/octet-stream', size });
   };
 
   const toggleSubject = (value: string) => {
@@ -101,13 +143,12 @@ export const AddStudyLogScreen = ({ navigation }: Props) => {
       if (proof) {
         const saved = await getSavedSession();
         if (!saved) throw new Error('Your saved session expired. Sign in again before uploading proof.');
-        const file = new File(proof.uri);
         const uploaded = await api.uploadProof({
           studentId: saved.studentId,
           password: saved.password,
           fileName: proof.name,
           mimeType: proof.mimeType,
-          bytes: await file.arrayBuffer(),
+          fileUri: proof.uri,
         });
         proofUrl = uploaded.proofUrl;
       }
