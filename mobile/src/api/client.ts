@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as FileSystem from 'expo-file-system/legacy';
 import { config } from '../config';
 import type {
   Announcement,
@@ -139,28 +140,45 @@ class ApiClient {
     return this.call<ApiSuccess>('deleteStudyLog', { studentId, ...entry });
   }
 
-  async uploadProof(input: { studentId: string; password: string; fileName: string; mimeType: string; bytes: ArrayBuffer }): Promise<{ proofUrl: string }> {
+  async uploadProof(input: { studentId: string; password: string; fileName: string; mimeType: string; fileUri: string }): Promise<{ proofUrl: string }> {
     this.blockBackendWrite('Proof upload');
-    if (!config.proofUploadUrl) throw new Error('Cloudflare proof upload is not configured for this build.');
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), config.requestTimeoutMs);
+    if (!config.proofUploadUrl) throw new Error('Proof upload is not configured for this build.');
+
+    // Stream from the app cache in native code. Loading the whole proof into a
+    // JavaScript ArrayBuffer made low-memory/older Android phones hang or lose
+    // the picked file before the request ever reached Cloud Run.
+    const uploadTask = FileSystem.createUploadTask(config.proofUploadUrl, input.fileUri, {
+      httpMethod: 'PUT',
+      uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+      mimeType: input.mimeType,
+      headers: {
+        'Content-Type': input.mimeType,
+        'X-Student-Id': input.studentId,
+        'X-Session-Password': input.password,
+        'X-File-Name': encodeURIComponent(input.fileName),
+      },
+    });
+    const upload = uploadTask.uploadAsync();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        void uploadTask.cancelAsync();
+        reject(new Error('Proof upload is taking too long. Check your connection and try once more.'));
+      }, 90_000);
+    });
+
     try {
-      const response = await fetch(config.proofUploadUrl, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': input.mimeType,
-          'X-Student-Id': input.studentId,
-          'X-Session-Password': input.password,
-          'X-File-Name': encodeURIComponent(input.fileName),
-        },
-        body: input.bytes,
-        signal: controller.signal,
-      });
-      const result = await response.json() as { proofUrl?: string; error?: string };
-      if (!response.ok || !result.proofUrl) throw new Error(result.error || `Proof upload failed (${response.status}).`);
+      const response = await Promise.race([upload, timeout]);
+      if (!response) throw new Error('Proof upload was cancelled. Please select the file again.');
+      let result: { proofUrl?: string; error?: string } = {};
+      try { result = JSON.parse(response.body || '{}') as typeof result; }
+      catch { throw new Error('Proof server returned an unreadable response. Please try again.'); }
+      if (response.status < 200 || response.status >= 300 || !result.proofUrl) {
+        throw new Error(result.error || `Proof upload failed (${response.status}).`);
+      }
       return { proofUrl: result.proofUrl };
     } finally {
-      clearTimeout(timeout);
+      if (timer) clearTimeout(timer);
     }
   }
 
