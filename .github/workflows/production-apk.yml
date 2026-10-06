@@ -256,7 +256,7 @@ jobs:
           compression-level: 0
 
       - name: Create GitHub Release (this repo)
-        if: github.event_name == 'push' || inputs.publish_live == true
+        if: github.event_name == 'workflow_dispatch' && inputs.publish_live == true
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.code }}
@@ -268,7 +268,7 @@ jobs:
           files: ${{ steps.meta.outputs.apk_name }}
 
       - name: Publish APK to UPM-Android-Releases (live channel)
-        if: github.event_name == 'push' || inputs.publish_live == true
+        if: github.event_name == 'workflow_dispatch' && inputs.publish_live == true
         env:
           RELEASES_PAT: ${{ secrets.RELEASES_PAT }}
           APK_NAME: ${{ steps.meta.outputs.apk_name }}
