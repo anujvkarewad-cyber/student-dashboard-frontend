@@ -26,6 +26,7 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { handleAndroidDownload } from "./lib/android-download.js";
 import { handleProofUpload } from "./lib/proof-upload.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -492,6 +493,11 @@ const server = http.createServer(async (req, res) => {
         backendConfigured: Boolean(MENTOR_API_URL),
         time: new Date().toISOString(),
       });
+      return;
+    }
+
+    if (pathname === "/download/android" || pathname === "/download/android/") {
+      await handleAndroidDownload(req, res);
       return;
     }
 
