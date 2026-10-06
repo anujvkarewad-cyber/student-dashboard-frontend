@@ -23,6 +23,11 @@ on:
         description: 'Release notes'
         required: false
         default: 'Moved to Google Cloud Run. Login and dashboard errors fixed. App is now Super 75 by Ujjwal.'
+      publish_live:
+        description: 'Publish to the live release channel after build'
+        type: boolean
+        required: true
+        default: false
   push:
     branches:
       - main
@@ -251,6 +256,7 @@ jobs:
           compression-level: 0
 
       - name: Create GitHub Release (this repo)
+        if: github.event_name == 'push' || inputs.publish_live == true
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.code }}
@@ -262,6 +268,7 @@ jobs:
           files: ${{ steps.meta.outputs.apk_name }}
 
       - name: Publish APK to UPM-Android-Releases (live channel)
+        if: github.event_name == 'push' || inputs.publish_live == true
         env:
           RELEASES_PAT: ${{ secrets.RELEASES_PAT }}
           APK_NAME: ${{ steps.meta.outputs.apk_name }}
