@@ -16,9 +16,64 @@ import type {
   WeeklyReport,
 } from '../types';
 type ApiEnvelope<T> = { result?: T; error?: string };
+type NativeJsonResponse<T> = { status: number; data: ApiEnvelope<T> };
 export type ApiMode = 'mock' | 'live-readonly' | 'live';
 
 const MODE_STORAGE_KEY = 'ump_api_mode_v2';
+
+/**
+ * React Native's fetch implementation can cancel otherwise healthy Android
+ * requests before response.json() runs (the affected devices report
+ * "fetch request has been canceled"). XHR uses React Native's mature native
+ * networking bridge and gives us deterministic timeout/status/response text.
+ *
+ * Deliberately one request only: silently retrying generic API calls could
+ * duplicate writes such as study logs or password changes.
+ */
+function postJsonNative<T>(
+  url: string,
+  body: Record<string, unknown>,
+  timeoutMs: number,
+): Promise<NativeJsonResponse<T>> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    let settled = false;
+
+    const fail = (message: string) => {
+      if (settled) return;
+      settled = true;
+      reject(new Error(message));
+    };
+
+    xhr.open('POST', url, true);
+    xhr.timeout = timeoutMs;
+    xhr.setRequestHeader('Content-Type', 'application/json');
+
+    xhr.onload = () => {
+      if (settled) return;
+      const raw = String(xhr.responseText || '').trim();
+      let data: ApiEnvelope<T>;
+      try {
+        data = JSON.parse(raw) as ApiEnvelope<T>;
+      } catch {
+        fail(`Server returned an unreadable response (HTTP ${xhr.status || 0}). Please try again.`);
+        return;
+      }
+      settled = true;
+      resolve({ status: xhr.status, data });
+    };
+    xhr.onerror = () => fail('Unable to connect. Check your internet connection and try again.');
+    xhr.ontimeout = () => fail('The server is taking too long to respond. Please try again.');
+    xhr.onabort = () => fail('The request was cancelled before completion. Please try again.');
+
+    try {
+      xhr.send(JSON.stringify(body));
+    } catch {
+      fail('Unable to start the request. Please reopen the app and try again.');
+    }
+  });
+}
+
 class ApiClient {
   private mode: ApiMode = config.defaultApiMode;
   private initialized = false;
@@ -58,41 +113,19 @@ class ApiClient {
   }
 
   private async call<T>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
-    if (!config.apiUrl) throw new Error('Cloudflare gateway is not configured for this build.');
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), config.requestTimeoutMs);
+    if (!config.apiUrl) throw new Error('Cloud gateway is not configured for this build.');
 
-    try {
-      const response = await fetch(config.apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, payload }),
-        signal: controller.signal,
-      });
+    const { status, data } = await postJsonNative<T>(
+      config.apiUrl,
+      { action, payload },
+      config.requestTimeoutMs,
+    );
 
-      let data: ApiEnvelope<T>;
-      try {
-        data = (await response.json()) as ApiEnvelope<T>;
-      } catch {
-        throw new Error('Server returned an unreadable response. Please try again.');
-      }
-
-      if (!response.ok) {
-        throw new Error(data.error || `Request failed (${response.status}).`);
-      }
-      if (data.error) throw new Error(data.error);
-      return data.result as T;
-    } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        throw new Error('The server is taking too long to respond. Please try again.');
-      }
-      if (error instanceof TypeError) {
-        throw new Error('Unable to connect. Check your internet connection and try again.');
-      }
-      throw error;
-    } finally {
-      clearTimeout(timeout);
+    if (status < 200 || status >= 300) {
+      throw new Error(data.error || `Request failed (${status}).`);
     }
+    if (data.error) throw new Error(data.error);
+    return data.result as T;
   }
 
   async getAppRelease(): Promise<AppRelease> {
