@@ -1,99 +1,185 @@
-import { config } from '../config';
-import { getSavedSession } from '../storage/session';
+/* UMP MCQ cloud backup / restore — classic browser script (no ESM, no TypeScript).
+ *
+ * History: the previous file was copied verbatim from the mobile TypeScript
+ * project. It opened with `import { config } from '../config'` and
+ * `import { getSavedSession } from '../storage/session'` — paths that do not
+ * exist in this web root — and it contained type annotations, so it could never
+ * execute in a browser no matter how it was loaded. As a result
+ * window.UMP_MCQ_CLOUD stayed undefined and mentor-side MCQ backup was silently
+ * switched off (every caller in learning-tools.js is guarded by
+ * `window.UMP_MCQ_CLOUD &&`, so nothing crashed).
+ *
+ * This rewrite keeps the same public surface — queue(daily, practice) and
+ * restore() — and talks to the same mentor endpoints, which are live and
+ * reachable through the student service:
+ *     POST {apiBase}/api/student-attempts/sync      {studentId, password, attempts}
+ *     POST {apiBase}/api/student-attempts/restore   {studentId, password}
+ * The backend models forbid extra keys (`extra="forbid"`), so this file sends
+ * exactly the allowed fields and sanitises every payload before sending.
+ */
+(function () {
+  "use strict";
 
-type McqReviewItem = {
-  id: string; prompt: string; options: string[]; answer: number;
-  selected?: number | null; explanation?: string; subject?: string;
-  chapter?: string; difficulty?: string; kind?: string; correct?: boolean;
-};
+  var SYNC_PATH = "/api/student-attempts/sync";
+  var RESTORE_PATH = "/api/student-attempts/restore";
+  var MAX_ATTEMPTS = 300;
+  var INFLIGHT_RESTORE = null;
 
-type LocalDaily = {
-  bankRevision?: string; date: string; group: string; questionIds: string[];
-  answers: Record<string, number>; startedAt: number; completedAt?: number;
-  score?: number; total?: number; durationSeconds?: number; review?: McqReviewItem[];
-};
+  function apiBase() {
+    return String(
+      (window.UMP_MENTOR_API_URL && window.UMP_MENTOR_API_URL()) ||
+      window.MENTOR_API_URL ||
+      "/api/mentor"
+    ).replace(/\/+$/, "");
+  }
 
-type LocalPractice = {
-  id: string;
-  bankRevision?: string;
-  config: {
-    group: string; subject: string; chapter: string; mode: string;
-    difficulty: string; requestedCount: number;
-  };
-  questionIds: string[]; answers: Record<string, number>; startedAt: number;
-  completedAt?: number; score?: number; total?: number; durationSeconds?: number; review?: McqReviewItem[];
-};
+  function session() {
+    try {
+      var raw = JSON.parse(localStorage.getItem("ump_student") || "null") || {};
+      var studentId = String(raw.studentId || "").trim().toUpperCase();
+      var password = String(raw.password || "");
+      if (!studentId || !password) return null;
+      return { studentId: studentId, password: password };
+    } catch (_) {
+      return null;
+    }
+  }
 
-type CloudAttempt = Record<string, unknown> & { attemptId: string; kind: 'daily' | 'practice' };
-type RestoredAttempts = { daily: LocalDaily[]; practice: LocalPractice[] };
-let restorePromise: Promise<RestoredAttempts> | null = null;
+  function post(path, payload) {
+    var current = session();
+    if (!current) {
+      return Promise.reject(new Error("Student login is required for MCQ cloud backup"));
+    }
+    return fetch(apiBase() + path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(Object.assign({ studentId: current.studentId, password: current.password }, payload)),
+    }).then(function (response) {
+      if (!response.ok) throw new Error("MCQ cloud request failed (" + response.status + ")");
+      return response.json();
+    });
+  }
 
-const post = async <T,>(path: string, payload: Record<string, unknown>): Promise<T> => {
-  const session = await getSavedSession();
-  if (!session) throw new Error('Student login is required for MCQ cloud backup');
-  const response = await fetch(`${config.mentorApiUrl}${path}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...session, ...payload }),
-  });
-  if (!response.ok) throw new Error(`MCQ cloud request failed (${response.status})`);
-  return response.json() as Promise<T>;
-};
+  // ---------- payload building (bounded to what the backend accepts) ----------
+  function int(value, fallback) {
+    var n = Number(value);
+    return isFinite(n) ? Math.round(n) : fallback;
+  }
 
-const dailyToCloud = (attempt: LocalDaily): CloudAttempt | null => attempt.completedAt ? {
-  attemptId: `daily:${attempt.date}:${attempt.group}`,
-  kind: 'daily',
-  bankRevision: attempt.bankRevision || 'unknown',
-  date: attempt.date,
-  group: attempt.group,
-  questionIds: attempt.questionIds,
-  answers: attempt.answers,
-  startedAt: attempt.startedAt,
-  completedAt: attempt.completedAt,
-  score: attempt.score || 0,
-  total: attempt.total || attempt.questionIds.length,
-  durationSeconds: attempt.durationSeconds || 0,
-  review: attempt.review || [],
-} : null;
+  function txt(value, max, fallback) {
+    var s = String(value == null ? "" : value).trim();
+    if (!s) s = fallback || "";
+    return s.slice(0, max);
+  }
 
-const practiceToCloud = (attempt: LocalPractice): CloudAttempt | null => attempt.completedAt ? {
-  attemptId: attempt.id,
-  kind: 'practice',
-  bankRevision: attempt.bankRevision || 'unknown',
-  config: attempt.config,
-  questionIds: attempt.questionIds,
-  answers: attempt.answers,
-  startedAt: attempt.startedAt,
-  completedAt: attempt.completedAt,
-  score: attempt.score || 0,
-  total: attempt.total || attempt.questionIds.length,
-  durationSeconds: attempt.durationSeconds || 0,
-  review: attempt.review || [],
-} : null;
+  function cleanReview(review) {
+    if (!Array.isArray(review)) return null;
+    var out = review.filter(function (item) {
+      return item && typeof item.id === "string" && item.id.length > 0;
+    }).slice(0, 50);
+    return out.length ? out : null;
+  }
 
-export const syncCompletedMcqAttempts = async (daily: LocalDaily[] = [], practice: LocalPractice[] = []) => {
-  const attempts = [
-    ...daily.map(dailyToCloud).filter(Boolean),
-    ...practice.map(practiceToCloud).filter(Boolean),
-  ] as CloudAttempt[];
-  if (!attempts.length) return { ok: true, accepted: 0 };
-  return post<{ ok: boolean; accepted: number }>('/api/student-attempts/sync', { attempts });
-};
+  function cleanAnswers(answers) {
+    var out = {};
+    var keys = answers && typeof answers === "object" ? Object.keys(answers).slice(0, 50) : [];
+    keys.forEach(function (key) {
+      var choice = int(answers[key], -1);
+      if (choice >= 0 && choice <= 3) out[key] = choice;
+    });
+    return out;
+  }
 
-export const restoreMcqAttempts = async (): Promise<RestoredAttempts> => {
-  if (restorePromise) return restorePromise;
-  restorePromise = (async () => {
-    const data = await post<{ daily: CloudAttempt[]; practice: CloudAttempt[] }>('/api/student-attempts/restore', {});
+  function cleanConfig(config) {
+    var c = config && typeof config === "object" ? config : {};
     return {
-      daily: (data.daily || []).map((item) => {
-        const { attemptId: _attemptId, kind: _kind, ...attempt } = item;
-        return attempt as LocalDaily;
-      }),
-      practice: (data.practice || []).map((item) => {
-        const { attemptId, kind: _kind, ...attempt } = item;
-        return { ...attempt, id: attemptId } as LocalPractice;
-      }),
+      group: txt(c.group, 32, "Combined"),
+      subject: txt(c.subject, 80, "All Subjects"),
+      chapter: txt(c.chapter, 240, "All Chapters"),
+      mode: txt(c.mode, 32, "Mixed"),
+      difficulty: txt(c.difficulty, 32, "Mixed"),
+      requestedCount: Math.min(50, Math.max(1, int(c.requestedCount, 10))),
     };
-  })();
-  try { return await restorePromise; } finally { restorePromise = null; }
-};
+  }
+
+  function toCloud(attempt, kind, attemptId) {
+    if (!attempt || !attempt.completedAt) return null; // only completed attempts travel
+    var ids = (Array.isArray(attempt.questionIds) ? attempt.questionIds : [])
+      .filter(function (id) { return typeof id === "string" && id.length > 0; })
+      .slice(0, 50);
+    if (!ids.length) return null;
+    var payload = {
+      attemptId: String(attemptId || "").slice(0, 180),
+      kind: kind,
+      bankRevision: txt(attempt.bankRevision, 120, "unknown"),
+      questionIds: ids,
+      answers: cleanAnswers(attempt.answers),
+      startedAt: Math.max(0, int(attempt.startedAt, 0)),
+      completedAt: Math.max(0, int(attempt.completedAt, 0)),
+      score: Math.min(50, Math.max(0, int(attempt.score, 0))),
+      total: Math.min(50, Math.max(1, int(attempt.total, ids.length) || ids.length)),
+      durationSeconds: Math.min(86400, Math.max(0, int(attempt.durationSeconds, 0))),
+    };
+    if (!payload.attemptId) return null;
+    if (kind === "daily") {
+      payload.date = txt(attempt.date, 16, "");
+      payload.group = txt(attempt.group, 32, "");
+    } else {
+      payload.config = cleanConfig(attempt.config);
+    }
+    var review = cleanReview(attempt.review);
+    if (review) payload.review = review;
+    return payload;
+  }
+
+  // ---------- public API ----------
+  function syncCompletedMcqAttempts(daily, practice) {
+    var attempts = [];
+    (Array.isArray(daily) ? daily : []).forEach(function (attempt) {
+      var clean = toCloud(attempt, "daily", "daily:" + (attempt && attempt.date) + ":" + (attempt && attempt.group));
+      if (clean) attempts.push(clean);
+    });
+    (Array.isArray(practice) ? practice : []).forEach(function (attempt) {
+      var clean = toCloud(attempt, "practice", attempt && attempt.id);
+      if (clean) attempts.push(clean);
+    });
+    if (!attempts.length) return Promise.resolve({ ok: true, accepted: 0 });
+    // Fire-and-forget callers: never reject, just log, so the UI can never break.
+    return post(SYNC_PATH, { attempts: attempts.slice(-MAX_ATTEMPTS) }).catch(function (error) {
+      console.warn("[MCQ Cloud] Backup skipped:", error.message);
+      return { ok: false, accepted: 0 };
+    });
+  }
+
+  function strip(item) {
+    var out = {};
+    Object.keys(item || {}).forEach(function (key) {
+      if (key !== "attemptId" && key !== "kind") out[key] = item[key];
+    });
+    return out;
+  }
+
+  function restoreMcqAttempts() {
+    if (INFLIGHT_RESTORE) return INFLIGHT_RESTORE;
+    INFLIGHT_RESTORE = post(RESTORE_PATH, {}).then(function (data) {
+      return {
+        daily: ((data && data.daily) || []).map(strip),
+        practice: ((data && data.practice) || []).map(function (item) {
+          var attempt = strip(item);
+          attempt.id = item && item.attemptId ? item.attemptId : attempt.id;
+          return attempt;
+        }),
+      };
+    });
+    var clear = function () { INFLIGHT_RESTORE = null; };
+    INFLIGHT_RESTORE.then(clear, clear);
+    return INFLIGHT_RESTORE;
+  }
+
+  window.UMP_MCQ_CLOUD = {
+    queue: syncCompletedMcqAttempts,
+    sync: syncCompletedMcqAttempts,
+    restore: restoreMcqAttempts,
+    version: "web-1.0.0",
+  };
+})();

@@ -1,4 +1,4 @@
-const APP_VERSION = "2.6.1";
+const APP_VERSION = "2.6.3";
 
 (function () {
   "use strict";
@@ -796,18 +796,10 @@ const APP_VERSION = "2.6.1";
       list.textContent = "No mentor test is published yet.";
       return;
     }
-    list.innerHTML = tests.map((test) => "<button type='button' class='btn-primary sm' data-test='" + escapeHtml(test.id) + "' style='margin:0 8px 8px 0;'>" + escapeHtml(test.title) + "</button>").join("")
-      + "<button type='button' class='btn-primary sm' id='open-paper-test' style='margin:0 8px 8px 0;'>Accounting Standards — Batch Test</button>";
+    list.innerHTML = tests.map((test) => "<button type='button' class='btn-primary sm' data-test='" + escapeHtml(test.id) + "' style='margin:0 8px 8px 0;'>" + escapeHtml(test.title) + "</button>").join("");
     list.querySelectorAll("[data-test]").forEach((btn) => {
       btn.onclick = () => startWebTest(tests.find((item) => item.id === btn.dataset.test), player);
     });
-    const paper = $("#open-paper-test");
-    if (paper) paper.onclick = () => {
-      player.innerHTML = "<h3>Accounting Standards — Batch Test</h3><p class='muted'>Write your answers on paper, then reveal the answer key.</p><img alt='Test paper' src='assets/tests/paper-1.jpg' style='max-width:100%;border-radius:12px;'/><button type='button' class='btn-primary sm' id='reveal-key' style='margin-top:12px;'>Show answer key</button>";
-      $("#reveal-key").onclick = () => {
-        player.insertAdjacentHTML("beforeend", "<h3 style='margin-top:16px;'>Answer key</h3><img alt='Answer key' src='assets/tests/answer-key-1.jpg' style='max-width:100%;border-radius:12px;'/>");
-      };
-    };
   }
 
   function startWebTest(test, player) {
