@@ -4744,3 +4744,14 @@ button.lt-chip:hover:not(:disabled) { border-color: var(--lt-primary); color: va
   .lt-group-card b { font-size: 10px; }
   .lt-calendar { width: 55px; height: 58px; }
 }
+
+/* Added for the Today's-target tick (replaces the receipt answer + save flow). */
+.target-done{display:inline-flex;align-items:center;gap:11px;margin-top:16px;
+  border:1px solid #E2E8F0;background:#fff;border-radius:14px;padding:12px 18px;
+  font:inherit;font-size:14px;font-weight:700;color:#334155;cursor:pointer;transition:.2s}
+.target-done:hover{border-color:#BBF7D0;background:#F6FEF9}
+.target-tick{width:24px;height:24px;border-radius:8px;border:2px solid #CBD5E1;
+  display:grid;place-items:center;color:transparent;transition:.2s;flex:0 0 auto}
+.target-tick i{font-size:12px}
+.target-done.is-done{border-color:#34D399;background:#ECFDF5;color:#047857}
+.target-done.is-done .target-tick{background:#34D399;border-color:#34D399;color:#fff}

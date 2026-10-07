@@ -420,6 +420,8 @@ const APP_VERSION = "2.6.1";
         dashboard: renderDashboard,
         tracker: renderTracker,
         focus: renderFocus,
+        tutor: renderTutor,
+        tests: renderTests,
         mcq: renderMCQ,
         performance: renderPerformance,
         leaderboard: renderLeaderboard,
@@ -597,30 +599,6 @@ const APP_VERSION = "2.6.1";
       }
     });
 
-    const box = document.getElementById("announcement-list");
-    if (box) {
-      if (!state.announcements || state.announcements.length === 0) {
-        box.innerHTML = "<div class='muted'>No announcements available.</div>";
-      } else {
-        box.innerHTML = state.announcements.map(a => `
-          <div class="announcement-item">
-            <div class="announcement-dot"></div>
-            <div class="announcement-content">
-              <div class="announcement-top">
-                <h4>${escapeHtml(a.title)}</h4>
-                <span>${escapeHtml(a.date)}</span>
-              </div>
-              <p>${escapeHtml(a.message)}</p>
-            </div>
-          </div>
-        `).join("");
-      }
-    }
-
-    const notesBox = document.getElementById("mentor-notes-list");
-    if (notesBox) {
-      renderMentorNotes(state.mentorNotes || []);
-    }
   }
 
   function lastNDates(n) {
@@ -742,6 +720,31 @@ const APP_VERSION = "2.6.1";
       target.innerHTML = tasks.map((task) => "<div style='padding:8px 0;border-bottom:1px solid #eef2f7;'><b>" + escapeHtml(task.label || task.title || task.task || "Task") + "</b><div class='muted'>" + escapeHtml(task.detail || task.subject || "") + "</div></div>").join("");
     }).catch(() => { target.textContent = "Today's target could not be loaded. Please try again."; });
 
+    const box = document.getElementById("announcement-list");
+    if (box) {
+      if (!state.announcements || state.announcements.length === 0) {
+        box.innerHTML = "<div class='muted'>No announcements available.</div>";
+      } else {
+        box.innerHTML = state.announcements.map(a => `
+          <div class="announcement-item">
+            <div class="announcement-dot"></div>
+            <div class="announcement-content">
+              <div class="announcement-top">
+                <h4>${escapeHtml(a.title)}</h4>
+                <span>${escapeHtml(a.date)}</span>
+              </div>
+              <p>${escapeHtml(a.message)}</p>
+            </div>
+          </div>
+        `).join("");
+      }
+    }
+
+    const notesBox = document.getElementById("mentor-notes-list");
+    if (notesBox) {
+      renderMentorNotes(state.mentorNotes || []);
+    }
+
     const revisionBox = $("#tutor-revision");
     const paintPlan = (plan) => {
       const chapters = (plan && plan.chapters) || [];
@@ -754,31 +757,14 @@ const APP_VERSION = "2.6.1";
     };
     callAPI("revision.plan", { studentId: student.studentId }).then(paintPlan).catch(() => { if (revisionBox) revisionBox.textContent = "Revision dates could not be loaded."; });
 
-    const saveReceipt = $("#tutor-receipt-save");
-    if (saveReceipt) {
-      saveReceipt.onclick = () => {
-        const answer = ($("#tutor-receipt-answer").value || "").trim();
-        const firstTask = ($("#tutor-target").innerText || "").split("\n").map((line) => line.trim()).find((line) => line && line !== "Loading today's target..." && line !== "No target is published for today yet.");
-        if (answer.length < 20) {
-          revisionBox.textContent = "Write the receipt answer before saving the mark.";
-          return;
-        }
-        revisionBox.textContent = "Marking the receipt answer...";
-        callAPI("ai.evaluate", {
-          studentId: student.studentId,
-          question: firstTask || "Today's target",
-          studentAnswer: answer,
-          concept: firstTask || "Today's target",
-          confidence: "Medium"
-        }).then((marked) => {
-          if (!marked || marked.ok === false) {
-            revisionBox.textContent = (marked && marked.error) || "The mark could not be saved. Please try again.";
-            return;
-          }
-          const when = marked.revision && marked.revision.dueOn ? " Revision date: " + marked.revision.dueOn + "." : "";
-          revisionBox.textContent = "Saved as " + ((marked.revision && marked.revision.strength) || "marked") + "." + when;
-          return callAPI("revision.plan", { studentId: student.studentId });
-        }).then((plan) => { if (plan) paintPlan(plan); }).catch(() => { revisionBox.textContent = "The mark could not be saved. Please try again."; });
+    // Today's target is a simple tick now: no receipt answer, no mark to save.
+    const doneTick = $("#tutor-target-done");
+    if (doneTick) {
+      doneTick.onclick = () => {
+        const on = doneTick.classList.toggle("is-done");
+        doneTick.setAttribute("aria-pressed", on ? "true" : "false");
+        const label = doneTick.querySelector(".target-done-label");
+        if (label) label.textContent = on ? "Target done" : "Mark target as done";
       };
     }
 
@@ -791,15 +777,6 @@ const APP_VERSION = "2.6.1";
     };
     callAPI("messages.thread", { studentId: student.studentId }).then((data) => paintThread((data && data.messages) || [])).catch(() => { thread.textContent = "Messages could not be loaded."; });
 
-    $("#tutor-ask").onclick = () => {
-      const question = ($("#tutor-question").value || "").trim();
-      const box = $("#tutor-answer");
-      if (!question) { box.textContent = "Type a question first."; return; }
-      box.textContent = "Checking the study material...";
-      callAPI("ai.ask", { studentId: student.studentId, question: question }).then((data) => {
-        box.textContent = (data && data.answer) || "No answer was returned.";
-      }).catch(() => { box.textContent = "The tutor is busy. Please try again."; });
-    };
     $("#tutor-send").onclick = () => {
       const text = ($("#tutor-message").value || "").trim();
       if (!text) return;
@@ -2112,7 +2089,7 @@ const APP_VERSION = "2.6.1";
       state.studyNotes = studyNotes;
       state.reports = reports;
       const activeView = (location.hash || "#dashboard").slice(1);
-      if (activeView === "dashboard") {
+      if (activeView === "tutor") {
         renderMentorNotes(state.mentorNotes || []);
         const box = document.getElementById("announcement-list");
         if (box && state.announcements) {

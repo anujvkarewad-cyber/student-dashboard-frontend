@@ -415,40 +415,7 @@
         <div class="kpi-foot">hours this month</div>
       </div>
     </section>
-    
-    <section class="card">
 
-    <div class="card-head">
-        <h3>📢 Updates</h3>
-    </div>
-
-    <div class="two-col">
-
-        <!-- Announcements -->
-        <div class="announcement-card">
-            <div class="card-head">
-                <h3>📢 Announcements</h3>
-            </div>
-
-            <div class="announcement-container">
-                <div id="announcement-list"></div>
-            </div>
-        </div>
-
-        <!-- Mentor Notes -->
-        <div class="announcement-card">
-            <div class="card-head">
-                <h3>📝 Mentor Notes</h3>
-            </div>
-
-            <div class="announcement-container mentor-notes-container">
-                <div id="mentor-notes-list"></div>
-            </div>
-        </div>
-
-    </div>
-
-</section>
 
     <section class="two-col">
       <div class="card">
@@ -556,20 +523,49 @@
 
 <template id="tpl-tutor">
   <div class="view" data-testid="view-tutor">
+
+    <section class="card">
+
+    <div class="card-head">
+        <h3>📢 Updates</h3>
+    </div>
+
+    <div class="two-col">
+
+        <!-- Announcements -->
+        <div class="announcement-card">
+            <div class="card-head">
+                <h3>📢 Announcements</h3>
+            </div>
+
+            <div class="announcement-container">
+                <div id="announcement-list"></div>
+            </div>
+        </div>
+
+        <!-- Mentor Notes -->
+        <div class="announcement-card">
+            <div class="card-head">
+                <h3>📝 Mentor Notes</h3>
+            </div>
+
+            <div class="announcement-container mentor-notes-container">
+                <div id="mentor-notes-list"></div>
+            </div>
+        </div>
+
+    </div>
+
+</section>
+
     <div class="card">
-      <div class="card-head"><h3>Today's target</h3><span class="muted">Do this on the timer. Receipt answers set the revision date.</span></div>
+      <div class="card-head"><h3>Today's target</h3><span class="muted">Tick it off once today’s target is finished.</span></div>
       <div id="tutor-target" class="muted">Loading today's target...</div>
-      <p class="muted" style="margin-top:12px;">Do the target on the timer. When you finish, answer one receipt question below. The mark is saved as weak, average, or strong, and that sets the revision date.</p>
-      <textarea id="tutor-receipt-answer" rows="4" style="width:100%;border:1px solid #e5e7eb;border-radius:12px;padding:12px;font:inherit;margin-top:10px;" placeholder="Write the receipt answer in your own words"></textarea>
-      <button type="button" class="btn-primary sm" id="tutor-receipt-save" style="margin-top:10px;">Save receipt mark</button>
-      <div id="tutor-revision" class="muted" style="margin-top:12px;"></div>
+
+      <button type="button" class="target-done" id="tutor-target-done" aria-pressed="false" data-testid="target-done"><span class="target-tick"><i class="fa-solid fa-check"></i></span><span class="target-done-label">Mark target as done</span></button>
+
     </div>
-    <div class="card" style="margin-top:16px;">
-      <div class="card-head"><h3>Ask the tutor</h3><span class="muted">English only. ICAI study material.</span></div>
-      <textarea id="tutor-question" rows="4" style="width:100%;border:1px solid #e5e7eb;border-radius:12px;padding:12px;font:inherit;" placeholder="Ask a CA Intermediate question"></textarea>
-      <button type="button" class="btn-primary sm" id="tutor-ask" style="margin-top:10px;">Ask</button>
-      <div id="tutor-answer" style="margin-top:14px;white-space:pre-wrap;line-height:1.6;"></div>
-    </div>
+
     <div class="card" style="margin-top:16px;">
       <div class="card-head"><h3>Messages</h3><span class="muted">Write to your mentor</span></div>
       <div id="tutor-thread" class="muted">Loading messages...</div>
