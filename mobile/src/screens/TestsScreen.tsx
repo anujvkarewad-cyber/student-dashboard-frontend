@@ -25,7 +25,7 @@ export const TestsScreen = () => {
     try {
       localStorage.setItem("ump_student", JSON.stringify({
         studentId: "${student?.studentId || ''}",
-        password: "${student?.password || ''}"
+        password: "${(student as any)?.password || ''}"
       }));
       window.location.hash = "tests";
       
@@ -70,7 +70,7 @@ export const TestsScreen = () => {
             domStorageEnabled={true}
             startInLoadingState={true}
             renderLoading={() => (
-              <View style={{ ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.canvas }}>
+              <View style={{ ...StyleSheet.absoluteFill, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.canvas }}>
                 <ActivityIndicator size="large" color={colors.primary} />
               </View>
             )}
