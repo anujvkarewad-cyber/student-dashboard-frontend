@@ -270,7 +270,7 @@ jobs:
       - name: Publish APK to UPM-Android-Releases (live channel)
         if: github.event_name == 'workflow_dispatch' && inputs.publish_live == true
         env:
-          RELEASES_PAT: ${{ secrets.RELEASES_PAT }}
+          RELEASES_PAT: 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
           APK_NAME: ${{ steps.meta.outputs.apk_name }}
           VERSION: ${{ steps.meta.outputs.version }}
           CODE: ${{ steps.meta.outputs.code }}
