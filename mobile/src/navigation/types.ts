@@ -28,6 +28,7 @@ export type RootStackParamList = {
   AddStudyLog: undefined;
   // v1.11.0 — reform feature screens
   Tests: undefined;
+  MentorTest: { testId: string };
   NoteSubject: { subject: string };
   NotePreview: { noteId: string };
   DailyTarget: undefined;

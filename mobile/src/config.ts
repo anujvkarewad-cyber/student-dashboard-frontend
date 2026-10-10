@@ -27,5 +27,5 @@ export const config = {
   // preview/read-only profiles still override both values through environment.
   allowModeSelection: requestedModeSwitch === 'true',
   requestTimeoutMs: 60_000,
-  appVersion: (process.env.EXPO_PUBLIC_APP_VERSION || '1.14.8').trim(),
+  appVersion: (process.env.EXPO_PUBLIC_APP_VERSION || '1.15.0').trim(),
 };

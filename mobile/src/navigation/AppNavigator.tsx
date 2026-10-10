@@ -30,6 +30,7 @@ import { RemindersScreen } from '../screens/RemindersScreen';
 import { ReportsScreen } from '../screens/ReportsScreen';
 import { StudyReceiptScreen } from '../screens/StudyReceiptScreen';
 import { TestPaperScreen } from '../screens/TestPaperScreen';
+import { MentorTestScreen } from '../screens/MentorTestScreen';
 import { TestPlayerScreen } from '../screens/TestPlayerScreen';
 import { TestResultScreen } from '../screens/TestResultScreen';
 import { TestsScreen } from '../screens/TestsScreen';
@@ -215,6 +216,7 @@ export const AppNavigator = () => {
             <RootStack.Screen name="AddStudyLog" component={AddStudyLogScreen} options={{ title: 'Log study hours', presentation: 'modal', animation: 'slide_from_bottom' }} />
             {/* v1.11.0 reform screens */}
             <RootStack.Screen name="Tests" component={TestsScreen} options={{ title: 'Tests' }} />
+            <RootStack.Screen name="MentorTest" component={MentorTestScreen} options={{ title: 'Mentor Test' }} />
             <RootStack.Screen name="NoteSubject" component={NoteSubjectScreen} options={({ route }) => ({ title: route.params.subject })} />
             <RootStack.Screen name="NotePreview" component={NotePreviewScreen} options={{ title: 'Protected note preview' }} />
             <RootStack.Screen name="DailyTarget" component={DailyTargetScreen} options={{ title: "Today's Target" }} />

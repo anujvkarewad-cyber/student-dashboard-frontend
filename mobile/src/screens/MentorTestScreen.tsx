@@ -1,0 +1,357 @@
+import { Ionicons } from '@expo/vector-icons';
+import { useRoute } from '@react-navigation/native';
+import type { RouteProp } from '@react-navigation/native';
+import * as DocumentPicker from 'expo-document-picker';
+import * as ImagePicker from 'expo-image-picker';
+import * as LegacyFileSystem from 'expo-file-system/legacy';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { WebView } from 'react-native-webview';
+import { Card, ErrorBanner, PrimaryButton, SectionHeader } from '../components/ui';
+import { useAuth } from '../context/AuthContext';
+import type { RootStackParamList } from '../navigation/types';
+import {
+  fetchPdfBase64,
+  getPaperMeta,
+  MAX_UPLOAD_BYTES,
+  submitSelfMarks,
+  uploadAnswerSheet,
+  type PaperMeta,
+} from '../services/mentorTests';
+import { PDF_VIEWER_HTML } from '../services/pdfViewerBundle';
+import { colors, radius, spacing } from '../theme';
+
+/**
+ * v1.15.0 - native 4-step Mentor Test flow (no WebView portal):
+ *  1 Download & solve  2 Upload answer sheet (<=10MB)  3 Self-evaluation
+ *  4 Submit marks & mistakes. Documents open in a protected in-app viewer
+ *  (in-memory only, watermarked, no export/share).
+ */
+export const MentorTestScreen = () => {
+  const route = useRoute<RouteProp<RootStackParamList, 'MentorTest'>>();
+  const testId = route.params.testId;
+  const { student } = useAuth();
+
+  const [meta, setMeta] = useState<PaperMeta | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const [answerUrl, setAnswerUrl] = useState('');          // set after successful upload
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+
+  const [evaluated, setEvaluated] = useState<{ score?: number; total?: number } | null>(null);
+  const [marksInput, setMarksInput] = useState('');
+  const [remarks, setRemarks] = useState('');
+  const [marksError, setMarksError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  // Protected viewer state
+  const [viewer, setViewer] = useState<{ label: string; b64: string } | null>(null);
+  const viewerRef = useRef<WebView | null>(null);
+  const viewerReady = useRef(false);
+  const pendingChunks = useRef<string[]>([]);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const m = await getPaperMeta(testId);
+        if (!alive) return;
+        setMeta(m);
+        setError('');
+      } catch (e) {
+        if (alive) setError(e instanceof Error ? e.message : 'Could not load this test.');
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, [testId]);
+
+  const unlocked = Boolean(answerUrl) || Boolean(evaluated);
+
+  const openProtected = async (url: string | null, label: string) => {
+    if (!url) return;
+    try {
+      setError('');
+      const b64 = await fetchPdfBase64(url); // memory only - never written to disk
+      pendingChunks.current = [];
+      viewerReady.current = false;
+      setViewer({ label, b64 });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not open the document.');
+    }
+  };
+
+  const feedViewer = async () => {
+    const wv = viewerRef.current;
+    const b64 = viewer?.b64;
+    if (!wv || !b64 || viewerReady.current) return;
+    const CH = 262144;
+    for (let i = 0; i < b64.length; i += CH) {
+      const chunk = JSON.stringify(b64.slice(i, i + CH));
+      await wv.injectJavaScript(`window.__pushChunk(${chunk}); true;`);
+    }
+    const wm = JSON.stringify(`${student?.studentId || 'STUDENT'} · ${student?.studentName || ''} · confidential`);
+    await wv.injectJavaScript(`window.__render(${wm}); true;`);
+    viewerReady.current = true;
+  };
+
+  const pickAndUpload = async (source: 'camera' | 'gallery' | 'file') => {
+    if (uploading || evaluated) return;
+    setUploadError('');
+    try {
+      let uri = '';
+      let name = `answer-${Date.now()}.jpg`;
+      let mime = 'image/jpeg';
+      if (source === 'camera') {
+        const r = await ImagePicker.launchCameraAsync({ quality: 0.75 });
+        if (r.canceled || !r.assets?.length) return;
+        uri = r.assets[0].uri;
+        mime = r.assets[0].mimeType || mime;
+      } else if (source === 'gallery') {
+        const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.85 });
+        if (r.canceled || !r.assets?.length) return;
+        uri = r.assets[0].uri;
+        mime = r.assets[0].mimeType || mime;
+      } else {
+        const r = await DocumentPicker.getDocumentAsync({ type: ['application/pdf', 'image/*'], copyToCacheDirectory: true });
+        if (r.canceled || !r.assets?.length) return;
+        uri = r.assets[0].uri;
+        name = r.assets[0].name || name;
+        mime = r.assets[0].mimeType || (name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : mime);
+      }
+      const info = await LegacyFileSystem.getInfoAsync(uri);
+      const size = (info as { size?: number }).size || 0;
+      if (size > MAX_UPLOAD_BYTES) {
+        setUploadError('File is larger than 10 MB. Photograph fewer pages or compress the PDF, then try again.');
+        return;
+      }
+      setUploading(true);
+      const base64 = await LegacyFileSystem.readAsStringAsync(uri, { encoding: LegacyFileSystem.EncodingType.Base64 });
+      const url = await uploadAnswerSheet({ base64, mimeType: mime, filename: name });
+      setAnswerUrl(url);
+    } catch (e) {
+      setUploadError(e instanceof Error ? `Upload failed: ${e.message}` : 'Upload failed. Try again.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const submit = async () => {
+    if (submitting) return;
+    setMarksError('');
+    const marks = Number(marksInput);
+    const max = meta?.maxMarks ?? null;
+    if (marksInput.trim() === '' || Number.isNaN(marks) || marks < 0) {
+      setMarksError('Enter the marks you scored.');
+      return;
+    }
+    if (max != null && marks > max) {
+      setMarksError(`Marks cannot be greater than ${max}.`);
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const res = await submitSelfMarks({ testId, selfMarks: marks, remarks, answerUrl });
+      setEvaluated({ score: res.score ?? marks, total: res.total ?? max ?? undefined });
+    } catch (e) {
+      setMarksError(e instanceof Error ? e.message : 'Submit failed. Try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <SafeAreaView style={styles.page} edges={['top']}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
+        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          <View style={styles.header}>
+            <Text style={styles.title}>{meta?.title || 'Mentor test'}</Text>
+            <Text style={styles.subtitle}>
+              {[meta?.subject, meta?.maxMarks ? `${meta.maxMarks} marks` : null, meta?.durationMinutes ? `${meta.durationMinutes} min` : null]
+                .filter(Boolean)
+                .join(' · ') || 'Paper test'}
+            </Text>
+          </View>
+
+          {error ? <ErrorBanner message={error} /> : null}
+
+          {loading ? (
+            <Card style={styles.card}><ActivityIndicator color={colors.primary} /></Card>
+          ) : evaluated ? (
+            <Card style={styles.evalCard}>
+              <Text style={styles.evalTitle}>✅ Test Evaluated</Text>
+              <Text style={styles.evalScore}>{evaluated.score} / {evaluated.total ?? '?'}</Text>
+              <Text style={styles.evalSub}>Your self-evaluation has been recorded and sent to your mentor.</Text>
+            </Card>
+          ) : (
+            <>
+              <SectionHeader title="Step 1 · Download & solve" />
+              <Card style={styles.card}>
+                {meta?.paperUrl ? (
+                  <PrimaryButton label="📄 Open Question Paper" icon="document-text-outline" onPress={() => void openProtected(meta.paperUrl, 'Question Paper')} />
+                ) : (
+                  <Text style={styles.muted}>No question paper attached to this test.</Text>
+                )}
+                {meta?.instructions ? <Text style={styles.instructions}>{meta.instructions}</Text> : null}
+              </Card>
+
+              <SectionHeader title="Step 2 · Upload answer sheet" />
+              <Card style={styles.card}>
+                {answerUrl ? (
+                  <View style={styles.okBox}>
+                    <Ionicons name="cloud-done" size={20} color={colors.teal} />
+                    <Text style={styles.okText}>Answer sheet uploaded — self-evaluation unlocked below.</Text>
+                  </View>
+                ) : (
+                  <>
+                    <Text style={styles.muted}>Upload a PDF or photos of your hand-written answers (max 10 MB).</Text>
+                    <View style={styles.btnRow}>
+                      <View style={styles.btnHalf}><PrimaryButton label="📷 Camera" icon="camera-outline" loading={uploading && true} onPress={() => void pickAndUpload('camera')} /></View>
+                      <View style={styles.btnHalf}><PrimaryButton label="🖼 Gallery" icon="image-outline" onPress={() => void pickAndUpload('gallery')} /></View>
+                    </View>
+                    <PrimaryButton label="📁 Choose PDF / file" icon="folder-open-outline" variant="secondary" onPress={() => void pickAndUpload('file')} />
+                    {uploading ? (
+                      <View style={styles.progressRow}>
+                        <ActivityIndicator color={colors.primary} />
+                        <Text style={styles.progressText}>Uploading… this can take 5–30 seconds on mobile network.</Text>
+                      </View>
+                    ) : null}
+                    {uploadError ? <Text style={styles.errorText}>{uploadError}</Text> : null}
+                  </>
+                )}
+              </Card>
+
+              <SectionHeader title="Step 3 · Self-evaluation" />
+              <Card style={styles.card}>
+                {unlocked ? (
+                  <>
+                    <Text style={styles.muted}>Compare your uploaded sheet with the mentor's answer key, then enter your marks below.</Text>
+                    <View style={styles.btnRow}>
+                      <View style={styles.btnHalf}>
+                        <PrimaryButton label="📝 Answer Sheet" icon="clipboard-outline" onPress={() => void openProtected(meta?.answerSheetUrl || null, 'Answer Sheet')} />
+                      </View>
+                      <View style={styles.btnHalf}>
+                        <PrimaryButton label="📊 Marking Scheme" icon="list-outline" variant="secondary" onPress={() => void openProtected(meta?.markingSchemeUrl || null, 'Marking Scheme')} />
+                      </View>
+                    </View>
+                    {!meta?.answerSheetUrl ? <Text style={styles.errorText}>Mentor has not provided an answer sheet.</Text> : null}
+                  </>
+                ) : (
+                  <View style={styles.lockedBox}>
+                    <Ionicons name="lock-closed" size={18} color={colors.muted} />
+                    <Text style={styles.muted}>Upload your answer sheet in Step 2 to unlock the answer key and marking scheme.</Text>
+                  </View>
+                )}
+              </Card>
+
+              {unlocked ? (
+                <>
+                  <SectionHeader title="Step 4 · Submit marks & mistakes" />
+                  <Card style={styles.card}>
+                    <Text style={styles.label}>Marks obtained{meta?.maxMarks ? ` (out of ${meta.maxMarks})` : ''}</Text>
+                    <TextInput
+                      style={styles.input}
+                      keyboardType="number-pad"
+                      placeholder="e.g. 45"
+                      placeholderTextColor={colors.muted}
+                      value={marksInput}
+                      onChangeText={setMarksInput}
+                    />
+                    <Text style={styles.label}>What mistakes did you make? (self-analysis)</Text>
+                    <TextInput
+                      style={[styles.input, styles.textarea]}
+                      multiline
+                      numberOfLines={4}
+                      placeholder="e.g. Silly sign errors in Q3, missed units in Q5…"
+                      placeholderTextColor={colors.muted}
+                      value={remarks}
+                      onChangeText={setRemarks}
+                    />
+                    {marksError ? <Text style={styles.errorText}>{marksError}</Text> : null}
+                    <PrimaryButton label="Final Submit" icon="checkmark-circle-outline" loading={submitting} onPress={() => void submit()} />
+                  </Card>
+                </>
+              ) : null}
+            </>
+          )}
+        </ScrollView>
+      </KeyboardAvoidingView>
+
+      {/* Protected in-app document viewer: memory-only, watermarked, no export */}
+      <Modal visible={Boolean(viewer)} transparent={false} animationType="slide" onRequestClose={() => setViewer(null)}>
+        <SafeAreaView style={styles.viewerPage} edges={['top', 'bottom']}>
+          <View style={styles.viewerBar}>
+            <Text style={styles.viewerTitle} numberOfLines={1}>{viewer?.label || 'Document'}</Text>
+            <Pressable style={styles.viewerClose} onPress={() => setViewer(null)}>
+              <Ionicons name="close" size={22} color="#fff" />
+            </Pressable>
+          </View>
+          {viewer ? (
+            <WebView
+              ref={viewerRef}
+              source={{ html: PDF_VIEWER_HTML }}
+              originWhitelist={['*']}
+              javaScriptEnabled
+              scrollEnabled
+              onLoadEnd={() => void feedViewer()}
+              onMessage={(e) => {
+                const d = e.nativeEvent.data;
+                if (typeof d === 'string' && d.startsWith('error:')) setError(d.slice(6));
+              }}
+              style={styles.viewerWeb}
+            />
+          ) : null}
+          <Text style={styles.viewerHint}>Protected document · watermarked with your student ID · sharing disabled</Text>
+        </SafeAreaView>
+      </Modal>
+    </SafeAreaView>
+  );
+};
+
+const styles = StyleSheet.create({
+  page: { flex: 1, backgroundColor: colors.canvas },
+  flex: { flex: 1 },
+  content: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xxxl },
+  header: { paddingTop: spacing.lg, paddingBottom: spacing.md },
+  title: { color: colors.ink, fontSize: 20, fontWeight: '900' },
+  subtitle: { color: colors.muted, fontSize: 11, marginTop: 2 },
+  card: { padding: spacing.lg, marginBottom: spacing.md },
+  muted: { color: colors.muted, fontSize: 11, lineHeight: 16, marginBottom: spacing.sm },
+  instructions: { color: colors.inkSoft, fontSize: 11, lineHeight: 16, marginTop: spacing.sm },
+  btnRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm },
+  btnHalf: { flex: 1 },
+  okBox: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.tealSoft, borderRadius: radius.md, padding: spacing.md },
+  okText: { color: colors.teal, fontSize: 11, fontWeight: '800', flex: 1 },
+  lockedBox: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.canvas, borderRadius: radius.md, padding: spacing.md },
+  progressRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.sm },
+  progressText: { color: colors.inkSoft, fontSize: 10, flex: 1 },
+  errorText: { color: colors.red, fontSize: 10, marginTop: spacing.sm },
+  label: { color: colors.ink, fontSize: 11, fontWeight: '800', marginBottom: 4 },
+  input: { backgroundColor: colors.canvas, borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, color: colors.ink, fontSize: 13, marginBottom: spacing.md, borderWidth: 1, borderColor: colors.border },
+  textarea: { minHeight: 88, textAlignVertical: 'top' },
+  evalCard: { padding: spacing.xl, alignItems: 'center', marginBottom: spacing.md },
+  evalTitle: { color: colors.teal, fontSize: 15, fontWeight: '900' },
+  evalScore: { color: colors.ink, fontSize: 30, fontWeight: '900', marginTop: spacing.sm },
+  evalSub: { color: colors.muted, fontSize: 10, marginTop: spacing.sm, textAlign: 'center' },
+  viewerPage: { flex: 1, backgroundColor: '#202124' },
+  viewerBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.lg, paddingVertical: spacing.sm },
+  viewerTitle: { color: '#fff', fontSize: 13, fontWeight: '800', flex: 1 },
+  viewerClose: { padding: spacing.xs, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: radius.sm },
+  viewerWeb: { flex: 1, backgroundColor: '#525659' },
+  viewerHint: { color: 'rgba(255,255,255,0.55)', fontSize: 9, textAlign: 'center', paddingVertical: spacing.xs },
+});

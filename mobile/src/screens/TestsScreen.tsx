@@ -1,89 +1,67 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import React, { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View, Modal, ActivityIndicator } from 'react-native';
-import { WebView } from 'react-native-webview';
-import { Card, SectionHeader } from '../components/ui';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Card, EmptyState, ErrorBanner, SectionHeader } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import type { RootStackParamList } from '../navigation/types';
-import { targetsHaveStarted } from '../services/programGate';
+import { listMentorTests, type MentorTest } from '../services/mentorTests';
 import { colors, radius, spacing } from '../theme';
 
 /**
- * Reform policy: all tests live on the app; instant answer key +
- * marking scheme after submit. Tests are created and uploaded by the
- * MENTOR (redesign/tests/*.json) — not AI generated.
+ * v1.15.0 - native Mentor Tests list (WebView portal removed).
+ * Shows every test published for the student's batch/group (server-side
+ * matches_target), no daily-target gate - parity with the web flow.
  */
 export const TestsScreen = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { student } = useAuth();
+  const { student, backendMode } = useAuth();
+  const [tests, setTests] = useState<MentorTest[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState('');
 
-  const [targetsStarted, setTargetsStarted] = useState(false);
-  const [showWeb, setShowWeb] = useState(false);
-  const injectJs = `
+  const load = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true);
+    else setLoading(true);
     try {
-      localStorage.setItem("ump_student", JSON.stringify({
-        studentId: "${student?.studentId || ''}",
-        password: "${(student as any)?.password || ''}"
-      }));
-      window.location.hash = "tests";
-      
-      const hideNav = () => {
-         const sb = document.querySelector('.sidebar');
-         const top = document.querySelector('.top-nav');
-         if(sb) sb.style.display = 'none';
-         if(top) top.style.display = 'none';
-         const main = document.querySelector('.main-content');
-         if(main) { main.style.marginLeft = '0'; main.style.marginTop = '0'; main.style.paddingTop = '10px'; }
-      };
-      setInterval(hideNav, 500); hideNav();
-    } catch(e) {}
-    true;
-  `;
+      const list = await listMentorTests();
+      setTests(list);
+      setError('');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not load tests.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
 
   useEffect(() => {
-    if (!student?.studentId) {
-      setTargetsStarted(false);
-      return;
+    if (backendMode === 'live') void load();
+    else {
+      setLoading(false);
+      setTests([]);
     }
-    let alive = true;
-    targetsHaveStarted(student.studentId).then((started) => { if (alive) setTargetsStarted(started); });
-    return () => { alive = false; };
-  }, [student?.studentId]);
+  }, [backendMode, student?.studentId, load]);
 
+  const statusOf = (t: MentorTest): { label: string; tone: string } => {
+    if (t.attempted && t.lastScore != null) return { label: `✅ Evaluated · ${t.lastScore}/${t.lastTotal ?? t.maxMarks ?? '?'}`, tone: colors.teal };
+    if (t.attempted) return { label: '📤 Uploaded · self-eval pending', tone: colors.amber };
+    return { label: '📄 Open', tone: colors.primary };
+  };
 
   return (
     <View style={styles.page}>
-      <Modal visible={showWeb} animationType="slide" onRequestClose={() => setShowWeb(false)}>
-        <View style={{ flex: 1, backgroundColor: colors.canvas }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', padding: 15, borderBottomWidth: 1, borderBottomColor: '#e2e8f0', paddingTop: 50 }}>
-            <Pressable onPress={() => setShowWeb(false)} style={{ padding: 5 }}>
-              <Ionicons name="close" size={28} color={colors.ink} />
-            </Pressable>
-            <Text style={{ fontSize: 18, fontWeight: 'bold', marginLeft: 15 }}>Mentor Tests Portal</Text>
-          </View>
-          <WebView 
-            source={{ uri: 'https://ump-dashboard.web.app/#tests' }}
-            injectedJavaScriptBeforeContentLoaded={injectJs}
-            javaScriptEnabled={true}
-            domStorageEnabled={true}
-            startInLoadingState={true}
-            renderLoading={() => (
-              <View style={{ ...StyleSheet.absoluteFill, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.canvas }}>
-                <ActivityIndicator size="large" color={colors.primary} />
-              </View>
-            )}
-          />
-        </View>
-      </Modal>
-
       <View style={styles.header}>
         <Text style={styles.title}>Tests</Text>
-        <Text style={styles.subtitle}>Mentor's tests — instant answer key + marking scheme after submit</Text>
+        <Text style={styles.subtitle}>Mentor tests — solve, upload, self-evaluate, submit marks</Text>
       </View>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Weekly Report — this week's full record: study hours, tests given, MCQ report */}
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void load(true)} tintColor={colors.primary} />}
+      >
         <Pressable onPress={() => navigation.navigate('WeeklyReport')}>
           <Card style={styles.weekCard}>
             <View style={styles.weekIconBox}><Ionicons name="calendar" size={22} color="#fff" /></View>
@@ -96,28 +74,48 @@ export const TestsScreen = () => {
         </Pressable>
 
         <SectionHeader title="Mentor tests" />
-        
-        <Pressable onPress={() => setShowWeb(true)}>
-          <Card style={[styles.testCard, { backgroundColor: colors.primarySoft, borderColor: colors.primary }]}>
-            <View style={styles.testIconBox}><Ionicons name="document-text" size={22} color={colors.primary} /></View>
-            <View style={styles.testCopy}>
-              <Text style={styles.testTitle}>Mentor Tests Portal</Text>
-              <Text style={styles.testMeta}>Open to view question papers, upload answers, and submit your marks.</Text>
-            </View>
-            <Ionicons name="open-outline" size={18} color={colors.primary} />
-          </Card>
-        </Pressable>
-
+        {error ? (
+          <ErrorBanner message={error} onRetry={() => void load()} />
+        ) : loading ? (
+          <Card style={styles.testCard}><Text style={styles.testMeta}>Loading mentor tests…</Text></Card>
+        ) : tests.length === 0 ? (
+          <EmptyState icon="document-text-outline" title="No tests yet" message="Tests published by your mentor for your batch and group will appear here." />
+        ) : (
+          tests.map((t) => {
+            const st = statusOf(t);
+            return (
+              <Pressable key={t.id} onPress={() => navigation.navigate('MentorTest', { testId: t.testId || t.id })}>
+                <Card style={styles.testCard}>
+                  <View style={styles.testRow}>
+                    <View style={styles.testIconBox}><Ionicons name="document-text" size={20} color={colors.primary} /></View>
+                    <View style={styles.testCopy}>
+                      <Text style={styles.testTitle} numberOfLines={2}>{t.title}</Text>
+                      <Text style={styles.testMeta} numberOfLines={1}>
+                        {[t.subject, t.batch, t.group, t.maxMarks ? `${t.maxMarks} marks` : null].filter(Boolean).join(' · ') || 'Paper test'}
+                      </Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+                  </View>
+                  <View style={[styles.statusChip, { backgroundColor: st.tone + '22' }]}>
+                    <Text style={[styles.statusText, { color: st.tone }]}>{st.label}</Text>
+                  </View>
+                </Card>
+              </Pressable>
+            );
+          })
+        )}
 
         <SectionHeader title="Practice" />
-        {([
-          ['flame', 'Daily MCQ Challenge', '10 questions for today — do them daily', colors.amber, colors.amberSoft, () => navigation.navigate('DailyMcq')],
-          ['trophy', 'Leaderboard', 'Ranked on your test marks and Daily MCQ score', colors.teal, colors.tealSoft, () => navigation.navigate('Leaderboard')],
-        ] as Array<[keyof typeof Ionicons.glyphMap, string, string, string, string, () => void]>).map(([icon, title, sub, tint, soft, go]) => (
+        {(
+          [
+            ['flame', 'Daily MCQ Challenge', '10 questions for today — do them daily', colors.amber, colors.amberSoft, () => navigation.navigate('DailyMcq')],
+            ['trophy', 'Leaderboard', 'Ranked on your test marks and Daily MCQ score', colors.teal, colors.tealSoft, () => navigation.navigate('Leaderboard')],
+          ] as Array<[keyof typeof Ionicons.glyphMap, string, string, string, string, () => void]>
+        ).map(([icon, title, sub, tint, soft, go]) => (
           <Pressable key={title} onPress={go}>
             <Card style={styles.row}>
               <View style={[styles.iconBox, { backgroundColor: soft }]}><Ionicons name={icon} size={22} color={tint} /></View>
-              <View style={styles.copy}>
+              <View style={styles.testCopy}>
                 <Text style={styles.rowTitle}>{title}</Text>
                 <Text style={styles.rowSub}>{sub}</Text>
               </View>
@@ -132,24 +130,24 @@ export const TestsScreen = () => {
 
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: colors.canvas },
-  header: { paddingTop: 56, paddingHorizontal: spacing.xl, paddingBottom: spacing.md },
-  title: { fontSize: 26, fontWeight: '900', color: colors.ink },
-  subtitle: { fontSize: 12.5, color: colors.muted, marginTop: 2 },
-  content: { paddingHorizontal: spacing.xl, paddingBottom: 110, gap: spacing.sm },
-  testCard: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: spacing.md, marginBottom: spacing.sm },
-  testIconBox: { width: 42, height: 42, borderRadius: 13, backgroundColor: colors.primarySoft, alignItems: 'center', justifyContent: 'center' },
-  weekCard: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: spacing.md, marginBottom: spacing.md, backgroundColor: colors.primary, borderColor: colors.primaryDark },
-  weekIconBox: { width: 42, height: 42, borderRadius: 13, backgroundColor: 'rgba(255,255,255,0.22)', alignItems: 'center', justifyContent: 'center' },
+  header: { paddingHorizontal: spacing.xl, paddingTop: spacing.xl, paddingBottom: spacing.md },
+  title: { color: colors.ink, fontSize: 26, fontWeight: '900' },
+  subtitle: { color: colors.muted, fontSize: 11, marginTop: 2 },
+  content: { paddingHorizontal: spacing.lg, paddingBottom: spacing.xxxl },
+  weekCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, backgroundColor: colors.ink, padding: spacing.lg, marginBottom: spacing.lg },
+  weekIconBox: { width: 42, height: 42, borderRadius: radius.md, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
+  weekTitle: { color: '#fff', fontSize: 14, fontWeight: '800' },
+  weekSub: { color: 'rgba(255,255,255,0.7)', fontSize: 10, marginTop: 2 },
+  testCard: { padding: spacing.lg, marginBottom: spacing.md },
+  testRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  testIconBox: { width: 40, height: 40, borderRadius: radius.md, backgroundColor: colors.primarySoft, alignItems: 'center', justifyContent: 'center' },
   testCopy: { flex: 1 },
-  testTitle: { fontSize: 14, fontWeight: '800', color: colors.ink },
-  testMeta: { fontSize: 11.5, color: colors.muted, marginTop: 2 },
-  weekTitle: { fontSize: 14, fontWeight: '900', color: '#FFFFFF' },
-  weekSub: { fontSize: 11.5, color: 'rgba(255,255,255,0.88)', marginTop: 2, lineHeight: 16 },
-  testChips: { flexDirection: 'row', gap: 6, flexWrap: 'wrap', marginTop: 6 },
-  testChip: { fontSize: 10, fontWeight: '800', color: colors.primary, backgroundColor: colors.primarySoft, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, overflow: 'hidden' },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: spacing.md, marginBottom: spacing.sm },
-  iconBox: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  copy: { flex: 1 },
-  rowTitle: { fontSize: 14.5, fontWeight: '800', color: colors.ink },
-  rowSub: { fontSize: 12, color: colors.muted, marginTop: 2 },
+  testTitle: { color: colors.ink, fontSize: 13, fontWeight: '800' },
+  testMeta: { color: colors.muted, fontSize: 10, marginTop: 2 },
+  statusChip: { alignSelf: 'flex-start', borderRadius: radius.sm, paddingHorizontal: spacing.sm, paddingVertical: 3, marginTop: spacing.sm },
+  statusText: { fontSize: 9, fontWeight: '800' },
+  row: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.lg, marginBottom: spacing.md },
+  iconBox: { width: 42, height: 42, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
+  rowTitle: { color: colors.ink, fontSize: 13, fontWeight: '800' },
+  rowSub: { color: colors.muted, fontSize: 10, marginTop: 2 },
 });
