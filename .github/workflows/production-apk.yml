@@ -270,7 +270,9 @@ jobs:
       - name: Publish APK to UPM-Android-Releases (live channel)
         if: github.event_name == 'workflow_dispatch' && inputs.publish_live == true
         env:
-          RELEASES_PAT: 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
+          # NEVER hardcode tokens here (10-Oct-2026 incident: a PAT was committed
+          # in plaintext and leaked into git history). Use the repo secret.
+          RELEASES_PAT: ${{ secrets.RELEASES_PAT }}
           APK_NAME: ${{ steps.meta.outputs.apk_name }}
           VERSION: ${{ steps.meta.outputs.version }}
           CODE: ${{ steps.meta.outputs.code }}
@@ -294,6 +296,10 @@ jobs:
               "$API/releases" | jq -r '.id')
           fi
           echo "Release id: $RID"
+          if [ -z "$RID" ] || [ "$RID" = "null" ]; then
+            echo "::error::Could not create or look up release $TAG in UPM-Android-Releases. Check RELEASES_PAT permissions (Contents: Read and write on the releases repo)."
+            exit 1
+          fi
 
           AID=$(curl -fsS -H "$AUTH" -H "$ACCEPT" "$API/releases/$RID/assets" | jq -r ".[] | select(.name==\"$APK_NAME\") | .id")
           if [ -n "$AID" ]; then
@@ -315,9 +321,12 @@ jobs:
           {
             "version": "$VERSION",
             "versionCode": $CODE,
+            "minimumVersionCode": $CODE,
             "apkUrl": "$APK_URL",
+            "downloadUrl": "$APK_URL",
             "sha256": "$SHA",
             "notes": "$NOTES",
+            "releaseNotes": "$NOTES",
             "publishedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           }
           JSON
@@ -334,3 +343,28 @@ jobs:
           git commit -m "Release v${VERSION}-${CODE} metadata" || echo "no metadata changes"
           git push origin main
           echo "DONE - live channel updated: $APK_URL"
+
+      # 10-Oct-2026 incident: a release went live with latest.json missing the
+      # `apkUrl` key, so every device silently saw NO update banner. This gate
+      # queries the exact endpoint devices use and fails the run if the live
+      # payload is incomplete or does not match the version we just published.
+      - name: Validate live update payload (app.version)
+        if: github.event_name == 'workflow_dispatch' && inputs.publish_live == true
+        env:
+          CODE: ${{ steps.meta.outputs.code }}
+        run: |
+          PROXY="https://student-dashboard-566076646952.asia-south1.run.app/api/proxy"
+          for i in 1 2 3 4 5 6; do
+            BODY=$(curl -s -m 30 -X POST -H 'Content-Type: application/json' \
+                   -d '{"action":"app.version","platform":"android"}' "$PROXY" || true)
+            if echo "$BODY" | jq -e --argjson code "$CODE" \
+                 '.result | (((.apkUrl // .downloadUrl) | type) == "string") and (.versionCode == $code)' \
+                 >/dev/null 2>&1; then
+              echo "Update payload validated: versionCode $CODE with a usable APK url."
+              exit 0
+            fi
+            echo "payload not ready/invalid (attempt $i); retrying in 20s..."
+            sleep 20
+          done
+          echo "::error::app.version payload is invalid after publish - devices will see NO update banner. Fix latest.json in UPM-Android-Releases (keys: version, versionCode, minimumVersionCode, apkUrl, downloadUrl, notes, releaseNotes, publishedAt)."
+          exit 1

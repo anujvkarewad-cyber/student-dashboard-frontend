@@ -50,18 +50,35 @@ export const AppUpdateProvider = ({ children }: PropsWithChildren) => {
       checkingRef.current = true;
       const latest = await api.getAppRelease();
       await AsyncStorage.setItem(LAST_CHECK_KEY, String(Date.now()));
-      if (!latest || Number(latest.versionCode || 0) <= currentVersionCode() || !isSafeApkUrl(latest.apkUrl)) return;
+      // 10-Oct-2026 incident: a manifest without `apkUrl` suppressed the update
+      // banner silently and devices stayed on a broken build for hours.
+      // Fall back to `downloadUrl` and ALWAYS log why an update was rejected.
+      const candidateUrl = latest
+        ? (latest.apkUrl || (latest as AppRelease & { downloadUrl?: string }).downloadUrl || '')
+        : '';
+      if (!latest || Number(latest.versionCode || 0) <= currentVersionCode() || !isSafeApkUrl(candidateUrl)) {
+        console.warn('[update] no update shown:', JSON.stringify({
+          hasLatest: Boolean(latest),
+          latestCode: Number(latest?.versionCode || 0),
+          currentCode: currentVersionCode(),
+          hasSafeUrl: isSafeApkUrl(candidateUrl),
+        }));
+        return;
+      }
+      const pending: AppRelease = { ...latest, apkUrl: candidateUrl };
       let dismissed: { versionCode: number; dismissedAt: number } | null = null;
       try {
         const raw = await AsyncStorage.getItem(DISMISSED_KEY);
         dismissed = raw ? JSON.parse(raw) as { versionCode: number; dismissedAt: number } : null;
       } catch { dismissed = null; }
-      const mandatory = Boolean(latest.forceUpdate || Number(latest.minimumVersionCode || 0) > currentVersionCode());
-      if (!mandatory && dismissed?.versionCode === Number(latest.versionCode) && Date.now() - dismissed.dismissedAt < UPDATE_SNOOZE_MS) return;
+      const mandatory = Boolean(pending.forceUpdate || Number(pending.minimumVersionCode || 0) > currentVersionCode());
+      if (!mandatory && dismissed?.versionCode === Number(pending.versionCode) && Date.now() - dismissed.dismissedAt < UPDATE_SNOOZE_MS) return;
       setError('');
-      setRelease(latest);
-    } catch {
-      // Update checks must never block login when the manifest is temporarily unavailable.
+      setRelease(pending);
+    } catch (updateCheckError) {
+      // Update checks must never block login when the manifest is temporarily
+      // unavailable - but they must never fail SILENTLY either (see incident).
+      console.warn('[update] check failed:', updateCheckError);
     } finally {
       checkingRef.current = false;
     }
