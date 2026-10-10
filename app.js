@@ -1,4 +1,4 @@
-const APP_VERSION = "2.6.3";
+const APP_VERSION = "2.8.0";
 
 (function () {
   "use strict";
@@ -106,6 +106,7 @@ const APP_VERSION = "2.6.3";
     const btn = e.target.querySelector("button[type=submit]");
 
     err.hidden = true;
+    err.style.display = "none";
 
     if (!id || !password) return;
 
@@ -119,6 +120,11 @@ const APP_VERSION = "2.6.3";
 
     if (!result.success) {
       err.hidden = true;
+      // Access OFF → poora blocked screen (reason ke saath), warna normal popup.
+      if (result.code === "access_blocked") {
+        showAccessBlockedScreen(result);
+        return;
+      }
       showLoginErrorPopup(result.message);
       return;
     }
@@ -790,20 +796,57 @@ const APP_VERSION = "2.6.3";
   function renderTests() {
     const list = $("#tests-list");
     const player = $("#tests-player");
-    const tests = window.UMP_WEB_TESTS || [];
     if (!list) return;
-    if (!tests.length) {
-      list.textContent = "No mentor test is published yet.";
+
+    const paint = () => {
+      const tests = window.UMP_WEB_TESTS || [];
+      if (!tests.length) {
+        list.textContent = "No mentor test is published yet.";
+        return;
+      }
+      // Status + last score dikhao taaki student ko pata rahe kya pending hai.
+      list.innerHTML = tests.map((test) => {
+        const bits = [];
+        if (test.status === "upcoming") bits.push("coming soon");
+        if (test.status === "closed") bits.push("closed");
+        if (test.attempted && test.lastScore != null) bits.push(test.lastScore + "/" + test.lastTotal);
+        const label = test.title + (bits.length ? " · " + bits.join(" · ") : "");
+        return "<button type='button' class='btn-primary sm' data-test='" + escapeHtml(test.id) + "' style='margin:0 8px 8px 0;'>" + escapeHtml(label) + "</button>";
+      }).join("");
+      list.querySelectorAll("[data-test]").forEach((btn) => {
+        btn.onclick = () => startWebTest(tests.find((item) => item.id === btn.dataset.test), player);
+      });
+    };
+
+    // Server se published tests laao (test-channel.js). Uske bina purana local
+    // behaviour chalta rahega — is file ke na hone par app waise hi kaam kare.
+    if (window.UMP_TEST_CHANNEL) {
+      list.textContent = "Tests load ho rahe hain…";
+      window.UMP_TEST_CHANNEL.load().then(paint).catch(() => paint());
       return;
     }
-    list.innerHTML = tests.map((test) => "<button type='button' class='btn-primary sm' data-test='" + escapeHtml(test.id) + "' style='margin:0 8px 8px 0;'>" + escapeHtml(test.title) + "</button>").join("");
-    list.querySelectorAll("[data-test]").forEach((btn) => {
-      btn.onclick = () => startWebTest(tests.find((item) => item.id === btn.dataset.test), player);
-    });
+    paint();
   }
 
   function startWebTest(test, player) {
     if (!test) return;
+    // Server-side paper + grading (answers phone par nahi bhejte).
+    if (window.UMP_TEST_CHANNEL) {
+      player.innerHTML = "<h3>" + escapeHtml(test.title) + "</h3><p class='muted'>Paper load ho raha hai…</p>";
+      window.UMP_TEST_CHANNEL.paper(test.id)
+        .then((data) => {
+          // Paper test me questions nahi hote — student khud solve karke marks bharta hai.
+          if (data && (data.selfEvaluate || (data.test && data.test.kind === "paper-test"))) {
+            startPaperTest(test, data, player);
+            return;
+          }
+          startChannelWebTest(test, data, player);
+        })
+        .catch((error) => {
+          player.innerHTML = "<h3>" + escapeHtml(test.title) + "</h3><p class='muted'>" + escapeHtml(error.message || "Paper load nahi hua") + "</p>";
+        });
+      return;
+    }
     player.innerHTML = "<h3>" + escapeHtml(test.title) + "</h3><p class='muted'>" + escapeHtml(test.subject) + " · " + test.durationMin + " min · " + test.maxMarks + " marks</p>"
       + test.questions.map((q, index) => "<div style='margin:14px 0;'><b>" + (index + 1) + ". " + escapeHtml(q.prompt) + "</b>" + q.options.map((opt) => "<label style='display:block;margin-top:6px;'><input type='radio' name='" + q.id + "' value='" + opt.id + "'/> " + escapeHtml(opt.id) + ". " + escapeHtml(opt.text) + "</label>").join("") + "</div>").join("")
       + "<button type='button' class='btn-primary sm' id='submit-web-test'>Submit</button><div id='web-test-result' style='margin-top:12px;'></div>";
@@ -818,6 +861,252 @@ const APP_VERSION = "2.6.3";
         return "<div style='margin-top:10px;'><b>" + escapeHtml(q.prompt) + "</b><div>" + (ok ? "Correct." : "Correct option: " + q.correctOptionId) + " " + escapeHtml(q.explanation || "") + "</div></div>";
       });
       $("#web-test-result").innerHTML = "<b>Score: " + score + " / " + max + "</b>" + lines.join("");
+    };
+  }
+
+  // Paper test: answer sheet + marking scheme dikhao, phir student apne marks
+  // (self-evaluation) bharke submit kare. Marks server par jaate hain aur mentor
+  // dashboard (Tests → Submissions) me turant dikhte hain.
+  function startPaperTest(test, data, player) {
+    const meta = (data && data.test) || {};
+    const maxMarks = Number(meta.maxMarks || test.maxMarks || 0);
+    const escapeHtml = (unsafe) => String(unsafe).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+
+    let state = {
+      answerUrl: null,
+      isUploading: false,
+      phase: test.lastScore != null ? 3 : (test.attempted ? 1 : 1)
+    };
+
+    function render() {
+      if (state.phase === 3) {
+          player.innerHTML = `
+            <div class="card" style="padding: 25px; text-align: center; border-top: 4px solid #10b981; background: #f0fdf4;">
+              <h2 style="color: #166534; margin-bottom:10px;">✅ Test Evaluated</h2>
+              <h3 style="margin-bottom:10px;">${escapeHtml(meta.title || test.title)}</h3>
+              <div style="font-size: 20px; margin-bottom: 10px;">Marks: <b style="color: #047857;">${test.lastScore} / ${maxMarks || test.lastTotal || "?"}</b></div>
+              <p class="muted">Your mentor has received your answer sheet and self-evaluation.</p>
+            </div>
+          `;
+          return;
+      }
+
+      if (state.phase === 2) {
+          player.innerHTML = `
+            <div class="card" style="padding:20px; border-top: 4px solid #3b82f6;">
+              <h3 style="margin-bottom:5px;">${escapeHtml(meta.title || test.title)}</h3>
+              <p style="color:#2563eb; font-weight:bold; margin-bottom:15px;">✅ Answer Uploaded Successfully!</p>
+              
+              <div style="background: #f1f5f9; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                <div style="font-weight:bold; margin-bottom:8px; font-size:16px;">Step 3: Self-Evaluation</div>
+                <p class="muted" style="margin-bottom:12px; font-size:13px;">Open the answer sheet below, check your uploaded answers, and enter your marks.</p>
+                ${meta.answerSheetUrl ? `<button class='btn-primary sm test-viewer-btn' data-url='${escapeHtml(meta.answerSheetUrl)}' data-label='Answer Sheet' style="background:#10b981; color:white; border:none; padding:8px 16px; border-radius:5px; cursor:pointer;">📝 Open Answer Sheet</button>` : `<span class="muted" style="color:red;">Mentor has not provided an answer sheet.</span>`}
+              </div>
+
+              <div style="border: 1px solid #e2e8f0; padding: 15px; border-radius: 8px;">
+                <div style="font-weight:bold; margin-bottom:15px; font-size:16px;">Step 4: Submit Marks & Mistakes</div>
+                
+                <div style="margin-bottom:15px;">
+                  <label style="display:block; font-weight:bold; margin-bottom:5px; font-size:14px;">How many marks did you score? (out of ${maxMarks || '?'}):</label>
+                  <input type="number" id="eval-marks" class="input" placeholder="e.g. 45" style="width:100%; padding:10px; border:1px solid #cbd5e1; border-radius:5px;" />
+                </div>
+                
+                <div style="margin-bottom:15px;">
+                  <label style="display:block; font-weight:bold; margin-bottom:5px; font-size:14px;">What mistakes did you make? (Self-Analysis):</label>
+                  <textarea id="eval-remarks" class="input" placeholder="e.g. Silly mistake in Q3, forgot formula in Q5" rows="3" style="width:100%; padding:10px; border:1px solid #cbd5e1; border-radius:5px;"></textarea>
+                </div>
+
+                <button id="submit-evaluation-btn" class="btn-primary" style="width:100%; padding:12px; font-size:16px;">✅ Submit Final Evaluation</button>
+                <div id="eval-err" style="color:red; margin-top:10px; text-align:center; font-size:14px;"></div>
+              </div>
+            </div>
+          `;
+
+          // Setup Viewer Button
+          player.querySelectorAll('.test-viewer-btn').forEach(btn => {
+             btn.onclick = () => {
+                 let url = btn.getAttribute('data-url');
+                 let label = btn.getAttribute('data-label');
+                 let preview = url.includes("drive.google.com") && !url.includes("preview") ? url.replace(/\/view.*/, "/preview") : url;
+                 if (typeof openNoteViewer === "function") {
+                     openNoteViewer({ title: label, previewUrl: preview, viewUrl: url, fileId: "" });
+                 } else {
+                     window.open(url, '_blank');
+                 }
+             };
+          });
+
+          // Submit logic
+          player.querySelector("#submit-evaluation-btn").onclick = () => {
+              const marks = player.querySelector("#eval-marks").value;
+              const remarks = player.querySelector("#eval-remarks").value;
+              const errDiv = player.querySelector("#eval-err");
+              
+              if (!marks) { errDiv.textContent = "Please enter your marks first."; return; }
+              if (maxMarks && Number(marks) > maxMarks) { errDiv.textContent = "Marks cannot be greater than " + maxMarks; return; }
+              if (!remarks) { errDiv.textContent = "Please write a brief analysis of your mistakes."; return; }
+
+              const btn = player.querySelector("#submit-evaluation-btn");
+              btn.disabled = true;
+              btn.textContent = "Submitting to Mentor... Please wait";
+
+              window.UMP_TEST_CHANNEL.submitMarks(test.testId || test.id, marks, remarks, state.answerUrl)
+                .then(res => {
+                    test.attempted = true;
+                    test.lastScore = res.score;
+                    test.lastTotal = res.total;
+                    state.phase = 3;
+                    render();
+                    setTimeout(() => { window.UMP_TEST_CHANNEL.load().then(renderTests).catch(()=>{}); }, 1500);
+                })
+                .catch(err => {
+                    btn.disabled = false;
+                    btn.textContent = "✅ Submit Final Evaluation";
+                    errDiv.textContent = err.message || "Failed to submit. Try again.";
+                });
+          };
+          return;
+      }
+
+      // Phase 1: Show QP and Ask for Upload
+      player.innerHTML = `
+        <div class="card" style="padding:20px; border-top: 4px solid #3b82f6;">
+          <div style="margin-bottom:20px;">
+            <h3 style="margin-bottom:5px;">${escapeHtml(meta.title || test.title)}</h3>
+            <div class="muted" style="font-size:14px;">${escapeHtml(meta.subject || "")} • ${maxMarks ? maxMarks + " marks" : "Paper Test"} • ${meta.durationMinutes ? meta.durationMinutes + " mins" : ""}</div>
+          </div>
+
+          <div style="background: #f8fafc; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+            <div style="font-weight:bold; margin-bottom:8px; font-size:16px;">Step 1: Download & Solve</div>
+            <p class="muted" style="margin-bottom:12px; font-size:13px;">Click below to open the question paper. Solve it honestly on your notebook.</p>
+            ${meta.paperUrl ? `<button class='btn-primary sm test-viewer-btn' data-url='${escapeHtml(meta.paperUrl)}' data-label='Question Paper' style="background:#3b82f6; color:white; border:none; padding:8px 16px; border-radius:5px; cursor:pointer;">📄 Open Question Paper</button>` : `<span class="muted" style="color:red;">No paper attached.</span>`}
+          </div>
+
+          <div style="border: 2px dashed #cbd5e1; padding: 15px; border-radius: 8px;">
+            <div style="font-weight:bold; margin-bottom:8px; font-size:16px;">Step 2: Upload Answer Sheet</div>
+            <p class="muted" style="margin-bottom:12px; font-size:13px;">Upload your solved answer sheet (PDF or Image, max 10MB) to unlock the Marking Scheme.</p>
+            
+            <input type="file" id="answer-file" accept="image/*,application/pdf" style="display:block; width:100%; margin-bottom:15px; padding:10px; border:1px solid #e2e8f0; border-radius:5px; background:white;" />
+            
+            <button id="upload-btn" class="btn-primary" style="width:100%; padding:12px; font-size:16px;">📤 Upload Answer Sheet</button>
+            <div id="upload-progress" style="margin-top:10px; color:#3b82f6; font-weight:bold; display:none; text-align:center;">Uploading... please wait (up to 30s)</div>
+            <div id="upload-err" style="margin-top:10px; color:red; text-align:center; font-size:14px;"></div>
+          </div>
+        </div>
+      `;
+
+      // Setup Viewer Button
+      player.querySelectorAll('.test-viewer-btn').forEach(btn => {
+         btn.onclick = () => {
+             let url = btn.getAttribute('data-url');
+             let label = btn.getAttribute('data-label');
+             let preview = url.includes("drive.google.com") && !url.includes("preview") ? url.replace(/\/view.*/, "/preview") : url;
+             if (typeof openNoteViewer === "function") {
+                 openNoteViewer({ title: label, previewUrl: preview, viewUrl: url, fileId: "" });
+             } else {
+                 window.open(url, '_blank');
+             }
+         };
+      });
+
+      // Upload Logic
+      player.querySelector("#upload-btn").onclick = () => {
+          const fileInput = player.querySelector("#answer-file");
+          const file = fileInput && fileInput.files[0];
+          const errDiv = player.querySelector("#upload-err");
+          const progDiv = player.querySelector("#upload-progress");
+          const btn = player.querySelector("#upload-btn");
+
+          if (!file) { errDiv.textContent = "Please select a file to upload."; return; }
+          if (file.size > 10485760) { errDiv.textContent = "File is too large! Maximum allowed size is 10 MB."; return; }
+
+          errDiv.textContent = "";
+          btn.style.display = "none";
+          progDiv.style.display = "block";
+          
+          const reader = new FileReader();
+          reader.onload = () => {
+              const base64 = reader.result.split(',')[1];
+              const appsScriptUrl = "https://script.google.com/macros/s/AKfycbzyfWa8agayMB0XLjkbfhfj2MdIRElAiY2Wnd7-eQKd1zlMl099ky6Cif06TWydzr8D/exec";
+              fetch(appsScriptUrl, {
+                method: 'POST',
+                body: JSON.stringify({
+                  action: 'student.test.uploadSubmission',
+                  payload: { base64, mimeType: file.type, filename: file.name }
+                })
+              }).then(res => res.json()).then(data => {
+                 if (data.error) throw new Error(data.error);
+                 state.answerUrl = data.result.url || data.result;
+                 state.phase = 2; // Move to evaluation phase
+                 render();
+              }).catch(err => {
+                 btn.style.display = "block";
+                 progDiv.style.display = "none";
+                 errDiv.textContent = "Upload failed: " + err.message;
+              });
+          };
+          reader.onerror = () => {
+             btn.style.display = "block";
+             progDiv.style.display = "none";
+             errDiv.textContent = "Could not read file locally.";
+          };
+          reader.readAsDataURL(file);
+      };
+    }
+
+    render();
+  }
+
+  // Server-graded runner: submit par score + per-question review server se aata hai.
+  function startChannelWebTest(test, data, player) {
+    const meta = (data && data.test) || {};
+    const questions = (data && data.questions) || [];
+    const startedAt = Date.now();
+    if (!questions.length) {
+      player.innerHTML = "<h3>" + escapeHtml(test.title) + "</h3><p class='muted'>Is test me abhi koi question publish nahi hua.</p>";
+      return;
+    }
+    player.innerHTML = "<h3>" + escapeHtml(meta.title || test.title) + "</h3>"
+      + "<p class='muted'>" + escapeHtml(meta.subject || test.subject || "") + (meta.durationMinutes ? " · " + meta.durationMinutes + " min" : "") + " · " + questions.length + " questions · " + escapeHtml(String(meta.maxMarks || test.maxMarks || questions.length)) + " marks</p>"
+      + (meta.instructions ? "<p class='muted'>" + escapeHtml(meta.instructions) + "</p>" : "")
+      + questions.map((q, index) => "<div style='margin:14px 0;'><b>" + (index + 1) + ". " + escapeHtml(q.prompt) + "</b>" + (q.options || []).map((opt) => "<label style='display:block;margin-top:6px;'><input type='radio' name='" + escapeHtml(q.id) + "' value='" + escapeHtml(opt.id) + "'/> " + escapeHtml(opt.id) + ". " + escapeHtml(opt.text) + "</label>").join("") + "</div>").join("")
+      + "<button type='button' class='btn-primary sm' id='submit-web-test'>Submit</button><div id='web-test-result' style='margin-top:12px;'></div>";
+
+    $("#submit-web-test").onclick = () => {
+      const answers = {};
+      let answered = 0;
+      questions.forEach((q) => {
+        const picked = player.querySelector("input[name='" + q.id + "']:checked");
+        if (picked) { answers[q.id] = picked.value; answered += 1; }
+      });
+      if (!answered) {
+        $("#web-test-result").innerHTML = "<p class='muted'>Kam se kam ek question ka jawab chuno.</p>";
+        return;
+      }
+      const button = $("#submit-web-test");
+      button.disabled = true;
+      button.textContent = "Checking…";
+      window.UMP_TEST_CHANNEL.submit(test.id, answers, (Date.now() - startedAt) / 1000)
+        .then((result) => {
+          const lines = (result.review || []).map((item, index) => {
+            const shown = item.selected == null ? "koi option nahi chuna" : (item.options || [])[item.selected];
+            const right = (item.options || [])[item.answer];
+            return "<div style='margin-top:10px;'><b>" + (index + 1) + ". " + escapeHtml(item.prompt) + "</b>"
+              + "<div style='color:" + (item.correct ? "#16a34a" : "#dc2626") + ";font-weight:600;'>" + (item.correct ? "Sahi" : "Galat") + "</div>"
+              + "<div class='muted'>Aapka jawab: " + escapeHtml(String(shown == null ? "—" : shown)) + " · Sahi jawab: " + escapeHtml(String(right == null ? "—" : right)) + "</div>"
+              + (item.explanation ? "<div class='muted'>" + escapeHtml(item.explanation) + "</div>" : "")
+              + "</div>";
+          });
+          $("#web-test-result").innerHTML = "<b>Score: " + result.score + " / " + result.total + " (" + (result.scorePct == null ? "—" : result.scorePct + "%") + ")</b>"
+            + " <span class='muted'>· mentor ko bhej diya gaya</span>" + lines.join("");
+          button.textContent = "Submitted";
+          window.UMP_TEST_CHANNEL.load().then(() => renderTests()).catch(() => {});
+        })
+        .catch((error) => {
+          button.disabled = false;
+          button.textContent = "Submit";
+          $("#web-test-result").innerHTML = "<p class='muted'>" + escapeHtml(error.message || "Submit nahi hua — dobara try karo.") + "</p>";
+        });
     };
   }
 
@@ -1162,10 +1451,13 @@ const APP_VERSION = "2.6.3";
     const title = document.getElementById("note-viewer-title");
     const newTabLink = document.getElementById("note-viewer-newtab");
 
-    const previewUrl = `https://drive.google.com/file/d/${note.fileId}/preview`;
+    // 9 Oct 2026: backend ab har note ke saath previewUrl/viewUrl bhejta hai
+    // (hamara proxy — Drive ka raw link student ko dikhta hi nahi). Purane
+    // notes ke liye Drive link fallback waise hi rehta hai.
+    const previewUrl = note.previewUrl || `https://drive.google.com/file/d/${note.fileId}/preview`;
     frame.src = previewUrl;
     title.textContent = note.title;
-    newTabLink.href = `https://drive.google.com/file/d/${note.fileId}/view`;
+    newTabLink.href = note.viewUrl || `https://drive.google.com/file/d/${note.fileId}/view`;
     overlay.style.display = "flex";
   }
 
@@ -1272,6 +1564,54 @@ const APP_VERSION = "2.6.3";
       console.warn("push UI inject failed", e);
     }
   }
+
+  // ── Mentor-controlled access OFF (8 Oct 2026) ──────────────────────────
+  // Mentor access OFF karta hai to login ke saath-saath HAR API call block —
+  // ye poora screen dikhta hai (reason ke saath).
+  function showAccessBlockedScreen(info) {
+    const payload = info || {};
+    const reason = String(payload.reason || "").trim();
+    const existing = document.getElementById("ump-access-blocked");
+    if (existing) existing.remove();
+
+    if (!document.getElementById("ump-access-blocked-style")) {
+      const style = document.createElement("style");
+      style.id = "ump-access-blocked-style";
+      style.textContent = `
+        #ump-access-blocked { position: fixed; inset: 0; z-index: 100002; background: #F8FAFC;
+          display: flex; align-items: center; justify-content: center; padding: 20px; font-family: inherit; }
+        #ump-access-blocked .uab-card { max-width: 460px; width: 100%; background: #fff; border: 1px solid #FECACA;
+          border-radius: 20px; padding: 28px; text-align: center; box-shadow: 0 20px 50px rgba(15,23,42,.12); }
+        #ump-access-blocked .uab-icon { width: 56px; height: 56px; margin: 0 auto; border-radius: 50%;
+          background: #FEE2E2; color: #DC2626; display: flex; align-items: center; justify-content: center; font-size: 26px; }
+        #ump-access-blocked h2 { margin: 16px 0 6px; font-size: 20px; color: #0F172A; }
+        #ump-access-blocked p { margin: 0; color: #475569; font-size: 14px; line-height: 1.6; }
+        #ump-access-blocked .uab-reason { margin-top: 14px; background: #FEF2F2; border: 1px solid #FECACA;
+          border-radius: 12px; padding: 12px 14px; color: #991B1B; font-size: 14px; text-align: left; }
+        #ump-access-blocked button { margin-top: 18px; width: 100%; height: 44px; border: 0; border-radius: 12px;
+          background: #2563EB; color: #fff; font-weight: 600; font-size: 15px; cursor: pointer; }
+      `;
+      document.head.appendChild(style);
+    }
+
+    const wrap = document.createElement("div");
+    wrap.id = "ump-access-blocked";
+    wrap.innerHTML =
+      '<div class="uab-card">' +
+        '<div class="uab-icon">&#128274;</div>' +
+        '<h2>App access is OFF</h2>' +
+        '<p>Your mentor has turned off access for this account. Please contact your mentor.</p>' +
+        (reason ? '<div class="uab-reason"><strong>Reason:</strong> ' + escapeHtml(reason) + '</div>' : '') +
+        '<button type="button" id="ump-access-blocked-reload">Try again</button>' +
+      '</div>';
+    document.body.appendChild(wrap);
+    const btn = document.getElementById("ump-access-blocked-reload");
+    if (btn) btn.addEventListener("click", () => window.location.reload());
+  }
+
+  window.addEventListener("ump:access-blocked", (event) => {
+    showAccessBlockedScreen((event && event.detail) || {});
+  });
 
   function showLoginErrorPopup(message) {
     const old = document.getElementById("login-error-popup");
@@ -1457,6 +1797,7 @@ const APP_VERSION = "2.6.3";
   const trackerModal = document.getElementById("tracker-modal");
   const tlDate = document.getElementById("tl-date");
   const tlHours = document.getElementById("tl-hours");
+  const tlHoursQuick = document.getElementById("tl-hours-quick");
   const tlTomorrow = document.getElementById("tl-tomorrow");
   const tlMentorSupport = document.getElementById("tl-mentor-support");
   const tlProofFile = document.getElementById("tl-proof-file");
@@ -1467,7 +1808,11 @@ const APP_VERSION = "2.6.3";
   const tlYesSection = document.getElementById("tl-yes-section");
   const tlReasonOther = document.getElementById("tl-reason-other");
 
-  const MAX_PROOF_BYTES = 3 * 1024 * 1024;
+  // Phone camera photos 3–8 MB ke hote hain — pehle 3 MB par submit block ho
+  // jata tha ("file is too large" = "submit nahi ho raha"). Ab raw cap 15 MB
+  // hai aur image submit se pehle chhoti JPEG me compress hoti hai.
+  const MAX_PROOF_BYTES = 15 * 1024 * 1024;
+  const PROOF_JPEG_TARGET = 900 * 1024;
 
   function wireChipGroup(groupEl) {
     groupEl.querySelectorAll(".choice-chip").forEach((chip) => {
@@ -1505,6 +1850,19 @@ const APP_VERSION = "2.6.3";
 
   [tlPlannedGroup, tlReasonGroup, tlSubjectsGroup, tlTargetGroup].forEach(wireChipGroup);
 
+  // Hours ke quick chips (½h / 1h / 2h ...) — ek tap me value bhar jati hai.
+  if (tlHoursQuick) {
+    tlHoursQuick.addEventListener("click", (e) => {
+      const btn = e.target && e.target.closest ? e.target.closest("[data-hours]") : null;
+      if (!btn) return;
+      tlHours.value = btn.getAttribute("data-hours");
+      clearModalError(tlError);
+      clearFieldError();
+    });
+  }
+  tlHours.addEventListener("input", () => { clearModalError(tlError); clearFieldError(); });
+  tlDate.addEventListener("change", () => { clearModalError(tlError); clearFieldError(); });
+
   tlReasonGroup.addEventListener("change", () => {
     tlReasonOther.hidden = getRadioValue("tl-reason") !== "Other";
     if (tlReasonOther.hidden) tlReasonOther.value = "";
@@ -1534,8 +1892,10 @@ const APP_VERSION = "2.6.3";
     document.getElementById("tracker-modal-student-name").textContent = state.student.studentName || "";
     document.getElementById("tracker-modal-student-id").textContent = state.student.studentId || "";
 
-    const today = new Date();
-    tlDate.value = today.toISOString().slice(0, 10);
+    // toISOString() UTC deta hai — IST me raat 12 se subah 5:30 tak kal ki date
+    // auto-fill ho jati thi, isliye study aksar pichhle din me chali jati thi.
+    const nowLocal = new Date();
+    tlDate.value = new Date(nowLocal.getTime() - nowLocal.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
     tlHours.value = "";
     resetChipGroup(tlPlannedGroup);
     resetChipGroup(tlReasonGroup);
@@ -1548,7 +1908,8 @@ const APP_VERSION = "2.6.3";
     tlTomorrow.value = "";
     tlMentorSupport.value = "";
     tlProofFile.value = "";
-    tlError.hidden = true;
+    clearModalError(tlError);
+    clearFieldError();
 
     trackerModal.hidden = false;
   }
@@ -1563,38 +1924,141 @@ const APP_VERSION = "2.6.3";
     if (e.target === trackerModal) closeTrackerModal();
   });
 
+  // Image ko canvas par resize + JPEG compress karta hai (max 1600px, target
+  // ~900 KB) — isse 8 MB ka photo bhi ~200-400 KB ban jata hai aur submit
+  // kabhi size ki wajah se fail nahi hota. Non-image / koi problem ho to null.
+  function compressProofImage(file) {
+    return new Promise((resolve) => {
+      const type = String(file.type || "");
+      if (type.indexOf("image/") !== 0 || type === "image/gif" || !window.FileReader || !document.createElement("canvas").getContext) {
+        return resolve(null);
+      }
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const MAX_DIM = 1600;
+          const scale = Math.min(1, MAX_DIM / Math.max(img.width || 1, img.height || 1));
+          const w = Math.max(1, Math.round((img.width || 1) * scale));
+          const h = Math.max(1, Math.round((img.height || 1) * scale));
+          const canvas = document.createElement("canvas");
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, w, h);
+          let quality = 0.78;
+          let dataUrl = canvas.toDataURL("image/jpeg", quality);
+          while (dataUrl.length * 0.75 > PROOF_JPEG_TARGET && quality > 0.4) {
+            quality -= 0.1;
+            dataUrl = canvas.toDataURL("image/jpeg", quality);
+          }
+          URL.revokeObjectURL(url);
+          resolve(dataUrl.split(",")[1] || null);
+        } catch (err) {
+          try { URL.revokeObjectURL(url); } catch (e) {}
+          resolve(null);
+        }
+      };
+      img.onerror = () => { try { URL.revokeObjectURL(url); } catch (e) {} resolve(null); };
+      img.src = url;
+    });
+  }
+
   function readProofFile() {
     return new Promise((resolve, reject) => {
       const file = tlProofFile.files && tlProofFile.files[0];
       if (!file) return resolve(null);
 
-      if (file.size > MAX_PROOF_BYTES) {
-        return reject(new Error("That file is too large — please attach something under 3 MB."));
-      }
-
-      const reader = new FileReader();
-      reader.onload = () => {
-        const base64 = String(reader.result).split(",")[1] || "";
-        resolve({
-          fileName: file.name,
-          mimeType: file.type || "application/octet-stream",
-          base64
-        });
-      };
-      reader.onerror = () => reject(new Error("Couldn't read that file — please try again."));
-      reader.readAsDataURL(file);
+      // Pehle compress karo, size check BAAD me — warna 20 MP ka normal phone
+      // photo bhi cap se bada hote hi reject ho jata tha (yahi "submit nahi
+      // ho raha" ka bada karan tha). Cap sirf un files par lagta hai jo image
+      // nahi hain ya compress nahi ho payin (PDF etc.).
+      compressProofImage(file).then((compressed) => {
+        if (compressed) {
+          const base = String(file.name || "proof").replace(/\.[^.]+$/, "");
+          return resolve({ fileName: base + ".jpg", mimeType: "image/jpeg", base64: compressed, compressed: true });
+        }
+        if (file.size > MAX_PROOF_BYTES) {
+          return reject(new Error("That file is too large — please attach something under 15 MB."));
+        }
+        const reader = new FileReader();
+        reader.onload = () => {
+          const base64 = String(reader.result).split(",")[1] || "";
+          resolve({
+            fileName: file.name,
+            mimeType: file.type || "application/octet-stream",
+            base64
+          });
+        };
+        reader.onerror = () => reject(new Error("Couldn't read that file — please try again."));
+        reader.readAsDataURL(file);
+      });
     });
+  }
+
+  // 8 Oct (raat): #tl-error / #fp-error par class "login-error" lagi hai aur
+  // CSS me .login-error{display:none} hai — sirf `hidden=false` karne se text
+  // DIKHTA HI NAHI tha. Student ko lagta tha "submit button kaam nahi kar raha".
+  // Ab inline display bhi set karte hain (cached CSS ke bawajood visible).
+  function setModalError(el, message) {
+    if (!el) return;
+    el.textContent = message;
+    el.hidden = false;
+    el.style.display = "block";
+  }
+
+  function clearModalError(el) {
+    if (!el) return;
+    el.textContent = "";
+    el.hidden = true;
+    el.style.display = "none";
+  }
+
+  // 9 Oct 2026: jo field khali hai usi par laal ring + auto-scroll + focus.
+  // Pehle ek hi combined message aata tha aur khali field scroll ke bahar (upar)
+  // hota tha — student ko samajh hi nahi aata tha kya chhoot raha hai.
+  function clearFieldError() {
+    document.querySelectorAll(".field-error").forEach((n) => n.classList.remove("field-error"));
+  }
+
+  function highlightFieldError(el) {
+    clearFieldError();
+    if (!el) return;
+    const field = (el.closest && el.closest(".field")) || el;
+    field.classList.add("field-error");
+    try { field.scrollIntoView({ block: "center", behavior: "smooth" }); }
+    catch (e) { try { field.scrollIntoView(); } catch (e2) {} }
+    try { if (field.focus) field.focus({ preventScroll: true }); } catch (e) {}
   }
 
   tlSubmitBtn.addEventListener("click", async () => {
     const date = tlDate.value;
-    const hours = parseFloat(tlHours.value);
+    // "2,5" (comma wala keyboard) bhi chale — pehle wahan value hi blank ho jati thi.
+    const hoursRaw = String(tlHours.value == null ? "" : tlHours.value).replace(",", ".").trim();
+    const hours = parseFloat(hoursRaw);
     const planned = getRadioValue("tl-planned");
     const mentorSupport = tlMentorSupport.value;
 
-    if (!date || !hours || hours <= 0 || !planned) {
-      tlError.textContent = "Please fill in date, hours, and whether you studied as planned.";
-      tlError.hidden = false;
+    // 9 Oct 2026: ek-ek field ka apna message — taaki student ko turant pata chale
+    // kya chhoot raha hai (aur wo field screen par highlight ho jaye).
+    if (!date) {
+      setModalError(tlError, "Study Date khali hai — upar calendar par tap karke date chuno.");
+      highlightFieldError(tlDate);
+      return;
+    }
+    if (!hoursRaw || isNaN(hours) || hours <= 0) {
+      setModalError(tlError, "Total Study Hours khali hai — upar 'Total Study Hours' box me likho (jaise 2.5) ya neeche 1h / 2h chip par tap karo.");
+      highlightFieldError(tlHours);
+      return;
+    }
+    if (hours > 24) {
+      setModalError(tlError, "Hours 24 se zyada nahi ho sakte — dobara likho (jaise 3 ya 2.5).");
+      highlightFieldError(tlHours);
+      return;
+    }
+    if (!planned) {
+      setModalError(tlError, "Ye batana zaroori hai — aaj plan ke hisaab se padha? Yes / No / Maybe me se ek chuno.");
+      highlightFieldError(tlPlannedGroup);
       return;
     }
 
@@ -1607,13 +2071,13 @@ const APP_VERSION = "2.6.3";
     if (planned === "No") {
       const reasonChoice = getRadioValue("tl-reason");
       if (!reasonChoice) {
-        tlError.textContent = "Please select the main reason you couldn't study today.";
-        tlError.hidden = false;
+        setModalError(tlError, "Please select the main reason you couldn't study today.");
+        highlightFieldError(tlReasonGroup);
         return;
       }
       if (reasonChoice === "Other" && !tlReasonOther.value.trim()) {
-        tlError.textContent = "Please specify your reason.";
-        tlError.hidden = false;
+        setModalError(tlError, "Please specify your reason.");
+        highlightFieldError(tlReasonOther);
         return;
       }
       reason = reasonChoice === "Other" ? tlReasonOther.value.trim() : reasonChoice;
@@ -1622,18 +2086,18 @@ const APP_VERSION = "2.6.3";
       targetDone = getRadioValue("tl-target");
 
       if (!subjectList.length) {
-        tlError.textContent = "Please select at least one subject you studied today.";
-        tlError.hidden = false;
+        setModalError(tlError, "Please select at least one subject you studied today.");
+        highlightFieldError(tlSubjectsGroup);
         return;
       }
       if (!targetDone) {
-        tlError.textContent = "Please select whether you completed today's target.";
-        tlError.hidden = false;
+        setModalError(tlError, "Please select whether you completed today's target.");
+        highlightFieldError(tlTargetGroup);
         return;
       }
       if (!tlProofFile.files.length) {
-        tlError.textContent = "Please attach today's study proof.";
-        tlError.hidden = false;
+        setModalError(tlError, "Please attach today's study proof.");
+        highlightFieldError(tlProofFile);
         return;
       }
 
@@ -1644,7 +2108,7 @@ const APP_VERSION = "2.6.3";
     tlSubmitBtn.disabled = true;
     const originalLabel = tlSubmitBtn.innerHTML;
     tlSubmitBtn.innerHTML = "<span>Submitting...</span>";
-    tlError.hidden = true;
+    clearModalError(tlError);
 
     const studentId = state.student.studentId;
 
@@ -1664,8 +2128,7 @@ const APP_VERSION = "2.6.3";
       });
 
       if (!result || !result.success) {
-        tlError.textContent = (result && result.message) || "Server didn't save the entry — please try again.";
-        tlError.hidden = false;
+        setModalError(tlError, (result && result.message) || "Server didn't save the entry — please try again.");
         return;
       }
 
@@ -1693,8 +2156,7 @@ const APP_VERSION = "2.6.3";
         }
       }, 1500);
     } catch (err) {
-      tlError.textContent = err.message || "Something went wrong. Please try again.";
-      tlError.hidden = false;
+      setModalError(tlError, err.message || "Something went wrong. Please try again.");
     } finally {
       tlSubmitBtn.disabled = false;
       tlSubmitBtn.innerHTML = originalLabel;
@@ -1710,11 +2172,11 @@ const APP_VERSION = "2.6.3";
     const email = document.getElementById("fp-email").value.trim();
     const error = document.getElementById("fp-error");
 
-    error.hidden = true;
+    error.hidden = true; error.style.display = "none";
 
     if (!studentId || !email) {
       error.textContent = "Please enter Student ID and registered Email.";
-      error.hidden = false;
+      error.hidden = false; error.style.display = "block";
       return;
     }
 
@@ -1731,7 +2193,7 @@ const APP_VERSION = "2.6.3";
       otpInputs[0].focus();
     } catch (err) {
       error.textContent = err.message || "Unable to send OTP.";
-      error.hidden = false;
+      error.hidden = false; error.style.display = "block";
     }
 
     btn.disabled = false;
@@ -1806,20 +2268,20 @@ const APP_VERSION = "2.6.3";
     const confirmPassword = document.getElementById("reset-confirm-password").value.trim();
     const error = document.getElementById("reset-error");
 
-    error.hidden = true;
+    error.hidden = true; error.style.display = "none";
 
     if (!password || !confirmPassword) {
-      error.hidden = false;
+      error.hidden = false; error.style.display = "block";
       error.textContent = "Please fill all fields.";
       return;
     }
     if (password.length < 6) {
-      error.hidden = false;
+      error.hidden = false; error.style.display = "block";
       error.textContent = "Password must be at least 6 characters.";
       return;
     }
     if (password !== confirmPassword) {
-      error.hidden = false;
+      error.hidden = false; error.style.display = "block";
       error.textContent = "Passwords do not match.";
       return;
     }
@@ -1828,7 +2290,7 @@ const APP_VERSION = "2.6.3";
       const result = await api.resetPassword(studentId, password);
 
       if (!result.success) {
-        error.hidden = false;
+        error.hidden = false; error.style.display = "block";
         error.textContent = result.message;
         return;
       }
@@ -1839,7 +2301,7 @@ const APP_VERSION = "2.6.3";
       forgotModal.hidden = true;
       otpModal.hidden = true;
     } catch (err) {
-      error.hidden = false;
+      error.hidden = false; error.style.display = "block";
       error.textContent = err.message || "Unable to reset password.";
     }
   });
