@@ -406,54 +406,88 @@ export const AppUpdateProvider = ({ children }: PropsWithChildren) => {
     return () => subscription.remove();
   }, [backendMode, booting, autoUpdate]);
 
-  // Dev-only preview harness: on web in __DEV__, EXPO_PUBLIC_UPDATE_DEMO or a
-  // ?updateDemo=<state> query param renders a mock state so the update UI can be
-  // visually verified without a device (e.g. ?updateDemo=force-downloading,
-  // ready, error, installing). Inactive in release builds (__DEV__ false) and on
-  // Android, where the real download pipeline drives the UI.
+  // Dev-only preview harness (web + __DEV__ only; inactive in release builds and
+  // on Android). Lets us visually QA the update UI without a device.
+  //   EXPO_PUBLIC_UPDATE_DEMO=cycle  -> auto-cycles through every state
+  //   EXPO_PUBLIC_UPDATE_DEMO=force-ready / ready / error / downloading / installing
+  //   ?updateDemo=<same>             -> same, via query param (takes precedence)
   useEffect(() => {
     if (!(__DEV__ && Platform.OS === 'web')) return;
     const fromQuery =
       typeof window !== 'undefined' && window.location && window.location.search
         ? new URLSearchParams(window.location.search).get('updateDemo')
         : null;
-    const demo = String(fromQuery || process.env.EXPO_PUBLIC_UPDATE_DEMO || '').trim();
+    const demo = String(fromQuery || process.env.EXPO_PUBLIC_UPDATE_DEMO || '')
+      .trim()
+      .toLowerCase();
     if (!demo) return;
-    const forceUpdate = demo.startsWith('force');
-    const phase = (demo.replace(/^force[-_]?/, '') || 'downloading') as UpdatePhase;
-    const base: AppUpdateUi = {
+
+    const TOTAL = 54_630_381;
+    const buildUi = (force: boolean, phase: UpdatePhase, progress: number): AppUpdateUi => ({
       ...NO_UI,
       phase,
-      forceUpdate,
+      forceUpdate: force,
       version: '1.15.1',
       versionCode: 45,
       releaseNotes: 'Visible update progress, clear error reasons, and one-tap install.',
-      canDismiss: !forceUpdate,
-      totalBytes: 54_630_381,
-    };
+      canDismiss: !force,
+      totalBytes: TOTAL,
+      bytesWritten: progress >= 0 ? Math.round(TOTAL * progress) : 0,
+      progress,
+      errorTitle: phase === 'error' ? 'No connection' : undefined,
+      errorMessage:
+        phase === 'error'
+          ? 'We could not reach the update server. Check your internet (Wi-Fi works best) and retry.'
+          : undefined,
+    });
+
+    if (demo === 'cycle') {
+      const seq: Array<[boolean, UpdatePhase]> = [
+        [false, 'downloading'],
+        [false, 'ready'],
+        [false, 'error'],
+        [true, 'downloading'],
+        [true, 'ready'],
+        [true, 'installing'],
+        [true, 'error'],
+      ];
+      let idx = 0;
+      let pct = 0.12;
+      const render = () => {
+        const [force, phase] = seq[idx];
+        const progress = phase === 'downloading' ? pct : phase === 'error' ? -1 : 1;
+        setUi(buildUi(force, phase, progress));
+      };
+      render();
+      const timer = setInterval(() => {
+        const [, phase] = seq[idx];
+        if (phase === 'downloading') {
+          pct += 0.14;
+          if (pct >= 1) {
+            pct = 0.12;
+            idx = (idx + 1) % seq.length;
+          }
+        } else {
+          idx = (idx + 1) % seq.length;
+          pct = 0.12;
+        }
+        render();
+      }, 1500);
+      return () => clearInterval(timer);
+    }
+
+    const force = demo.startsWith('force');
+    const phase = (demo.replace(/^force[-_]?/, '') || 'downloading') as UpdatePhase;
     if (phase === 'downloading') {
       let pct = 0.08;
-      setUi({ ...base, progress: pct, bytesWritten: Math.round(base.totalBytes * pct) });
+      setUi(buildUi(force, phase, pct));
       const timer = setInterval(() => {
         pct = pct >= 0.96 ? 0.08 : pct + 0.04;
-        setUi((prev) => ({
-          ...prev,
-          progress: pct,
-          bytesWritten: Math.round(base.totalBytes * pct),
-        }));
+        setUi(buildUi(force, phase, pct));
       }, 400);
       return () => clearInterval(timer);
     }
-    if (phase === 'ready') setUi({ ...base, progress: 1, bytesWritten: base.totalBytes });
-    else if (phase === 'error')
-      setUi({
-        ...base,
-        errorTitle: 'No connection',
-        errorMessage:
-          'We could not reach the update server. Check your internet (Wi-Fi works best) and retry.',
-      });
-    else if (phase === 'installing') setUi({ ...base, progress: 1 });
-    else setUi(base);
+    setUi(buildUi(force, phase, phase === 'error' ? -1 : 1));
     return undefined;
   }, []);
 
