@@ -8,6 +8,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
+  Linking as RNLinking,
   Modal,
   Platform,
   Pressable,
@@ -18,8 +19,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { WebView } from 'react-native-webview';
-import { Card, ErrorBanner, PrimaryButton, SectionHeader } from '../components/ui';
+import { Card, ErrorBanner, PrimaryButton } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import type { RootStackParamList } from '../navigation/types';
 import {
@@ -33,6 +33,10 @@ import {
 } from '../services/mentorTests';
 import { PDF_VIEWER_HTML } from '../services/pdfViewerBundle';
 import { colors, radius, spacing } from '../theme';
+
+// react-native-webview has no web implementation - load it lazily like NotePreviewScreen.
+const NativeWebView: any =
+  Platform.OS === 'web' ? null : (require('react-native-webview').WebView as any);
 
 /** Same helper as NotePreviewScreen - notes aur papers dono Drive files hain. */
 const getDriveFileId = (url?: string | null) => {
@@ -73,10 +77,10 @@ const zoomScript = (value: number) => `
 `;
 
 /**
- * v1.15.0 - native 4-step Mentor Test flow (no WebView portal):
- *  1 Download & solve  2 Upload answer sheet (<=10MB)  3 Self-evaluation
- *  4 Submit marks & mistakes. Documents open in a protected in-app viewer
- *  (in-memory only, watermarked, no export/share).
+ * Mentor Test screen - simple two-action format (owner-approved):
+ *   [ Open Question Paper ]  [ Upload Answer Sheet ]
+ * No "Step 1/2/3" labels. After upload: answer sheet + marking scheme +
+ * marks/mistakes submit appear. MCQ tests render questions directly.
  */
 export const MentorTestScreen = () => {
   const route = useRoute<RouteProp<RootStackParamList, 'MentorTest'>>();
@@ -87,9 +91,10 @@ export const MentorTestScreen = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const [answerUrl, setAnswerUrl] = useState('');          // set after successful upload
+  const [answerUrl, setAnswerUrl] = useState('');
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const [evaluated, setEvaluated] = useState<{ score?: number; total?: number } | null>(null);
   const [marksInput, setMarksInput] = useState('');
@@ -97,14 +102,12 @@ export const MentorTestScreen = () => {
   const [marksError, setMarksError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  // Protected viewer state (notes-format: Drive preview embed; bytes fallback)
   const [viewer, setViewer] = useState<{ label: string; url: string; b64?: string } | null>(null);
   const [zoomPercent, setZoomPercent] = useState(100);
   const [textDoc, setTextDoc] = useState<{ label: string; text: string } | null>(null);
-  const viewerRef = useRef<WebView | null>(null);
+  const viewerRef = useRef<any>(null);
   const viewerReady = useRef(false);
 
-  // MCQ-type test state
   const [answers, setAnswers] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -130,41 +133,18 @@ export const MentorTestScreen = () => {
   const hasAnswerDoc = Boolean(meta?.answerSheetUrl || meta?.answerSheetText);
   const hasMarkingDoc = Boolean(meta?.markingSchemeUrl || meta?.markingSchemeText);
 
-  const openAnswerDoc = () => {
-    if (meta?.answerSheetUrl) void openProtected(meta.answerSheetUrl, 'Answer Sheet');
-    else if (meta?.answerSheetText) setTextDoc({ label: 'Answer Sheet', text: meta.answerSheetText });
-  };
-  const openMarkingDoc = () => {
-    if (meta?.markingSchemeUrl) void openProtected(meta.markingSchemeUrl, 'Marking Scheme');
-    else if (meta?.markingSchemeText) setTextDoc({ label: 'Marking Scheme', text: meta.markingSchemeText });
-  };
-
-  const submitMcq = async () => {
-    if (submitting || !meta) return;
-    setMarksError('');
-    if (Object.keys(answers).length < meta.questions.length) {
-      setMarksError(`Answer all questions before submitting (${Object.keys(answers).length}/${meta.questions.length} done).`);
-      return;
-    }
-    setSubmitting(true);
-    try {
-      const res = await submitMcqAnswers({ testId, answers });
-      setEvaluated({ score: res.score, total: res.total });
-    } catch (e) {
-      setMarksError(e instanceof Error ? e.message : 'Submit failed. Try again.');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
   const openProtected = async (url: string | null, label: string) => {
     if (!url) return;
     setError('');
     setZoomPercent(100);
     viewerReady.current = false;
-    if (getDriveFileId(url)) {
-      // Notes-format: Drive's own preview embed - no bytes download, no
-      // 'Invalid PDF structure', download/print controls hidden by script.
+    const driveId = getDriveFileId(url);
+    if (Platform.OS === 'web') {
+      // Preview mode: Drive preview in a new browser tab
+      void RNLinking.openURL(driveId ? `https://drive.google.com/file/d/${driveId}/preview` : url);
+      return;
+    }
+    if (driveId) {
       setViewer({ label, url });
       return;
     }
@@ -177,27 +157,23 @@ export const MentorTestScreen = () => {
   };
 
   useEffect(() => {
-    if (viewer && getDriveFileId(viewer.url)) {
-      viewerRef.current?.injectJavaScript(zoomScript(zoomPercent));
+    if (viewer && getDriveFileId(viewer.url) && viewerRef.current) {
+      viewerRef.current.injectJavaScript(zoomScript(zoomPercent));
     }
   }, [zoomPercent, viewer]);
 
-  const feedViewer = async () => {
-    const wv = viewerRef.current;
-    const b64 = viewer?.b64;
-    if (!wv || !b64 || viewerReady.current) return;
-    const CH = 262144;
-    for (let i = 0; i < b64.length; i += CH) {
-      const chunk = JSON.stringify(b64.slice(i, i + CH));
-      await wv.injectJavaScript(`window.__pushChunk(${chunk}); true;`);
-    }
-    const wm = JSON.stringify(`${student?.studentId || 'STUDENT'} · ${student?.studentName || ''} · confidential`);
-    await wv.injectJavaScript(`window.__render(${wm}); true;`);
-    viewerReady.current = true;
+  const openAnswerDoc = () => {
+    if (meta?.answerSheetUrl) void openProtected(meta.answerSheetUrl, 'Answer Sheet');
+    else if (meta?.answerSheetText) setTextDoc({ label: 'Answer Sheet', text: meta.answerSheetText });
+  };
+  const openMarkingDoc = () => {
+    if (meta?.markingSchemeUrl) void openProtected(meta.markingSchemeUrl, 'Marking Scheme');
+    else if (meta?.markingSchemeText) setTextDoc({ label: 'Marking Scheme', text: meta.markingSchemeText });
   };
 
   const pickAndUpload = async (source: 'camera' | 'gallery' | 'file') => {
     if (uploading || evaluated) return;
+    setPickerOpen(false);
     setUploadError('');
     try {
       let uri = '';
@@ -261,6 +237,38 @@ export const MentorTestScreen = () => {
     }
   };
 
+  const submitMcq = async () => {
+    if (submitting || !meta) return;
+    setMarksError('');
+    if (Object.keys(answers).length < meta.questions.length) {
+      setMarksError(`Answer all questions before submitting (${Object.keys(answers).length}/${meta.questions.length} done).`);
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const res = await submitMcqAnswers({ testId, answers });
+      setEvaluated({ score: res.score, total: res.total });
+    } catch (e) {
+      setMarksError(e instanceof Error ? e.message : 'Submit failed. Try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const feedViewer = async () => {
+    const wv = viewerRef.current;
+    const b64 = viewer?.b64;
+    if (!wv || !b64 || viewerReady.current) return;
+    const CH = 262144;
+    for (let i = 0; i < b64.length; i += CH) {
+      const chunk = JSON.stringify(b64.slice(i, i + CH));
+      await wv.injectJavaScript(`window.__pushChunk(${chunk}); true;`);
+    }
+    const wm = JSON.stringify(`${student?.studentId || 'STUDENT'} · ${student?.studentName || ''} · confidential`);
+    await wv.injectJavaScript(`window.__render(${wm}); true;`);
+    viewerReady.current = true;
+  };
+
   return (
     <SafeAreaView style={styles.page} edges={['top']}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
@@ -283,40 +291,78 @@ export const MentorTestScreen = () => {
               <Text style={styles.evalTitle}>✅ Test Evaluated</Text>
               <Text style={styles.evalScore}>{evaluated.score} / {evaluated.total ?? '?'}</Text>
               <Text style={styles.evalSub}>Your self-evaluation has been recorded and sent to your mentor.</Text>
+              {hasAnswerDoc ? <PrimaryButton label="📝 Open Answer Sheet" icon="clipboard-outline" variant="secondary" onPress={openAnswerDoc} /> : null}
             </Card>
+          ) : isMcq ? (
+            <>
+              <Card style={styles.card}>
+                <PrimaryButton label="📄 Open Question Paper" icon="document-text-outline" onPress={() => void openProtected(meta?.paperUrl ?? null, 'Question Paper')} />
+                {meta?.instructions ? <Text style={styles.instructions}>{meta.instructions}</Text> : null}
+              </Card>
+              {meta?.questions.map((q, qi) => (
+                <Card key={q.id || qi} style={styles.card}>
+                  <Text style={styles.qPrompt}>Q{qi + 1}. {q.prompt}</Text>
+                  {q.options.map((op) => (
+                    <Pressable
+                      key={op.id}
+                      onPress={() => setAnswers((a) => ({ ...a, [q.id]: op.id }))}
+                      style={[styles.optRow, answers[q.id] === op.id ? styles.optSel : null]}
+                    >
+                      <Ionicons name={answers[q.id] === op.id ? 'radio-button-on' : 'radio-button-off'} size={18} color={answers[q.id] === op.id ? colors.primary : colors.muted} />
+                      <Text style={styles.optText}>{op.id}. {op.text}</Text>
+                    </Pressable>
+                  ))}
+                </Card>
+              ))}
+              <Card style={styles.card}>
+                <Text style={styles.muted}>Answered {Object.keys(answers).length} of {meta?.questions.length ?? 0}</Text>
+                {marksError ? <Text style={styles.errorText}>{marksError}</Text> : null}
+                <PrimaryButton label="Submit Answers" icon="checkmark-circle-outline" loading={submitting} onPress={() => void submitMcq()} />
+              </Card>
+            </>
           ) : (
             <>
-              <SectionHeader title="Step 1 · Download & solve" />
+              {/* Two big actions - no step numbers */}
               <Card style={styles.card}>
-                {meta?.paperUrl ? (
-                  <PrimaryButton label="📄 Open Question Paper" icon="document-text-outline" onPress={() => void openProtected(meta.paperUrl, 'Question Paper')} />
-                ) : (
-                  <Text style={styles.muted}>{isMcq ? 'MCQ test — read the questions below and submit your answers.' : 'No question paper attached to this test.'}</Text>
-                )}
+                <PrimaryButton label="📄 Open Question Paper" icon="document-text-outline" onPress={() => void openProtected(meta?.paperUrl ?? null, 'Question Paper')} />
+                {!meta?.paperUrl ? <Text style={styles.errorText}>No question paper attached to this test.</Text> : null}
                 {meta?.instructions ? <Text style={styles.instructions}>{meta.instructions}</Text> : null}
               </Card>
 
-              {isPaper ? (
-              <>
-              <SectionHeader title="Step 2 · Upload answer sheet" />
               <Card style={styles.card}>
                 {answerUrl ? (
                   <View style={styles.okBox}>
                     <Ionicons name="cloud-done" size={20} color={colors.teal} />
-                    <Text style={styles.okText}>Answer sheet uploaded — self-evaluation unlocked below.</Text>
+                    <Text style={styles.okText}>Answer sheet uploaded</Text>
                   </View>
                 ) : (
                   <>
-                    <Text style={styles.muted}>Upload a PDF or photos of your hand-written answers (max 10 MB).</Text>
-                    <View style={styles.btnRow}>
-                      <View style={styles.btnHalf}><PrimaryButton label="📷 Camera" icon="camera-outline" loading={uploading && true} onPress={() => void pickAndUpload('camera')} /></View>
-                      <View style={styles.btnHalf}><PrimaryButton label="🖼 Gallery" icon="image-outline" onPress={() => void pickAndUpload('gallery')} /></View>
-                    </View>
-                    <PrimaryButton label="📁 Choose PDF / file" icon="folder-open-outline" variant="secondary" onPress={() => void pickAndUpload('file')} />
+                    <PrimaryButton
+                      label="⬆️ Upload Answer Sheet"
+                      icon="cloud-upload-outline"
+                      loading={uploading}
+                      onPress={() => (Platform.OS === 'web' ? setUploadError('Upload se phone par available hai (preview mode).') : setPickerOpen((o) => !o))}
+                    />
+                    {pickerOpen ? (
+                      <View style={styles.pickerRow}>
+                        <Pressable style={styles.pickBtn} onPress={() => void pickAndUpload('camera')}>
+                          <Ionicons name="camera" size={20} color={colors.primary} />
+                          <Text style={styles.pickLabel}>Camera</Text>
+                        </Pressable>
+                        <Pressable style={styles.pickBtn} onPress={() => void pickAndUpload('gallery')}>
+                          <Ionicons name="images" size={20} color={colors.primary} />
+                          <Text style={styles.pickLabel}>Gallery</Text>
+                        </Pressable>
+                        <Pressable style={styles.pickBtn} onPress={() => void pickAndUpload('file')}>
+                          <Ionicons name="document" size={20} color={colors.primary} />
+                          <Text style={styles.pickLabel}>PDF</Text>
+                        </Pressable>
+                      </View>
+                    ) : null}
                     {uploading ? (
                       <View style={styles.progressRow}>
                         <ActivityIndicator color={colors.primary} />
-                        <Text style={styles.progressText}>Uploading… this can take 5–30 seconds on mobile network.</Text>
+                        <Text style={styles.progressText}>Uploading… 5–30 seconds on mobile network.</Text>
                       </View>
                     ) : null}
                     {uploadError ? <Text style={styles.errorText}>{uploadError}</Text> : null}
@@ -324,33 +370,21 @@ export const MentorTestScreen = () => {
                 )}
               </Card>
 
-              <SectionHeader title="Step 3 · Self-evaluation" />
-              <Card style={styles.card}>
-                {unlocked ? (
-                  <>
-                    <Text style={styles.muted}>Compare your uploaded sheet with the mentor's answer key, then enter your marks below.</Text>
-                    <View style={styles.btnRow}>
-                      <View style={styles.btnHalf}>
+              {unlocked ? (
+                <>
+                  <Card style={styles.card}>
+                    <View style={styles.duoRow}>
+                      <View style={styles.duoHalf}>
                         <PrimaryButton label="📝 Answer Sheet" icon="clipboard-outline" onPress={openAnswerDoc} />
                       </View>
-                      <View style={styles.btnHalf}>
+                      <View style={styles.duoHalf}>
                         <PrimaryButton label="📊 Marking Scheme" icon="list-outline" variant="secondary" onPress={openMarkingDoc} />
                       </View>
                     </View>
                     {!hasAnswerDoc ? <Text style={styles.errorText}>Mentor has not provided an answer sheet.</Text> : null}
                     {!hasMarkingDoc ? <Text style={styles.errorText}>Mentor has not provided a marking scheme.</Text> : null}
-                  </>
-                ) : (
-                  <View style={styles.lockedBox}>
-                    <Ionicons name="lock-closed" size={18} color={colors.muted} />
-                    <Text style={styles.muted}>Upload your answer sheet in Step 2 to unlock the answer key and marking scheme.</Text>
-                  </View>
-                )}
-              </Card>
+                  </Card>
 
-              {unlocked ? (
-                <>
-                  <SectionHeader title="Step 4 · Submit marks & mistakes" />
                   <Card style={styles.card}>
                     <Text style={styles.label}>Marks obtained{meta?.maxMarks ? ` (out of ${meta.maxMarks})` : ''}</Text>
                     <TextInput
@@ -375,42 +409,21 @@ export const MentorTestScreen = () => {
                     <PrimaryButton label="Final Submit" icon="checkmark-circle-outline" loading={submitting} onPress={() => void submit()} />
                   </Card>
                 </>
-              ) : null}
-              </>
-              ) : isMcq ? (
-              <>
-                <SectionHeader title="Questions" />
-                {meta?.questions.map((q, qi) => (
-                  <Card key={q.id || qi} style={styles.card}>
-                    <Text style={styles.qPrompt}>Q{qi + 1}. {q.prompt}</Text>
-                    {q.options.map((op) => (
-                      <Pressable
-                        key={op.id}
-                        onPress={() => setAnswers((a) => ({ ...a, [q.id]: op.id }))}
-                        style={[styles.optRow, answers[q.id] === op.id ? styles.optSel : null]}
-                      >
-                        <Ionicons name={answers[q.id] === op.id ? 'radio-button-on' : 'radio-button-off'} size={18} color={answers[q.id] === op.id ? colors.primary : colors.muted} />
-                        <Text style={styles.optText}>{op.id}. {op.text}</Text>
-                      </Pressable>
-                    ))}
-                  </Card>
-                ))}
-                <Card style={styles.card}>
-                  <Text style={styles.muted}>Answered {Object.keys(answers).length} of {meta?.questions.length ?? 0}</Text>
-                  {marksError ? <Text style={styles.errorText}>{marksError}</Text> : null}
-                  <PrimaryButton label="Submit Answers" icon="checkmark-circle-outline" loading={submitting} onPress={() => void submitMcq()} />
-                </Card>
-              </>
               ) : (
-                <Card style={styles.card}><Text style={styles.muted}>This test has no paper or questions yet. Check back after your mentor publishes it.</Text></Card>
+                <Card style={styles.card}>
+                  <View style={styles.lockedBox}>
+                    <Ionicons name="lock-closed" size={18} color={colors.muted} />
+                    <Text style={styles.muted}>Answer sheet upload karne ke baad answer key, marking scheme aur marks submit khul jayega.</Text>
+                  </View>
+                </Card>
               )}
             </>
           )}
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Protected in-app document viewer: memory-only, watermarked, no export */}
-      <Modal visible={Boolean(viewer)} transparent={false} animationType="slide" onRequestClose={() => setViewer(null)}>
+      {/* Protected in-app document viewer (notes-format Drive embed + watermark) */}
+      <Modal visible={Boolean(viewer) && Platform.OS !== 'web'} transparent={false} animationType="slide" onRequestClose={() => setViewer(null)}>
         <SafeAreaView style={styles.viewerPage} edges={['top', 'bottom']}>
           <View style={styles.viewerBar}>
             <Text style={styles.viewerTitle} numberOfLines={1}>{viewer?.label || 'Document'}</Text>
@@ -425,9 +438,9 @@ export const MentorTestScreen = () => {
               <Ionicons name="close" size={22} color="#fff" />
             </Pressable>
           </View>
-          {viewer ? (
+          {viewer && NativeWebView ? (
             getDriveFileId(viewer.url) ? (
-              <WebView
+              <NativeWebView
                 ref={viewerRef}
                 source={{ uri: `https://drive.google.com/file/d/${getDriveFileId(viewer.url)}/preview` }}
                 javaScriptEnabled
@@ -436,14 +449,14 @@ export const MentorTestScreen = () => {
                 style={styles.viewerWeb}
               />
             ) : (
-              <WebView
+              <NativeWebView
                 ref={viewerRef}
                 source={{ html: PDF_VIEWER_HTML }}
                 originWhitelist={['*']}
                 javaScriptEnabled
                 scrollEnabled
                 onLoadEnd={() => void feedViewer()}
-                onMessage={(e) => {
+                onMessage={(e: any) => {
                   const d = e.nativeEvent.data;
                   if (typeof d === 'string' && d.startsWith('error:')) setError(d.slice(6));
                 }}
@@ -451,7 +464,6 @@ export const MentorTestScreen = () => {
               />
             )
           ) : null}
-          {/* Watermark overlay - sits over the Drive embed as well */}
           <View style={styles.wmOverlay} pointerEvents="none">
             {Array.from({ length: 24 }).map((_, i) => (
               <Text key={i} style={styles.wmText}>{student?.studentId} · {student?.studentName} · confidential</Text>
@@ -490,8 +502,11 @@ const styles = StyleSheet.create({
   card: { padding: spacing.lg, marginBottom: spacing.md },
   muted: { color: colors.muted, fontSize: 11, lineHeight: 16, marginBottom: spacing.sm },
   instructions: { color: colors.inkSoft, fontSize: 11, lineHeight: 16, marginTop: spacing.sm },
-  btnRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm },
-  btnHalf: { flex: 1 },
+  duoRow: { flexDirection: 'row', gap: spacing.sm },
+  duoHalf: { flex: 1 },
+  pickerRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
+  pickBtn: { flex: 1, alignItems: 'center', gap: 4, backgroundColor: colors.canvas, borderRadius: radius.md, paddingVertical: spacing.md },
+  pickLabel: { color: colors.inkSoft, fontSize: 10, fontWeight: '800' },
   okBox: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.tealSoft, borderRadius: radius.md, padding: spacing.md },
   okText: { color: colors.teal, fontSize: 11, fontWeight: '800', flex: 1 },
   lockedBox: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.canvas, borderRadius: radius.md, padding: spacing.md },
@@ -504,22 +519,22 @@ const styles = StyleSheet.create({
   evalCard: { padding: spacing.xl, alignItems: 'center', marginBottom: spacing.md },
   evalTitle: { color: colors.teal, fontSize: 15, fontWeight: '900' },
   evalScore: { color: colors.ink, fontSize: 30, fontWeight: '900', marginTop: spacing.sm },
-  evalSub: { color: colors.muted, fontSize: 10, marginTop: spacing.sm, textAlign: 'center' },
-  viewerPage: { flex: 1, backgroundColor: '#202124' },
-  viewerBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.lg, paddingVertical: spacing.sm },
-  viewerTitle: { color: '#fff', fontSize: 13, fontWeight: '800', flex: 1 },
-  viewerClose: { padding: spacing.xs, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: radius.sm },
-  viewerWeb: { flex: 1, backgroundColor: '#525659' },
-  viewerHint: { color: 'rgba(255,255,255,0.55)', fontSize: 9, textAlign: 'center', paddingVertical: spacing.xs },
-  zoomBox: { flexDirection: 'row', alignItems: 'center', gap: 2, marginRight: spacing.sm },
-  zoomBtn: { padding: 2, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: radius.sm },
-  zoomLabel: { color: '#fff', fontSize: 10, fontWeight: '800', minWidth: 34, textAlign: 'center' },
-  wmOverlay: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, flexDirection: 'row', flexWrap: 'wrap', alignContent: 'space-around', justifyContent: 'space-around', overflow: 'hidden' },
-  wmText: { color: 'rgba(110,110,110,0.16)', fontSize: 14, fontWeight: '700', transform: [{ rotate: '-30deg' }] },
+  evalSub: { color: colors.muted, fontSize: 10, marginTop: spacing.sm, textAlign: 'center', marginBottom: spacing.md },
   qPrompt: { color: colors.ink, fontSize: 12, fontWeight: '800', lineHeight: 18, marginBottom: spacing.sm },
   optRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: radius.md, marginBottom: 4, backgroundColor: colors.canvas },
   optSel: { backgroundColor: colors.primarySoft, borderWidth: 1, borderColor: colors.primary },
   optText: { color: colors.inkSoft, fontSize: 11, flex: 1, lineHeight: 16 },
+  viewerPage: { flex: 1, backgroundColor: '#202124' },
+  viewerBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.lg, paddingVertical: spacing.sm },
+  viewerTitle: { color: '#fff', fontSize: 13, fontWeight: '800', flex: 1 },
+  viewerClose: { padding: spacing.xs, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: radius.sm },
+  zoomBox: { flexDirection: 'row', alignItems: 'center', gap: 2, marginRight: spacing.sm },
+  zoomBtn: { padding: 2, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: radius.sm },
+  zoomLabel: { color: '#fff', fontSize: 10, fontWeight: '800', minWidth: 34, textAlign: 'center' },
+  viewerWeb: { flex: 1, backgroundColor: '#525659' },
+  wmOverlay: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, flexDirection: 'row', flexWrap: 'wrap', alignContent: 'space-around', justifyContent: 'space-around', overflow: 'hidden' },
+  wmText: { color: 'rgba(110,110,110,0.16)', fontSize: 14, fontWeight: '700', transform: [{ rotate: '-30deg' }] },
+  viewerHint: { color: 'rgba(255,255,255,0.55)', fontSize: 9, textAlign: 'center', paddingVertical: spacing.xs },
   textOverlay: { flex: 1, backgroundColor: 'rgba(9,20,43,0.72)', justifyContent: 'center', padding: spacing.lg },
   textCard: { flex: 1, backgroundColor: colors.surface, borderRadius: radius.xl, padding: spacing.lg, marginTop: spacing.xxl, marginBottom: spacing.xxl },
   textBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.md },

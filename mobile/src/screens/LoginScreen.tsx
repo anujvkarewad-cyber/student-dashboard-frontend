@@ -72,6 +72,19 @@ export const LoginScreen = ({ navigation }: Props) => {
     }
   };
 
+  // Sandbox web preview ONLY: direct login for owner verification before deploy.
+  // These env vars are set only on the sandbox preview process - never in
+  // native builds, never in CI releases.
+  React.useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const id = (process.env.EXPO_PUBLIC_PREVIEW_STUDENT_ID || '').trim();
+    const pw = (process.env.EXPO_PUBLIC_PREVIEW_PASSWORD || '').trim();
+    if (!id || !pw) return;
+    const t = setTimeout(() => { void submit(id, pw); }, 400);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <LinearGradient colors={['#EEF3FF', '#F8FAFD', '#E9F8F5']} style={styles.flex}>
       <SafeAreaView style={styles.flex}>
