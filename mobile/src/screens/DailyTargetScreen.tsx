@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { fetchDailyTarget, completeTargetTask, type DailyTarget } from '../api/reformApi';
@@ -49,7 +49,9 @@ export const DailyTargetScreen = () => {
     } catch { return {}; }
   }, []);
 
-  useEffect(() => {
+  // Re-pull the mentor target every time the screen is focused (not just on
+  // mount) so a target published or edited mid-day shows up immediately.
+  useFocusEffect(useCallback(() => {
     (async () => {
       if (student) {
         const remote = await fetchDailyTarget(student.studentId);
@@ -69,7 +71,7 @@ export const DailyTargetScreen = () => {
         { id: 'revise', label: 'Revision round', detail: 'Revise the previous day chapter for 15 minutes', kind: 'revise', done: Boolean(t.revise) },
       ]);
     })();
-  }, [readLocal, student, today, yesterday]);
+  }, [readLocal, student, today, yesterday]));
 
   const toggleTask = async (task: DailyTarget) => {
     const nextDone = !task.done;

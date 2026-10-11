@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { AppState, type AppStateStatus } from 'react-native';
 import { api } from '../api/client';
 import type { DashboardData, StudyLogPayload } from '../types';
 import { useAuth } from './AuthContext';
@@ -20,9 +21,9 @@ type DataContextValue = {
   loading: boolean;
   refreshing: boolean;
   error: string | null;
-  refreshAll: () => Promise<void>;
+  refreshAll: (silent?: boolean) => Promise<void>;
   refreshTracker: () => Promise<void>;
-  refreshLeaderboard: () => Promise<void>;
+  refreshLeaderboard: (silent?: boolean) => Promise<void>;
   refreshReports: () => Promise<void>;
   refreshNotes: () => Promise<void>;
   submitStudyLog: (entry: StudyLogPayload) => Promise<void>;
@@ -53,9 +54,12 @@ export const DataProvider = ({ children }: PropsWithChildren) => {
     try { await AsyncStorage.setItem(cacheKey(student.studentId), JSON.stringify(next)); } catch { /* cache is best effort */ }
   }, [student]);
 
-  const fetchAll = useCallback(async (showRefresh = false) => {
+  const fetchAll = useCallback(async (mode: 'initial' | 'refresh' | 'silent' = 'initial') => {
     if (!student) return;
-    showRefresh ? setRefreshing(true) : setLoading(true);
+    // 'silent' is used for background freshness pulls (app foreground / screen
+    // focus) so no spinner flashes while the data is refreshed under the hood.
+    if (mode === 'initial') setLoading(true);
+    else if (mode === 'refresh') setRefreshing(true);
     setError(null);
     const id = student.studentId;
     try {
@@ -123,10 +127,27 @@ export const DataProvider = ({ children }: PropsWithChildren) => {
         const cached = await AsyncStorage.getItem(cacheKey(student.studentId));
         if (mounted && cached) setData(JSON.parse(cached) as DashboardData);
       } catch { /* fetch below remains the source of truth */ }
-      if (mounted) fetchAll(false).catch(() => undefined);
+      if (mounted) fetchAll('initial').catch(() => undefined);
     };
     start();
     return () => { mounted = false; };
+  }, [fetchAll, student]);
+
+  // Systematic freshness: whenever the app returns to the foreground, silently
+  // re-pull every dashboard section (stats, leaderboard, daily, reports, notes)
+  // so nothing is stale when a student reopens the app hours later. This is the
+  // single fix that keeps the "small things" up to date without the user having
+  // to pull-to-refresh each screen.
+  useEffect(() => {
+    if (!student) return;
+    let previous = AppState.currentState;
+    const subscription = AppState.addEventListener('change', (next: AppStateStatus) => {
+      if (previous.match(/inactive|background/) && next === 'active') {
+        fetchAll('silent').catch(() => undefined);
+      }
+      previous = next;
+    });
+    return () => subscription.remove();
   }, [fetchAll, student]);
 
   const updateAndPersist = useCallback((updater: (current: DashboardData) => DashboardData) => {
@@ -153,12 +174,12 @@ export const DataProvider = ({ children }: PropsWithChildren) => {
     } finally { setRefreshing(false); }
   }, [student, updateAndPersist]);
 
-  const refreshLeaderboard = useCallback(async () => {
-    setRefreshing(true);
+  const refreshLeaderboard = useCallback(async (silent = false) => {
+    if (!silent) setRefreshing(true);
     try {
       const leaderboard = await api.getLeaderboard();
       updateAndPersist((current) => ({ ...current, leaderboard }));
-    } finally { setRefreshing(false); }
+    } finally { if (!silent) setRefreshing(false); }
   }, [updateAndPersist]);
 
   const refreshReports = useCallback(async () => {
@@ -213,7 +234,7 @@ export const DataProvider = ({ children }: PropsWithChildren) => {
     loading,
     refreshing,
     error,
-    refreshAll: () => fetchAll(true),
+    refreshAll: (silent = false) => fetchAll(silent ? 'silent' : 'refresh'),
     refreshTracker,
     refreshLeaderboard,
     refreshReports,

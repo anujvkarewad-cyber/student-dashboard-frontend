@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
-import React from 'react';
+import React, { useCallback } from 'react';
 import { FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { EmptyState, InitialsAvatar } from '../components/ui';
@@ -30,6 +31,14 @@ export const LeaderboardScreen = () => {
   const { data, refreshing, refreshLeaderboard } = useData();
   const list = data.leaderboard.filter(Boolean);
   const me = list.find((item) => item.studentId === student?.studentId);
+
+  // Refresh rankings every time the screen is opened, silently (no spinner
+  // flash) so the leaderboard is never showing stale app-launch data.
+  useFocusEffect(
+    useCallback(() => {
+      refreshLeaderboard(true).catch(() => undefined);
+    }, [refreshLeaderboard]),
+  );
 
   const renderRow = ({ item }: { item: LeaderboardEntry }) => {
     const isMe = item.studentId === student?.studentId;

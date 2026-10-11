@@ -261,8 +261,7 @@ export const MentorTestScreen = () => {
       const chunk = JSON.stringify(b64.slice(i, i + CH));
       await wv.injectJavaScript(`window.__pushChunk(${chunk}); true;`);
     }
-    const wm = JSON.stringify(`${student?.studentId || 'STUDENT'} · ${student?.studentName || ''} · confidential`);
-    await wv.injectJavaScript(`window.__render(${wm}); true;`);
+    await wv.injectJavaScript(`window.__render(); true;`);
     viewerReady.current = true;
   };
 
@@ -419,7 +418,7 @@ export const MentorTestScreen = () => {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Protected in-app document viewer (notes-format Drive embed + watermark) */}
+      {/* Protected in-app document viewer (notes-format Drive embed) */}
       <Modal visible={Boolean(viewer) && Platform.OS !== 'web'} transparent={false} animationType="slide" onRequestClose={() => setViewer(null)}>
         <SafeAreaView style={styles.viewerPage} edges={['top', 'bottom']}>
           <View style={styles.viewerBar}>
@@ -461,12 +460,7 @@ export const MentorTestScreen = () => {
               />
             )
           ) : null}
-          <View style={styles.wmOverlay} pointerEvents="none">
-            {Array.from({ length: 24 }).map((_, i) => (
-              <Text key={i} style={styles.wmText}>{student?.studentId} · {student?.studentName} · confidential</Text>
-            ))}
-          </View>
-          <Text style={styles.viewerHint}>Protected document · watermarked with your student ID · sharing disabled</Text>
+          <Text style={styles.viewerHint}>Protected document · sharing disabled</Text>
         </SafeAreaView>
       </Modal>
 
@@ -490,12 +484,7 @@ export const MentorTestScreen = () => {
             title: viewer.label,
             style: { flex: 1, width: '100%', border: 'none', backgroundColor: '#525659' },
           })}
-          <View style={styles.wmOverlay} pointerEvents="none">
-            {Array.from({ length: 24 }).map((_, i) => (
-              <Text key={i} style={styles.wmText}>{student?.studentId} · {student?.studentName} · confidential</Text>
-            ))}
-          </View>
-          <Text style={styles.viewerHint}>Protected preview · watermarked with your student ID · sharing disabled</Text>
+          <Text style={styles.viewerHint}>Protected preview · sharing disabled</Text>
         </View>
       ) : null}
 
@@ -559,8 +548,6 @@ const styles = StyleSheet.create({
   zoomBtn: { padding: 2, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: radius.sm },
   zoomLabel: { color: '#fff', fontSize: 10, fontWeight: '800', minWidth: 34, textAlign: 'center' },
   viewerWeb: { flex: 1, backgroundColor: '#525659' },
-  wmOverlay: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, flexDirection: 'row', flexWrap: 'wrap', alignContent: 'space-around', justifyContent: 'space-around', overflow: 'hidden' },
-  wmText: { color: 'rgba(110,110,110,0.16)', fontSize: 14, fontWeight: '700', transform: [{ rotate: '-30deg' }] },
   viewerHint: { color: 'rgba(255,255,255,0.55)', fontSize: 9, textAlign: 'center', paddingVertical: spacing.xs },
   textOverlay: { flex: 1, backgroundColor: 'rgba(9,20,43,0.72)', justifyContent: 'center', padding: spacing.lg },
   textCard: { flex: 1, backgroundColor: colors.surface, borderRadius: radius.xl, padding: spacing.lg, marginTop: spacing.xxl, marginBottom: spacing.xxl },
