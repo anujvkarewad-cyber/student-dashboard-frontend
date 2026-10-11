@@ -161,6 +161,10 @@ export const AppNavigator = () => {
       navigationRef.navigate('DailyTarget');
     } else if (link.includes('message')) {
       navigationRef.navigate('Messages');
+    } else if (link.includes('test')) {
+      navigationRef.navigate('Tests');
+    } else if (link.includes('leaderboard') || link.includes('rank')) {
+      navigationRef.navigate('Leaderboard');
     } else {
       navigationRef.navigate('Main', { screen: 'Home' });
     }

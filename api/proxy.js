@@ -423,6 +423,35 @@ export default async function handler(req, res) {
       }
     }
 
+    if (updateAction === "saveDeviceToken") {
+      // FCM device-token registration lives on the FastAPI backend now. The
+      // legacy Apps Script answer ("This option is not available") silently
+      // killed every server push, so this must never fall through to it.
+      const payload = (req.body && req.body.payload) || {};
+      const studentId = String(payload.studentId || req.body?.studentId || "").trim();
+      const token = String(payload.token || "").trim();
+      if (!MENTOR_API_URL) {
+        return res.status(200).json({
+          result: { success: false, message: "Push registration is not available on this deployment." }
+        });
+      }
+      try {
+        const response = await fetch(`${MENTOR_API_URL}/api/push/device-token`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ studentId, token })
+        });
+        const data = await response.json().catch(() => ({}));
+        const result = (data && data.result) || { success: response.ok };
+        return res.status(200).json({ result });
+      } catch (tokenErr) {
+        console.error("saveDeviceToken forward failed:", tokenErr && tokenErr.message);
+        return res.status(200).json({
+          result: { success: false, message: "Could not register the notification token." }
+        });
+      }
+    }
+
     if (MONGO_DASHBOARD_ACTIONS.has(updateAction)) {
       try {
         const payload = studyLogPayload(req);
