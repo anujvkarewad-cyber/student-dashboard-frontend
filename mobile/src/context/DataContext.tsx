@@ -22,7 +22,7 @@ type DataContextValue = {
   refreshing: boolean;
   error: string | null;
   refreshAll: (silent?: boolean) => Promise<void>;
-  refreshTracker: () => Promise<void>;
+  refreshTracker: (silent?: boolean) => Promise<void>;
   refreshLeaderboard: (silent?: boolean) => Promise<void>;
   refreshReports: () => Promise<void>;
   refreshNotes: () => Promise<void>;
@@ -158,10 +158,9 @@ export const DataProvider = ({ children }: PropsWithChildren) => {
     });
   }, [persist]);
 
-  const refreshTracker = useCallback(async () => {
+  const refreshTracker = useCallback(async (silent = false) => {
     if (!student) return;
-    setRefreshing(true);
-    setError(null);
+    if (!silent) { setRefreshing(true); setError(null); }
     try {
       const [stats, studyLog] = await Promise.all([
         api.getStats(student.studentId),
@@ -169,9 +168,9 @@ export const DataProvider = ({ children }: PropsWithChildren) => {
       ]);
       updateAndPersist((current) => ({ ...current, stats, studyLog }));
     } catch (e) {
-      setError(messageOf(e));
+      if (!silent) setError(messageOf(e));
       throw e;
-    } finally { setRefreshing(false); }
+    } finally { if (!silent) setRefreshing(false); }
   }, [student, updateAndPersist]);
 
   const refreshLeaderboard = useCallback(async (silent = false) => {

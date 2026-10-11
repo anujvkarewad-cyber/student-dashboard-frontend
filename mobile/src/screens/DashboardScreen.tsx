@@ -1,8 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { BlurTargetView, BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import React, { useRef, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -58,7 +58,7 @@ const Action = ({ icon, label, onPress }: { icon: keyof typeof Ionicons.glyphMap
 export const DashboardScreen = () => {
   const navigation = useNavigation<any>();
   const { student, backendMode } = useAuth();
-  const { data, loading, refreshing, error, refreshAll, dismissFeedback } = useData();
+  const { data, loading, refreshing, error, refreshAll, refreshTracker, dismissFeedback } = useData();
   const { todayAttempts: dailyMcqAttempts, streakForGroup } = useDailyMcq();
   const mcqGroups = groupsForStudent(student?.group);
   const completedMcqGroups = mcqGroups.filter((group) => dailyMcqAttempts.find((attempt) => attempt.group === group)?.completedAt).length;
@@ -72,6 +72,14 @@ export const DashboardScreen = () => {
   const heroTarget = useRef<View | null>(null);
   const feedback = data.feedback[0];
   const stats = data.stats;
+
+  // Keep the home screen's daily numbers (hours, streak, last-7 chart) fresh
+  // every time the tab is opened - silent, so no spinner flashes.
+  useFocusEffect(
+    useCallback(() => {
+      refreshTracker(true).catch(() => undefined);
+    }, [refreshTracker]),
+  );
 
   const maxBar = Math.max(...(stats.last7 || [1]), 1);
   const dayLabels = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
