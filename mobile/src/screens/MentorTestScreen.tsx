@@ -8,7 +8,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
-  Linking as RNLinking,
   Modal,
   Platform,
   Pressable,
@@ -139,12 +138,10 @@ export const MentorTestScreen = () => {
     setZoomPercent(100);
     viewerReady.current = false;
     const driveId = getDriveFileId(url);
-    if (Platform.OS === 'web') {
-      // Preview mode: Drive preview in a new browser tab
-      void RNLinking.openURL(driveId ? `https://drive.google.com/file/d/${driveId}/preview` : url);
-      return;
-    }
-    if (driveId) {
+    // Drive docs render through the /preview embed on BOTH platforms:
+    // native -> WebView, web (sandbox preview) -> inline iframe. No popups,
+    // because the sandboxed preview iframe blocks window.open().
+    if (driveId || Platform.OS === 'web') {
       setViewer({ label, url });
       return;
     }
@@ -473,6 +470,35 @@ export const MentorTestScreen = () => {
         </SafeAreaView>
       </Modal>
 
+      {/* WEB (sandbox preview) viewer: the sandboxed preview iframe blocks
+          window.open(), so instead of a new tab we render the SAME Drive
+          /preview embed inline through an iframe - closest web parity to the
+          native WebView. Zoom is not injectable cross-origin, so it is omitted. */}
+      {Platform.OS === 'web' && viewer ? (
+        <View style={styles.webViewerRoot}>
+          <View style={styles.viewerBar}>
+            <Text style={styles.viewerTitle} numberOfLines={1}>{viewer.label}</Text>
+            <Pressable style={styles.viewerClose} onPress={() => setViewer(null)}>
+              <Ionicons name="close" size={22} color="#fff" />
+            </Pressable>
+          </View>
+          {React.createElement('iframe', {
+            key: viewer.url,
+            src: getDriveFileId(viewer.url)
+              ? `https://drive.google.com/file/d/${getDriveFileId(viewer.url)}/preview`
+              : viewer.url,
+            title: viewer.label,
+            style: { flex: 1, width: '100%', border: 'none', backgroundColor: '#525659' },
+          })}
+          <View style={styles.wmOverlay} pointerEvents="none">
+            {Array.from({ length: 24 }).map((_, i) => (
+              <Text key={i} style={styles.wmText}>{student?.studentId} · {student?.studentName} · confidential</Text>
+            ))}
+          </View>
+          <Text style={styles.viewerHint}>Protected preview · watermarked with your student ID · sharing disabled</Text>
+        </View>
+      ) : null}
+
       {/* Protected TEXT document (marking scheme / answer sheet sent as text) */}
       <Modal visible={Boolean(textDoc)} transparent animationType="slide" onRequestClose={() => setTextDoc(null)}>
         <View style={styles.textOverlay}>
@@ -525,6 +551,7 @@ const styles = StyleSheet.create({
   optSel: { backgroundColor: colors.primarySoft, borderWidth: 1, borderColor: colors.primary },
   optText: { color: colors.inkSoft, fontSize: 11, flex: 1, lineHeight: 16 },
   viewerPage: { flex: 1, backgroundColor: '#202124' },
+  webViewerRoot: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#202124', zIndex: 2147483000 },
   viewerBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.lg, paddingVertical: spacing.sm },
   viewerTitle: { color: '#fff', fontSize: 13, fontWeight: '800', flex: 1 },
   viewerClose: { padding: spacing.xs, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: radius.sm },

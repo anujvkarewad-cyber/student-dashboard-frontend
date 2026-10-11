@@ -5,7 +5,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { BlurView } from 'expo-blur';
 import * as Notifications from 'expo-notifications';
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, BackHandler, Image, StyleSheet, Text, ToastAndroid, View } from 'react-native';
+import { ActivityIndicator, BackHandler, Image, Platform, StyleSheet, Text, ToastAndroid, View } from 'react-native';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import { AddStudyLogScreen } from '../screens/AddStudyLogScreen';
@@ -167,6 +167,9 @@ export const AppNavigator = () => {
   }, [navigationReady, navigationRef, refreshNotes, student]);
 
   useEffect(() => {
+    // expo-notifications has no web implementation; skip the push wiring in the
+    // sandbox web preview so it cannot throw/reject and disrupt the tree.
+    if (Platform.OS === 'web') return;
     if (!student || backendMode !== 'live' || !navigationReady) return;
     const received = Notifications.addNotificationReceivedListener((notification) => {
       const link = notificationLink(notification);
