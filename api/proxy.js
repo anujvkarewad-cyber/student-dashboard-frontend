@@ -1,3 +1,5 @@
+import { resolveAndroidApkDownloadUrl } from "../lib/android-download.js";
+
 export const config = {
   api: {
     bodyParser: {
@@ -364,12 +366,19 @@ export default async function handler(req, res) {
         if (latestRes.ok) {
           const latest = await latestRes.json();
           if (latest && latest.versionCode) {
+            // Resolve GitHub's double-redirect to a single-hop signed URL so the
+            // in-app downloader (incl. older v1.14.6 force-update modal) and any
+            // download manager finish instead of stalling on content-length:0.
+            const apkUrl = await resolveAndroidApkDownloadUrl(
+              latest.apkUrl || process.env.APP_ANDROID_APK_URL || "",
+            );
             return res.status(200).json({
               result: {
                 version: latest.version || process.env.APP_ANDROID_VERSION || "1.11.8",
                 versionCode: Number(latest.versionCode || process.env.APP_ANDROID_VERSION_CODE || 30),
                 minimumVersionCode: Number(latest.minimumVersionCode || process.env.APP_ANDROID_MIN_VERSION_CODE || latest.versionCode || 30),
-                apkUrl: latest.apkUrl || process.env.APP_ANDROID_APK_URL || "",
+                apkUrl,
+                downloadUrl: apkUrl,
                 releaseNotes: latest.notes || process.env.APP_ANDROID_RELEASE_NOTES || "ChatGPT-style AI assistant UI - headings, bold without stars, bullets, tables, avatar + typing bar fix",
                 forceUpdate: true,
                 publishedAt: latest.publishedAt || process.env.APP_ANDROID_PUBLISHED_AT || new Date().toISOString().slice(0, 10)
@@ -380,12 +389,16 @@ export default async function handler(req, res) {
       } catch (e) {
         console.error("latest.json fetch failed, falling back to env", e && e.message);
       }
+      const fallbackApkUrl = await resolveAndroidApkDownloadUrl(
+        process.env.APP_ANDROID_APK_URL || "https://github.com/anujvkarewad-cyber/UPM-Android-Releases/releases/download/v1.11.8-30/UPM-v1.11.8-30-release.apk",
+      );
       return res.status(200).json({
         result: {
           version: process.env.APP_ANDROID_VERSION || "1.11.8",
           versionCode: Number(process.env.APP_ANDROID_VERSION_CODE || 30),
           minimumVersionCode: Number(process.env.APP_ANDROID_MIN_VERSION_CODE || 30),
-          apkUrl: process.env.APP_ANDROID_APK_URL || "https://github.com/anujvkarewad-cyber/UPM-Android-Releases/releases/download/v1.11.8-30/UPM-v1.11.8-30-release.apk",
+          apkUrl: fallbackApkUrl,
+          downloadUrl: fallbackApkUrl,
           releaseNotes: process.env.APP_ANDROID_RELEASE_NOTES || "ChatGPT-style AI assistant UI - headings, bold without stars, bullets, tables, avatar + typing bar fix",
           forceUpdate: true,
           publishedAt: process.env.APP_ANDROID_PUBLISHED_AT || new Date().toISOString().slice(0, 10)

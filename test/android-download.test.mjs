@@ -5,6 +5,7 @@ import {
   androidDownloadConfig,
   isAllowedAndroidApkUrl,
   resolveAndroidApkUrl,
+  resolveAndroidApkDownloadUrl,
   resolveRedirectChain,
 } from "../lib/android-download.js";
 
@@ -152,6 +153,27 @@ test("resolveRedirectChain returns the URL unchanged when there is no redirect",
       new Response(null, { status: 200, headers: { "content-length": "100" } }),
   });
   assert.equal(finalUrl, RELEASE_URL);
+});
+
+test("resolveAndroidApkDownloadUrl resolves github once (cached) and passes GCS through", async () => {
+  const SIGNED = "https://release-assets.githubusercontent.com/github-production-release-asset/133/abc?sig=cached";
+  let heads = 0;
+  const fetchImpl = async (url) => {
+    heads += 1;
+    if (url === GITHUB_APK_URL) {
+      return new Response(null, { status: 302, headers: { location: SIGNED } });
+    }
+    return new Response(null, { status: 200, headers: { "content-length": "1" } });
+  };
+  const first = await resolveAndroidApkDownloadUrl(GITHUB_APK_URL, { fetchImpl });
+  const headsAfterFirst = heads; // one HEAD per hop (github 302 -> signed 200)
+  const second = await resolveAndroidApkDownloadUrl(GITHUB_APK_URL, { fetchImpl });
+  assert.equal(first, SIGNED);
+  assert.equal(second, SIGNED);
+  assert.equal(heads, headsAfterFirst); // second call served from the TTL cache
+  const gcs = await resolveAndroidApkDownloadUrl(RELEASE_URL, { fetchImpl });
+  assert.equal(gcs, RELEASE_URL);
+  assert.equal(heads, headsAfterFirst); // GCS URLs are already direct - no extra hop
 });
 
 test("resolveRedirectChain gives up gracefully and keeps the last good URL", async () => {
