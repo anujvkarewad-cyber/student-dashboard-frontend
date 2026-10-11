@@ -362,7 +362,11 @@ export default async function handler(req, res) {
     if (updateAction === "app.version") {
       // Try live latest.json from releases repo first (always up-to-date), fallback to env vars
       try {
-        const latestRes = await fetch("https://raw.githubusercontent.com/anujvkarewad-cyber/UPM-Android-Releases/main/latest.json", { cache: "no-store" });
+        // Cache-bust: raw.githubusercontent.com can briefly serve the previous
+        // manifest generation after a release (same reason android-download.js
+        // appends ?ts=). Without it app.version lags a new release by minutes.
+        const manifestUrl = "https://raw.githubusercontent.com/anujvkarewad-cyber/UPM-Android-Releases/main/latest.json";
+        const latestRes = await fetch(`${manifestUrl}${manifestUrl.includes("?") ? "&" : "?"}ts=${Date.now()}`, { cache: "no-store" });
         if (latestRes.ok) {
           const latest = await latestRes.json();
           if (latest && latest.versionCode) {
