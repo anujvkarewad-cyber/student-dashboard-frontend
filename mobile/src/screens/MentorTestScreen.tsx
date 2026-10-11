@@ -34,6 +34,44 @@ import {
 import { PDF_VIEWER_HTML } from '../services/pdfViewerBundle';
 import { colors, radius, spacing } from '../theme';
 
+/** Same helper as NotePreviewScreen - notes aur papers dono Drive files hain. */
+const getDriveFileId = (url?: string | null) => {
+  if (!url) return '';
+  const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/) || url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  return match?.[1] || '';
+};
+
+/** Proven in NotePreviewScreen: hide Drive's download/print/export controls. */
+const hideDownloadControls = `
+  (function protectPreview() {
+    var style = document.createElement('style');
+    style.innerHTML = [
+      '[aria-label*="Download" i]',
+      '[data-tooltip*="Download" i]',
+      '[aria-label*="Print" i]',
+      '[data-tooltip*="Print" i]',
+      'a[download]',
+      'a[href*="export=download"]',
+      'a[href*="/uc?"]'
+    ].join(',') + '{display:none!important;visibility:hidden!important;pointer-events:none!important;}';
+    document.documentElement.appendChild(style);
+    document.addEventListener('contextmenu', function(event) { event.preventDefault(); });
+    document.addEventListener('dragstart', function(event) { event.preventDefault(); });
+    new MutationObserver(function() {
+      document.querySelectorAll('[aria-label*="Download" i],[data-tooltip*="Download" i],[aria-label*="Print" i],[data-tooltip*="Print" i],a[download],a[href*="export=download"],a[href*="/uc?"]').forEach(function(node) { node.remove(); });
+    }).observe(document.documentElement, { childList: true, subtree: true });
+  })();
+  true;
+`;
+
+const zoomScript = (value: number) => `
+  (function applyProtectedPreviewZoom() {
+    var scale = ${value / 100};
+    document.documentElement.style.setProperty('zoom', String(scale), 'important');
+  })();
+  true;
+`;
+
 /**
  * v1.15.0 - native 4-step Mentor Test flow (no WebView portal):
  *  1 Download & solve  2 Upload answer sheet (<=10MB)  3 Self-evaluation
@@ -59,12 +97,12 @@ export const MentorTestScreen = () => {
   const [marksError, setMarksError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  // Protected viewer state
-  const [viewer, setViewer] = useState<{ label: string; b64: string } | null>(null);
+  // Protected viewer state (notes-format: Drive preview embed; bytes fallback)
+  const [viewer, setViewer] = useState<{ label: string; url: string; b64?: string } | null>(null);
+  const [zoomPercent, setZoomPercent] = useState(100);
   const [textDoc, setTextDoc] = useState<{ label: string; text: string } | null>(null);
   const viewerRef = useRef<WebView | null>(null);
   const viewerReady = useRef(false);
-  const pendingChunks = useRef<string[]>([]);
 
   // MCQ-type test state
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -121,16 +159,28 @@ export const MentorTestScreen = () => {
 
   const openProtected = async (url: string | null, label: string) => {
     if (!url) return;
+    setError('');
+    setZoomPercent(100);
+    viewerReady.current = false;
+    if (getDriveFileId(url)) {
+      // Notes-format: Drive's own preview embed - no bytes download, no
+      // 'Invalid PDF structure', download/print controls hidden by script.
+      setViewer({ label, url });
+      return;
+    }
     try {
-      setError('');
       const b64 = await fetchPdfBase64(url); // memory only - never written to disk
-      pendingChunks.current = [];
-      viewerReady.current = false;
-      setViewer({ label, b64 });
+      setViewer({ label, url, b64 });
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not open the document.');
     }
   };
+
+  useEffect(() => {
+    if (viewer && getDriveFileId(viewer.url)) {
+      viewerRef.current?.injectJavaScript(zoomScript(zoomPercent));
+    }
+  }, [zoomPercent, viewer]);
 
   const feedViewer = async () => {
     const wv = viewerRef.current;
@@ -364,25 +414,49 @@ export const MentorTestScreen = () => {
         <SafeAreaView style={styles.viewerPage} edges={['top', 'bottom']}>
           <View style={styles.viewerBar}>
             <Text style={styles.viewerTitle} numberOfLines={1}>{viewer?.label || 'Document'}</Text>
+            {getDriveFileId(viewer?.url) ? (
+              <View style={styles.zoomBox}>
+                <Pressable style={styles.zoomBtn} onPress={() => setZoomPercent((z) => Math.max(60, z - 20))}><Ionicons name="remove" size={18} color="#fff" /></Pressable>
+                <Text style={styles.zoomLabel}>{zoomPercent}%</Text>
+                <Pressable style={styles.zoomBtn} onPress={() => setZoomPercent((z) => Math.min(220, z + 20))}><Ionicons name="add" size={18} color="#fff" /></Pressable>
+              </View>
+            ) : null}
             <Pressable style={styles.viewerClose} onPress={() => setViewer(null)}>
               <Ionicons name="close" size={22} color="#fff" />
             </Pressable>
           </View>
           {viewer ? (
-            <WebView
-              ref={viewerRef}
-              source={{ html: PDF_VIEWER_HTML }}
-              originWhitelist={['*']}
-              javaScriptEnabled
-              scrollEnabled
-              onLoadEnd={() => void feedViewer()}
-              onMessage={(e) => {
-                const d = e.nativeEvent.data;
-                if (typeof d === 'string' && d.startsWith('error:')) setError(d.slice(6));
-              }}
-              style={styles.viewerWeb}
-            />
+            getDriveFileId(viewer.url) ? (
+              <WebView
+                ref={viewerRef}
+                source={{ uri: `https://drive.google.com/file/d/${getDriveFileId(viewer.url)}/preview` }}
+                javaScriptEnabled
+                domStorageEnabled
+                injectedJavaScript={hideDownloadControls}
+                style={styles.viewerWeb}
+              />
+            ) : (
+              <WebView
+                ref={viewerRef}
+                source={{ html: PDF_VIEWER_HTML }}
+                originWhitelist={['*']}
+                javaScriptEnabled
+                scrollEnabled
+                onLoadEnd={() => void feedViewer()}
+                onMessage={(e) => {
+                  const d = e.nativeEvent.data;
+                  if (typeof d === 'string' && d.startsWith('error:')) setError(d.slice(6));
+                }}
+                style={styles.viewerWeb}
+              />
+            )
           ) : null}
+          {/* Watermark overlay - sits over the Drive embed as well */}
+          <View style={styles.wmOverlay} pointerEvents="none">
+            {Array.from({ length: 24 }).map((_, i) => (
+              <Text key={i} style={styles.wmText}>{student?.studentId} · {student?.studentName} · confidential</Text>
+            ))}
+          </View>
           <Text style={styles.viewerHint}>Protected document · watermarked with your student ID · sharing disabled</Text>
         </SafeAreaView>
       </Modal>
@@ -437,6 +511,11 @@ const styles = StyleSheet.create({
   viewerClose: { padding: spacing.xs, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: radius.sm },
   viewerWeb: { flex: 1, backgroundColor: '#525659' },
   viewerHint: { color: 'rgba(255,255,255,0.55)', fontSize: 9, textAlign: 'center', paddingVertical: spacing.xs },
+  zoomBox: { flexDirection: 'row', alignItems: 'center', gap: 2, marginRight: spacing.sm },
+  zoomBtn: { padding: 2, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: radius.sm },
+  zoomLabel: { color: '#fff', fontSize: 10, fontWeight: '800', minWidth: 34, textAlign: 'center' },
+  wmOverlay: { position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, flexDirection: 'row', flexWrap: 'wrap', alignContent: 'space-around', justifyContent: 'space-around', overflow: 'hidden' },
+  wmText: { color: 'rgba(110,110,110,0.16)', fontSize: 14, fontWeight: '700', transform: [{ rotate: '-30deg' }] },
   qPrompt: { color: colors.ink, fontSize: 12, fontWeight: '800', lineHeight: 18, marginBottom: spacing.sm },
   optRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: radius.md, marginBottom: 4, backgroundColor: colors.canvas },
   optSel: { backgroundColor: colors.primarySoft, borderWidth: 1, borderColor: colors.primary },
