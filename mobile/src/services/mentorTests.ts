@@ -36,12 +36,25 @@ export type MentorTest = {
 export type PaperMeta = {
   title?: string;
   subject?: string;
+  kind: string;
   maxMarks: number | null;
   durationMinutes: number | null;
   paperUrl: string | null;
   answerSheetUrl: string | null;
+  answerSheetText: string;
   markingSchemeUrl: string | null;
+  markingSchemeText: string;
   instructions: string;
+  questions: McqQuestion[];
+};
+
+export type McqQuestion = {
+  id: string;
+  prompt: string;
+  options: { id: string; text: string }[];
+  marks: number;
+  subject?: string;
+  chapter?: string;
 };
 
 async function creds(): Promise<{ studentId: string; password: string }> {
@@ -87,17 +100,55 @@ export async function listMentorTests(): Promise<MentorTest[]> {
 export async function getPaperMeta(testId: string): Promise<PaperMeta> {
   const c = await creds();
   const data = await postJson(`${PYTHON_BACKEND}/api/student-tests/paper`, { ...c, testId });
-  const meta = data?.meta && typeof data.meta === 'object' ? data.meta : data || {};
+  // Backend returns the paper under `test` (web parity: app.js line ~871).
+  const meta =
+    data?.test && typeof data.test === 'object'
+      ? data.test
+      : data?.meta && typeof data.meta === 'object'
+        ? data.meta
+        : data || {};
   return {
     title: meta.title ? String(meta.title) : undefined,
     subject: meta.subject ? String(meta.subject) : undefined,
+    kind: String(meta.kind || 'mcq-test'),
     maxMarks: typeof meta.maxMarks === 'number' ? meta.maxMarks : null,
     durationMinutes: typeof meta.durationMinutes === 'number' ? meta.durationMinutes : null,
     paperUrl: meta.paperUrl ? String(meta.paperUrl) : null,
     answerSheetUrl: meta.answerSheetUrl ? String(meta.answerSheetUrl) : null,
+    answerSheetText: meta.answerSheetText ? String(meta.answerSheetText) : '',
     markingSchemeUrl: meta.markingSchemeUrl ? String(meta.markingSchemeUrl) : null,
+    markingSchemeText: meta.markingScheme ? String(meta.markingScheme) : '',
     instructions: meta.instructions ? String(meta.instructions) : '',
+    questions: Array.isArray(data?.questions)
+      ? data.questions.map((q: any): McqQuestion => ({
+          id: String(q.id || ''),
+          prompt: String(q.prompt || ''),
+          options: Array.isArray(q.options)
+            ? q.options.map((o: any) => ({ id: String(o.id || ''), text: String(o.text || '') }))
+            : [],
+          marks: Number(q.marks || 0),
+          subject: q.subject ? String(q.subject) : undefined,
+          chapter: q.chapter ? String(q.chapter) : undefined,
+        }))
+      : [],
   };
+}
+
+/** MCQ-type mentor test: server-side grading (web parity). */
+export async function submitMcqAnswers(opts: {
+  testId: string;
+  answers: Record<string, string>;
+  durationSeconds?: number;
+}): Promise<{ score?: number; total?: number; scorePct?: number; correctCount?: number; title?: string }> {
+  const c = await creds();
+  const res = await postJson(`${PYTHON_BACKEND}/api/student-tests/submit`, {
+    ...c,
+    testId: opts.testId,
+    answers: opts.answers,
+    durationSeconds: opts.durationSeconds || 0,
+  });
+  if (res?.detail || res?.error) throw new Error(String(res.detail || res.error));
+  return res || {};
 }
 
 /** Direct Apps Script base64 upload (same payload shape as the web app). Returns the Drive share URL. */

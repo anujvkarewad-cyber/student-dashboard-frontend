@@ -26,6 +26,7 @@ import {
   fetchPdfBase64,
   getPaperMeta,
   MAX_UPLOAD_BYTES,
+  submitMcqAnswers,
   submitSelfMarks,
   uploadAnswerSheet,
   type PaperMeta,
@@ -60,9 +61,13 @@ export const MentorTestScreen = () => {
 
   // Protected viewer state
   const [viewer, setViewer] = useState<{ label: string; b64: string } | null>(null);
+  const [textDoc, setTextDoc] = useState<{ label: string; text: string } | null>(null);
   const viewerRef = useRef<WebView | null>(null);
   const viewerReady = useRef(false);
   const pendingChunks = useRef<string[]>([]);
+
+  // MCQ-type test state
+  const [answers, setAnswers] = useState<Record<string, string>>({});
 
   useEffect(() => {
     let alive = true;
@@ -82,6 +87,37 @@ export const MentorTestScreen = () => {
   }, [testId]);
 
   const unlocked = Boolean(answerUrl) || Boolean(evaluated);
+  const isPaper = (meta?.kind || 'mcq-test') === 'paper-test';
+  const isMcq = !isPaper && (meta?.questions.length ?? 0) > 0;
+  const hasAnswerDoc = Boolean(meta?.answerSheetUrl || meta?.answerSheetText);
+  const hasMarkingDoc = Boolean(meta?.markingSchemeUrl || meta?.markingSchemeText);
+
+  const openAnswerDoc = () => {
+    if (meta?.answerSheetUrl) void openProtected(meta.answerSheetUrl, 'Answer Sheet');
+    else if (meta?.answerSheetText) setTextDoc({ label: 'Answer Sheet', text: meta.answerSheetText });
+  };
+  const openMarkingDoc = () => {
+    if (meta?.markingSchemeUrl) void openProtected(meta.markingSchemeUrl, 'Marking Scheme');
+    else if (meta?.markingSchemeText) setTextDoc({ label: 'Marking Scheme', text: meta.markingSchemeText });
+  };
+
+  const submitMcq = async () => {
+    if (submitting || !meta) return;
+    setMarksError('');
+    if (Object.keys(answers).length < meta.questions.length) {
+      setMarksError(`Answer all questions before submitting (${Object.keys(answers).length}/${meta.questions.length} done).`);
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const res = await submitMcqAnswers({ testId, answers });
+      setEvaluated({ score: res.score, total: res.total });
+    } catch (e) {
+      setMarksError(e instanceof Error ? e.message : 'Submit failed. Try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const openProtected = async (url: string | null, label: string) => {
     if (!url) return;
@@ -205,11 +241,13 @@ export const MentorTestScreen = () => {
                 {meta?.paperUrl ? (
                   <PrimaryButton label="📄 Open Question Paper" icon="document-text-outline" onPress={() => void openProtected(meta.paperUrl, 'Question Paper')} />
                 ) : (
-                  <Text style={styles.muted}>No question paper attached to this test.</Text>
+                  <Text style={styles.muted}>{isMcq ? 'MCQ test — read the questions below and submit your answers.' : 'No question paper attached to this test.'}</Text>
                 )}
                 {meta?.instructions ? <Text style={styles.instructions}>{meta.instructions}</Text> : null}
               </Card>
 
+              {isPaper ? (
+              <>
               <SectionHeader title="Step 2 · Upload answer sheet" />
               <Card style={styles.card}>
                 {answerUrl ? (
@@ -243,13 +281,14 @@ export const MentorTestScreen = () => {
                     <Text style={styles.muted}>Compare your uploaded sheet with the mentor's answer key, then enter your marks below.</Text>
                     <View style={styles.btnRow}>
                       <View style={styles.btnHalf}>
-                        <PrimaryButton label="📝 Answer Sheet" icon="clipboard-outline" onPress={() => void openProtected(meta?.answerSheetUrl || null, 'Answer Sheet')} />
+                        <PrimaryButton label="📝 Answer Sheet" icon="clipboard-outline" onPress={openAnswerDoc} />
                       </View>
                       <View style={styles.btnHalf}>
-                        <PrimaryButton label="📊 Marking Scheme" icon="list-outline" variant="secondary" onPress={() => void openProtected(meta?.markingSchemeUrl || null, 'Marking Scheme')} />
+                        <PrimaryButton label="📊 Marking Scheme" icon="list-outline" variant="secondary" onPress={openMarkingDoc} />
                       </View>
                     </View>
-                    {!meta?.answerSheetUrl ? <Text style={styles.errorText}>Mentor has not provided an answer sheet.</Text> : null}
+                    {!hasAnswerDoc ? <Text style={styles.errorText}>Mentor has not provided an answer sheet.</Text> : null}
+                    {!hasMarkingDoc ? <Text style={styles.errorText}>Mentor has not provided a marking scheme.</Text> : null}
                   </>
                 ) : (
                   <View style={styles.lockedBox}>
@@ -287,6 +326,34 @@ export const MentorTestScreen = () => {
                   </Card>
                 </>
               ) : null}
+              </>
+              ) : isMcq ? (
+              <>
+                <SectionHeader title="Questions" />
+                {meta?.questions.map((q, qi) => (
+                  <Card key={q.id || qi} style={styles.card}>
+                    <Text style={styles.qPrompt}>Q{qi + 1}. {q.prompt}</Text>
+                    {q.options.map((op) => (
+                      <Pressable
+                        key={op.id}
+                        onPress={() => setAnswers((a) => ({ ...a, [q.id]: op.id }))}
+                        style={[styles.optRow, answers[q.id] === op.id ? styles.optSel : null]}
+                      >
+                        <Ionicons name={answers[q.id] === op.id ? 'radio-button-on' : 'radio-button-off'} size={18} color={answers[q.id] === op.id ? colors.primary : colors.muted} />
+                        <Text style={styles.optText}>{op.id}. {op.text}</Text>
+                      </Pressable>
+                    ))}
+                  </Card>
+                ))}
+                <Card style={styles.card}>
+                  <Text style={styles.muted}>Answered {Object.keys(answers).length} of {meta?.questions.length ?? 0}</Text>
+                  {marksError ? <Text style={styles.errorText}>{marksError}</Text> : null}
+                  <PrimaryButton label="Submit Answers" icon="checkmark-circle-outline" loading={submitting} onPress={() => void submitMcq()} />
+                </Card>
+              </>
+              ) : (
+                <Card style={styles.card}><Text style={styles.muted}>This test has no paper or questions yet. Check back after your mentor publishes it.</Text></Card>
+              )}
             </>
           )}
         </ScrollView>
@@ -318,6 +385,22 @@ export const MentorTestScreen = () => {
           ) : null}
           <Text style={styles.viewerHint}>Protected document · watermarked with your student ID · sharing disabled</Text>
         </SafeAreaView>
+      </Modal>
+
+      {/* Protected TEXT document (marking scheme / answer sheet sent as text) */}
+      <Modal visible={Boolean(textDoc)} transparent animationType="slide" onRequestClose={() => setTextDoc(null)}>
+        <View style={styles.textOverlay}>
+          <View style={styles.textCard}>
+            <View style={styles.textBar}>
+              <Text style={styles.textTitle} numberOfLines={1}>{textDoc?.label || 'Document'}</Text>
+              <Pressable onPress={() => setTextDoc(null)}><Ionicons name="close" size={20} color={colors.ink} /></Pressable>
+            </View>
+            <ScrollView style={styles.textScroll} showsVerticalScrollIndicator>
+              <Text style={styles.textBody}>{textDoc?.text}</Text>
+            </ScrollView>
+            <Text style={styles.textHint}>Protected · {student?.studentId} · sharing disabled</Text>
+          </View>
+        </View>
       </Modal>
     </SafeAreaView>
   );
@@ -354,4 +437,15 @@ const styles = StyleSheet.create({
   viewerClose: { padding: spacing.xs, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: radius.sm },
   viewerWeb: { flex: 1, backgroundColor: '#525659' },
   viewerHint: { color: 'rgba(255,255,255,0.55)', fontSize: 9, textAlign: 'center', paddingVertical: spacing.xs },
+  qPrompt: { color: colors.ink, fontSize: 12, fontWeight: '800', lineHeight: 18, marginBottom: spacing.sm },
+  optRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: radius.md, marginBottom: 4, backgroundColor: colors.canvas },
+  optSel: { backgroundColor: colors.primarySoft, borderWidth: 1, borderColor: colors.primary },
+  optText: { color: colors.inkSoft, fontSize: 11, flex: 1, lineHeight: 16 },
+  textOverlay: { flex: 1, backgroundColor: 'rgba(9,20,43,0.72)', justifyContent: 'center', padding: spacing.lg },
+  textCard: { flex: 1, backgroundColor: colors.surface, borderRadius: radius.xl, padding: spacing.lg, marginTop: spacing.xxl, marginBottom: spacing.xxl },
+  textBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.md },
+  textTitle: { color: colors.ink, fontSize: 14, fontWeight: '900', flex: 1 },
+  textScroll: { flex: 1 },
+  textBody: { color: colors.inkSoft, fontSize: 12, lineHeight: 19 },
+  textHint: { color: colors.muted, fontSize: 9, textAlign: 'center', marginTop: spacing.sm },
 });
