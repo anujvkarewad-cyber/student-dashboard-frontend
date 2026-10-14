@@ -1,20 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system/legacy';
 import { config } from '../config';
-import type {
-  Announcement,
-  ApiSuccess,
-  AppRelease,
-  LeaderboardEntry,
-  MentorFeedback,
-  MentorNote,
-  Stats,
-  Student,
-  StudyLog,
-  StudyLogPayload,
-  StudyNote,
-  WeeklyReport,
-} from '../types';
+import type { Announcement, ApiSuccess, AppRelease, AttendanceStatus, LeaderboardEntry, MentorFeedback, MentorNote, Stats, Student, StudyLog, StudyLogPayload, StudyNote, WeeklyReport } from '../types';
 type ApiEnvelope<T> = { result?: T; error?: string };
 type NativeJsonResponse<T> = { status: number; data: ApiEnvelope<T> };
 export type ApiMode = 'mock' | 'live-readonly' | 'live';
@@ -252,6 +239,30 @@ class ApiClient {
   async saveDeviceToken(studentId: string, token: string): Promise<ApiSuccess> {
     this.blockBackendWrite('Device-token registration');
     return this.call<ApiSuccess>('saveDeviceToken', { studentId, token });
+  }
+
+  /**
+   * Leave / absent self-reporting (owner spec 14-Oct-2026). The mentor tracker
+   * shows these days as Leave/Absent instead of Missed and the 23:00 / 07:00 /
+   * 14:00 "tracker missing" reminders skip them.
+   */
+  async getAttendanceStatus(studentId: string): Promise<AttendanceStatus> {
+    return this.call<AttendanceStatus>('attendance.status', { studentId });
+  }
+
+  async markAbsent(studentId: string, payload: { date?: string; reason?: string }): Promise<ApiSuccess> {
+    return this.call<ApiSuccess>('attendance.markAbsent', { studentId, ...payload });
+  }
+
+  async requestLeave(
+    studentId: string,
+    payload: { from: string; to: string; reason?: string },
+  ): Promise<ApiSuccess> {
+    return this.call<ApiSuccess>('attendance.requestLeave', { studentId, ...payload });
+  }
+
+  async cancelLeave(studentId: string, leaveId: string): Promise<ApiSuccess> {
+    return this.call<ApiSuccess>('attendance.cancelLeave', { studentId, leaveId });
   }
 }
 

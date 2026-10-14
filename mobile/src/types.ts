@@ -139,3 +139,27 @@ export type DashboardData = {
   studyNotes: StudyNote[];
   feedback: MentorFeedback[];
 };
+
+/** On-leave / absent self-reporting (student app <-> mentor tracker). */
+export type LeaveRecord = {
+  leaveId: string;
+  from: string;
+  to: string;
+  days: number;
+  reason: string;
+  source?: string;
+  /** true when today falls inside this range */
+  active: boolean;
+};
+
+export type AttendanceStatus = {
+  studentId: string;
+  today: string;
+  /** "leave" | "absent" | "none" */
+  status: string;
+  reason: string;
+  recordId: string;
+  leaves: LeaveRecord[];
+  recentAbsent: { date: string; reason: string }[];
+  limits: { maxLeaveDays: number; backfillDays: number };
+};

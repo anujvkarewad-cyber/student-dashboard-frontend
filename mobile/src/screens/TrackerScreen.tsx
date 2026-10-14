@@ -4,6 +4,7 @@ import React from 'react';
 import { Alert, FlatList, Linking, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Card, EmptyState, ErrorBanner } from '../components/ui';
+import { LeaveAbsentCard } from '../components/LeaveAbsentCard';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import { colors, radius, spacing } from '../theme';
@@ -95,6 +96,7 @@ export const TrackerScreen = () => {
               <View style={styles.divider} />
               <Summary icon="trending-up-outline" label="Average" value={format(stats.averageHours)} />
             </Card>
+            {canSubmit ? <LeaveAbsentCard /> : null}
             <View style={styles.listHeader}><Text style={styles.listTitle}>Recent sessions</Text><Text style={styles.listCount}>{data.studyLog.length} entries</Text></View>
           </>
         }
