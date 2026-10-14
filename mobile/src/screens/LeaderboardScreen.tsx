@@ -12,6 +12,19 @@ import type { LeaderboardEntry } from '../types';
 
 const format = (value?: number) => value == null ? '—' : Number(value).toFixed(1).replace('.0', '');
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+const weekRangeLabel = (startIso?: string, endIso?: string) => {
+  if (!startIso || !endIso) return '';
+  const start = new Date(startIso);
+  const end = new Date(endIso);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return '';
+  const left = start.getMonth() === end.getMonth()
+    ? `${start.getDate()}`
+    : `${start.getDate()} ${MONTHS[start.getMonth()]}`;
+  return `${left}–${end.getDate()} ${MONTHS[end.getMonth()]} ${end.getFullYear()}`;
+};
+
 const PodiumPerson = ({ item, place }: { item?: LeaderboardEntry; place: 1 | 2 | 3 }) => {
   if (!item) return <View style={styles.podiumPerson} />;
   const size = place === 1 ? 62 : 52;
@@ -31,6 +44,7 @@ export const LeaderboardScreen = () => {
   const { data, refreshing, refreshLeaderboard } = useData();
   const list = data.leaderboard.filter(Boolean);
   const me = list.find((item) => item.studentId === student?.studentId);
+  const weekLabel = weekRangeLabel(me?.weekStart || list[0]?.weekStart, me?.weekEnd || list[0]?.weekEnd);
 
   // Refresh rankings every time the screen is opened, silently (no spinner
   // flash) so the leaderboard is never showing stale app-launch data.
@@ -48,7 +62,9 @@ export const LeaderboardScreen = () => {
         <InitialsAvatar name={item.studentName} size={42} />
         <View style={styles.person}>
           <Text style={styles.personName}>{item.studentName}{isMe ? '  (You)' : ''}</Text>
-          <Text style={styles.personId}>{item.studentId} · {item.status || 'Active'}</Text>
+          <Text style={styles.personId}>
+            {item.studentId} · {item.status || 'Active'}{item.rankOverall ? ` · Overall #${item.rankOverall}` : ''}
+          </Text>
         </View>
         <View style={styles.score}>
           <Text style={styles.scoreValue}>{format(item.weeklyHours)}h</Text>
@@ -69,7 +85,7 @@ export const LeaderboardScreen = () => {
         contentContainerStyle={styles.content}
         ListHeaderComponent={
           <>
-            <View style={styles.header}><Text style={styles.eyebrow}>WEEKLY FOCUS</Text><Text style={styles.title}>Leaderboard</Text><Text style={styles.subtitle}>Celebrate consistency, not comparison.</Text></View>
+            <View style={styles.header}><Text style={styles.eyebrow}>WEEKLY FOCUS{weekLabel ? ` · ${weekLabel}` : ''}</Text><Text style={styles.title}>Leaderboard</Text><Text style={styles.subtitle}>Celebrate consistency, not comparison.</Text></View>
             <LinearGradient colors={['#18376C', '#3C55C6', '#6652C5']} style={styles.podium}>
               <View style={styles.podiumGlow} />
               <View style={styles.podiumRow}>
@@ -80,9 +96,13 @@ export const LeaderboardScreen = () => {
             </LinearGradient>
             {me ? (
               <View style={styles.mySummary}>
-                <View><Text style={styles.myLabel}>YOUR POSITION</Text><Text style={styles.myRank}>#{me.rank}</Text></View>
+                <View>
+                  <Text style={styles.myLabel}>WEEK RANK</Text>
+                  <Text style={styles.myRank}>#{me.rank}</Text>
+                  {me.rankOverall ? <Text style={styles.mySub}>Overall #{me.rankOverall}</Text> : null}
+                </View>
                 <View style={styles.myDivider} />
-                <View><Text style={styles.myLabel}>THIS WEEK</Text><Text style={styles.myValue}>{format(me.weeklyHours)} hours</Text></View>
+                <View><Text style={styles.myLabel}>{weekLabel ? `THIS WEEK (${weekLabel})` : 'THIS WEEK'}</Text><Text style={styles.myValue}>{format(me.weeklyHours)} hours</Text></View>
                 <View style={styles.myDivider} />
                 <View><Text style={styles.myLabel}>STREAK</Text><Text style={styles.myValue}>{me.streak || 0} days</Text></View>
               </View>
@@ -120,6 +140,7 @@ const styles = StyleSheet.create({
   mySummary: { backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', marginTop: -1, paddingVertical: spacing.lg },
   myLabel: { color: colors.muted, fontSize: 8, fontWeight: '900', letterSpacing: 0.6, textAlign: 'center' },
   myRank: { color: colors.primary, fontSize: 21, fontWeight: '900', textAlign: 'center', marginTop: 3 },
+  mySub: { color: colors.muted, fontSize: 9, fontWeight: '700', textAlign: 'center', marginTop: 2 },
   myValue: { color: colors.ink, fontSize: 13, fontWeight: '900', textAlign: 'center', marginTop: 5 },
   myDivider: { height: 34, width: 1, backgroundColor: colors.border },
   tableHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: spacing.xxl, marginBottom: spacing.md },

@@ -25,7 +25,9 @@ const MONGO_DASHBOARD_ACTIONS = new Set([
   "getLeaderboard",
   "getStudentMentorNotes",
   "getStudentFeedback",
-  "notes.listForStudent"
+  "notes.listForStudent",
+  // On-leave / absent banner in the app (14-Oct-2026).
+  "attendance.status"
 ]);
 
 async function attemptOnce(url, body, timeoutMs) {
@@ -523,6 +525,31 @@ const updateAction = req.body?.action || req.query?.action;
       return res.status(502).json({
         result: { success: false, message: "Could not save your study log. Please try again." }
       });
+    }
+
+    if (
+      updateAction === "attendance.markAbsent" ||
+      updateAction === "attendance.requestLeave" ||
+      updateAction === "attendance.cancelLeave"
+    ) {
+      // Student self-reported leave / absent. Mongo (via FastAPI) is the source of
+      // truth so the mentor tracker sees it immediately.
+      try {
+        const payload = studyLogPayload(req);
+        const attRes = await fetch(`${MENTOR_API_URL}/api/student-dashboard/write`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: updateAction, payload }),
+        });
+        const attData = await attRes.json();
+        const result = (attData && attData.result) || attData || {};
+        return res.status(200).json({ result: { success: result.success !== false, ...result } });
+      } catch (err) {
+        console.error("attendance write failed:", err && err.message);
+        return res.status(502).json({
+          result: { success: false, message: "Save nahi hua. Internet check karke phir try karo." },
+        });
+      }
     }
 
     if (updateAction === "deleteStudyLog") {

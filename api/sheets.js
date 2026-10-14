@@ -217,6 +217,18 @@ async function notesHeaderIndex(sheets) {
   const idx={}; h.forEach((v,i)=>{ if(v) idx[v]=i; });
   return idx;
 }
+// Notes visibility helpers -------------------------------------------------
+// Students sheet stores group as 'Group 1' / 'Group 2' / 'Both' — the string is
+// 'Both' (NOT 'Both Groups'), so a plain === match silently hid Group 1 /
+// Group 2 notes from every Both student. Mirrors the Apps Script + Python fix.
+const _grp = (v)=> String(v||'').trim().toLowerCase();
+const isOpenGroup = (v)=>{ const x=_grp(v); return !x || x==='all' || x.indexOf('both')!==-1 || x.indexOf('combined')!==-1; };
+const noteGroupOpen = (noteGroup, studentGroup)=> isOpenGroup(noteGroup) || isOpenGroup(studentGroup) || _grp(noteGroup)===_grp(studentGroup);
+const attemptOpen = (attempt)=>{
+  const m = String(attempt||'').toLowerCase().match(/(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*[^0-9]*(\d{4})/);
+  if (!m) return true;
+  return Number(m[2]) >= 2027;
+};
 async function listNotes(sheets) {
   const vals = await getValues(sheets, SHEET_ID, 'Notes!A:N');
   if (vals.length<2) return [];
@@ -410,10 +422,10 @@ async function handleAction(action, payload, sheets, drive) {
       // Get student group/batch
       const students = await readStudents(sheets);
       const stu = students.find(x=>x.id===sid);
-      if(!stu) return all;
+      if(!stu) return [];
       return all.filter(n=>{
         const batchOk = !n.audience || n.audience==='All Batches' || n.audience===stu.batch;
-        const groupOk = !n.group || n.group==='Both Groups' || !stu.group || stu.group==='Both Groups' || n.group===stu.group;
+        const groupOk = noteGroupOpen(n.group, stu.group) && attemptOpen(stu.attempt);
         return batchOk && groupOk;
       });
     }

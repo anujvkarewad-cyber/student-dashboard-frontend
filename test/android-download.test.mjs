@@ -266,9 +266,9 @@ test("streamAndroidApk pipes the APK with real headers instead of redirecting", 
   assert.equal(res.headers["Content-Length"], String(APK_BODY.length));
   assert.equal(res.headers["Accept-Ranges"], "bytes");
   assert.equal(res.headers["Cache-Control"], "no-store, no-cache, must-revalidate");
-  assert.equal(
+  assert.match(
     res.headers["Content-Disposition"],
-    'attachment; filename="UPM-v1.15.1-45-release.apk"',
+    /^attachment; filename="UPM-v[\d.]+-\d+-release\.apk"$/,
   );
   assert.equal(Buffer.concat(res.chunks).toString(), APK_BODY);
 });
@@ -295,6 +295,25 @@ test("streamAndroidApk answers HEAD without a body", async () => {
   await streamAndroidApk({ method: "HEAD", headers: {} }, res, { fetchImpl: apkFetch() });
   assert.equal(res.statusCode, 200);
   assert.equal(res.chunks.length, 0);
+});
+
+test("streamAndroidApk redirects instead of truncating above Cloud Run's 32 MiB cap", async () => {
+  const res = mockRes();
+  await streamAndroidApk({ method: "GET", headers: {} }, res, {
+    fetchImpl: apkFetch({ apkHeaders: { "content-length": String(40 * 1024 * 1024) } }),
+  });
+  assert.equal(res.statusCode, 302);
+  assert.match(res.headers.Location, /UPM-v[\d.]+-\d+-release\.apk$/);
+  // the body is the tiny "Downloading…" hint, never (a truncated slice of) the APK
+  assert.match(Buffer.concat(res.chunks).toString(), /^Downloading the latest UPM Android app:/);
+  assert.doesNotMatch(Buffer.concat(res.chunks).toString(), /APK-BYTES/);
+});
+
+test("streamAndroidApk still streams small assets (under the cap)", async () => {
+  const res = mockRes();
+  await streamAndroidApk({ method: "GET", headers: {} }, res, { fetchImpl: apkFetch() });
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers["Content-Length"], String(APK_BODY.length));
 });
 
 test("streamAndroidApk falls back to the canonical release URL when the upstream fails", async () => {

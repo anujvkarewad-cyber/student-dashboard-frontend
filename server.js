@@ -497,12 +497,20 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (pathname === "/download/android" || pathname === "/download/android/") {
-      // Stable, non-expiring, single-hop stream (the URL handed to the app by
-      // app.version). ?mode=redirect keeps the old 302 for links/emails.
-      if (url.searchParams.get("mode") === "redirect") {
-        await handleAndroidDownload(req, res);
-      } else {
+      // The URL handed to the app by app.version: permanent, no signature in it, and a
+      // single-hop 302 to a *freshly signed* release-assets URL resolved on every
+      // request. Two reasons for the redirect rather than streaming the bytes here:
+      //   1. Cloud Run caps a response at 32 MiB ("HTTP response was too large:
+      //      33555403. The limit is: 33554432."), so the ~52 MB APK cannot be piped
+      //      through this service at all;
+      //   2. the app may retry much later, and each retry now gets a new 1h signature,
+      //      while the URL it stores (this one) never expires.
+      // ?mode=stream stays as a debug path; it self-heals into the same redirect when
+      // the asset is bigger than the cap.
+      if (url.searchParams.get("mode") === "stream") {
         await streamAndroidApk(req, res);
+      } else {
+        await handleAndroidDownload(req, res);
       }
       return;
     }
