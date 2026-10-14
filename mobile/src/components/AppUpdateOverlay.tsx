@@ -124,20 +124,30 @@ const Body = ({ ui }: { ui: AppUpdateUi }) => {
   }
   // downloading
   return (
-    <Text style={styles.body}>
-      Please keep the app open and stay on Wi-Fi if you can. This usually takes a minute.
-    </Text>
+    <>
+      <Text style={styles.body}>
+        Please keep the app open and stay on Wi-Fi if you can. This usually takes a minute.
+      </Text>
+      {ui.statusNote ? <Text style={styles.note}>{ui.statusNote}</Text> : null}
+    </>
   );
 };
 
 const Actions = ({ ui }: { ui: AppUpdateUi }) => {
   const { phase } = ui;
   if (phase === 'downloading') {
-    return ui.canDismiss ? (
-      <Pressable onPress={ui.dismiss} style={styles.hideLink} accessibilityRole="button">
-        <Text style={styles.hideLinkText}>Hide (keeps downloading)</Text>
-      </Pressable>
-    ) : null;
+    return (
+      <View style={styles.actions}>
+        <Pressable onPress={ui.openInBrowser} style={styles.hideLink} accessibilityRole="button">
+          <Text style={styles.hideLinkText}>Taking too long? Download in browser</Text>
+        </Pressable>
+        {ui.canDismiss ? (
+          <Pressable onPress={ui.dismiss} style={styles.hideLink} accessibilityRole="button">
+            <Text style={styles.hideLinkText}>Hide (keeps downloading)</Text>
+          </Pressable>
+        ) : null}
+      </View>
+    );
   }
   if (phase === 'ready') {
     return (
@@ -160,6 +170,9 @@ const Actions = ({ ui }: { ui: AppUpdateUi }) => {
           onPress={ui.openInstallSettings}
           style={styles.secondaryAction}
         />
+        <Pressable onPress={ui.openInBrowser} style={styles.hideLink} accessibilityRole="button">
+          <Text style={styles.hideLinkText}>Install not showing up? Download in browser</Text>
+        </Pressable>
       </View>
     );
   }
@@ -167,6 +180,13 @@ const Actions = ({ ui }: { ui: AppUpdateUi }) => {
   return (
     <View style={styles.actions}>
       <PrimaryButton label="Retry" icon="refresh" onPress={ui.retry} />
+      <PrimaryButton
+        label="Download in browser"
+        icon="open-outline"
+        variant="secondary"
+        onPress={ui.openInBrowser}
+        style={styles.secondaryAction}
+      />
       <PrimaryButton
         label="Allow installing apps"
         icon="shield-checkmark-outline"
@@ -256,6 +276,7 @@ const styles = StyleSheet.create({
   indeterminate: { width: '40%', opacity: 0.7 },
   progressLabel: { marginTop: spacing.sm, fontSize: 12.5, color: colors.inkSoft, fontWeight: '600' },
   body: { marginTop: spacing.md, fontSize: 13.5, lineHeight: 19, color: colors.inkSoft },
+  note: { marginTop: spacing.xs, fontSize: 12.5, lineHeight: 17, color: colors.muted, fontWeight: '600' },
   bodyError: { marginTop: spacing.md, fontSize: 13.5, lineHeight: 19, color: colors.red },
   actions: { marginTop: spacing.lg, gap: spacing.sm },
   secondaryAction: { marginTop: 0 },

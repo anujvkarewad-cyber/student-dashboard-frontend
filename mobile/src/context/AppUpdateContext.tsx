@@ -12,7 +12,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { AppState, Platform, StyleSheet, View } from 'react-native';
+import { AppState, Linking, Platform, StyleSheet, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '../api/client';
 import { useAuth } from './AuthContext';
@@ -38,6 +38,15 @@ import { AppUpdateOverlay } from '../components/AppUpdateOverlay';
  *  - size/integrity check after download (auto-retries transient truncation)
  *  - every rejection is still logged (`[update] ...` in logcat)
  *
+ * Hardening (14-Oct-2026, students reported failed updates):
+ *  - stall watchdog: a download that sends no bytes for 45s is no longer able to
+ *    hang the (blocking) modal forever
+ *  - every attempt writes to its own file, so a late zombie download can never
+ *    corrupt the file a retry is using
+ *  - free-space pre-check with a plain-language reason before 52 MB is queued
+ *  - "Download in browser" escape hatch on EVERY phase, so even a forced update
+ *    can be completed from Chrome + the Downloads folder (never a hard lockout)
+ *
  * Android only. On web/iOS the provider renders children untouched.
  */
 
@@ -47,7 +56,10 @@ const APK_MIME = 'application/vnd.android.package-archive';
 const FLAG_GRANT_READ_URI_PERMISSION = 1;
 const FLAG_ACTIVITY_NEW_TASK = 268435456;
 const MIN_APK_BYTES = 1_000_000; // reject obviously-broken/empty downloads
-const MAX_AUTO_RETRY = 2; // silent retries for transient truncation/network blips
+const MAX_AUTO_RETRY = 3; // silent retries for transient truncation/network blips
+const RETRY_BACKOFF_MS = [2000, 6000, 12000]; // patient backoff for weak networks
+const STALL_TIMEOUT_MS = 45_000; // no bytes for this long -> treat the download as dead
+const MIN_FREE_BYTES = 120 * 1024 * 1024; // APK (~52 MB) + room for the install copy
 
 export type UpdatePhase =
   | 'idle'
@@ -69,6 +81,8 @@ export type AppUpdateUi = {
   totalBytes: number;
   errorTitle?: string;
   errorMessage?: string;
+  /** Small progress hint while a stalled download is being retried automatically. */
+  statusNote?: string;
   /** true once an optional update's banner was dismissed by the user. */
   dismissed: boolean;
   canDismiss: boolean;
@@ -76,6 +90,8 @@ export type AppUpdateUi = {
   retry: () => void;
   dismiss: () => void;
   openInstallSettings: () => void;
+  /** Open the verified APK URL in the phone browser (Chrome) as a fallback. */
+  openInBrowser: () => void;
 };
 
 type Release = {
@@ -102,6 +118,7 @@ const NO_UI: AppUpdateUi = {
   retry: () => {},
   dismiss: () => {},
   openInstallSettings: () => {},
+  openInBrowser: () => {},
 };
 
 const AppUpdateContext = createContext<AppUpdateUi>(NO_UI);
@@ -129,10 +146,17 @@ function classifyError(raw: unknown): { title: string; message: string; transien
       transient: true,
     };
   }
+  if (/stall/.test(lower)) {
+    return {
+      title: 'Download stopped',
+      message: 'The download stopped receiving data (the network dropped mid-way). Retry, or use "Download in browser" — Chrome can resume a broken download.',
+      transient: false,
+    };
+  }
   if (/enospc|no space|not enough (space|storage)|storage/.test(lower)) {
     return {
       title: 'Not enough storage',
-      message: 'Your phone needs about 60 MB of free space for the update. Delete a few files and retry.',
+      message: 'Your phone needs about 150 MB of free space for the update. Delete a few files, then retry.',
       transient: false,
     };
   }
@@ -182,6 +206,7 @@ export const AppUpdateProvider = ({ children }: PropsWithChildren) => {
   const retryCountRef = useRef(0);
   const releaseRef = useRef<Release | null>(null);
   const apkFileRef = useRef<File | null>(null);
+  const attemptSeqRef = useRef(0); // unique file per attempt -> zombies can't corrupt a retry
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -240,10 +265,56 @@ export const AppUpdateProvider = ({ children }: PropsWithChildren) => {
     }
   }, []);
 
+  /**
+   * Escape hatch: hand the verified APK URL to the phone browser. Chrome shows a
+   * real download (with its own retry/resume) and the student installs the file
+   * from Downloads - the one path that works even when the in-app downloader and
+   * the network keep failing. Never opens a URL that failed isSafeApkUrl.
+   */
+  const openInBrowser = useCallback(async () => {
+    const release = releaseRef.current;
+    const url = String(release?.apkUrl || release?.downloadUrl || '');
+    if (!isSafeApkUrl(url)) {
+      patch({
+        phase: 'error',
+        errorTitle: 'Could not start the download',
+        errorMessage: 'No valid download link is available right now. Check your internet and tap Retry.',
+      });
+      return;
+    }
+    try {
+      await Linking.openURL(url);
+    } catch (browserError) {
+      console.warn('[update] could not open browser:', browserError);
+      patch({
+        phase: 'error',
+        errorTitle: 'Could not open the browser',
+        errorMessage: 'Open Chrome, search "UPM app update" and install the downloaded file from Downloads.',
+      });
+    }
+  }, [patch]);
+
   /** Download the APK with live progress + integrity check. Throws on failure. */
   const downloadApk = useCallback(async (release: Release) => {
     const url = String(release.apkUrl || release.downloadUrl || '');
-    const destination = new File(Paths.cache, `UPM-${release.version}-${release.versionCode}.apk`);
+
+    // Free-space pre-check: failing here with a clear reason beats a cryptic
+    // "app not installed" / mid-download failure on a full phone.
+    let freeBytes = -1;
+    try {
+      freeBytes = Number(Paths.availableDiskSpace);
+    } catch {
+      freeBytes = -1; // API unavailable on this device - skip the check
+    }
+    if (freeBytes > 0 && freeBytes < MIN_FREE_BYTES) {
+      throw new Error(`enospc: only ${Math.round(freeBytes / 1_048_576)} MB free`);
+    }
+
+    attemptSeqRef.current += 1;
+    const destination = new File(
+      Paths.cache,
+      `UPM-${release.version}-${release.versionCode}-a${attemptSeqRef.current}.apk`,
+    );
     try {
       if (destination.exists) destination.delete();
     } catch {
@@ -251,17 +322,49 @@ export const AppUpdateProvider = ({ children }: PropsWithChildren) => {
     }
 
     let expectedBytes = -1;
-    const apk = await File.downloadFileAsync(url, destination, {
-      idempotent: true,
-      onProgress: ({ bytesWritten, totalBytes }) => {
-        if (totalBytes > 0) expectedBytes = totalBytes;
-        patch({
-          phase: 'downloading',
-          bytesWritten,
-          totalBytes: totalBytes > 0 ? totalBytes : -1,
-          progress: totalBytes > 0 ? Math.min(1, bytesWritten / totalBytes) : -1,
+    // Stall watchdog: resumable downloads can go silent forever (dropped Wi-Fi /
+    // dead socket), which used to leave the blocking modal frozen at one number.
+    // We cannot cancel the native task, so we watch the progress clock and give up
+    // on this attempt; the next attempt uses a NEW file, so the zombie download
+    // can never corrupt it.
+    const apk = await new Promise<File>((resolve, reject) => {
+      let lastTick = Date.now();
+      let settled = false;
+      const watchdog = setInterval(() => {
+        if (settled) return;
+        if (Date.now() - lastTick > STALL_TIMEOUT_MS) {
+          settled = true;
+          clearInterval(watchdog);
+          reject(new Error(`download stalled: no data for ${STALL_TIMEOUT_MS / 1000}s`));
+        }
+      }, 5_000);
+
+      File.downloadFileAsync(url, destination, {
+        idempotent: true,
+        onProgress: ({ bytesWritten, totalBytes }) => {
+          if (settled) return; // watchdog already failed this attempt - don't revive the UI
+          lastTick = Date.now();
+          if (totalBytes > 0) expectedBytes = totalBytes;
+          patch({
+            phase: 'downloading',
+            bytesWritten,
+            totalBytes: totalBytes > 0 ? totalBytes : -1,
+            progress: totalBytes > 0 ? Math.min(1, bytesWritten / totalBytes) : -1,
+          });
+        },
+      })
+        .then((file) => {
+          if (settled) return; // watchdog already gave up on this attempt
+          settled = true;
+          clearInterval(watchdog);
+          resolve(file);
+        })
+        .catch((error) => {
+          if (settled) return;
+          settled = true;
+          clearInterval(watchdog);
+          reject(error);
         });
-      },
     });
 
     const size = Number((apk && apk.size) || 0);
@@ -293,6 +396,7 @@ export const AppUpdateProvider = ({ children }: PropsWithChildren) => {
         totalBytes: -1,
         errorTitle: undefined,
         errorMessage: undefined,
+        statusNote: undefined,
         dismissed: false,
         canDismiss: !forceUpdate,
       });
@@ -307,11 +411,25 @@ export const AppUpdateProvider = ({ children }: PropsWithChildren) => {
         // Auto-retry transient failures a couple of times before bothering the user.
         if (info.transient && retryCountRef.current < MAX_AUTO_RETRY) {
           retryCountRef.current += 1;
-          patch({ phase: 'downloading', progress: -1 });
-          await new Promise((resolve) => setTimeout(resolve, 1200 * retryCountRef.current));
+          const wait = RETRY_BACKOFF_MS[Math.min(retryCountRef.current - 1, RETRY_BACKOFF_MS.length - 1)];
+          patch({
+            phase: 'downloading',
+            progress: -1,
+            bytesWritten: 0,
+            totalBytes: -1,
+            statusNote: `Download interrupted. Retrying automatically (attempt ${
+              retryCountRef.current + 1
+            } of ${MAX_AUTO_RETRY + 1})…`,
+          });
+          await new Promise((resolve) => setTimeout(resolve, wait));
           return runUpdate(release);
         }
-        patch({ phase: 'error', errorTitle: info.title, errorMessage: info.message });
+        patch({
+          phase: 'error',
+          errorTitle: info.title,
+          errorMessage: info.message,
+          statusNote: undefined,
+        });
       }
     },
     [downloadApk, patch],
@@ -393,8 +511,9 @@ export const AppUpdateProvider = ({ children }: PropsWithChildren) => {
       retry,
       dismiss,
       openInstallSettings: () => void openInstallSettings(),
+      openInBrowser: () => void openInBrowser(),
     }),
-    [ui, install, retry, dismiss, openInstallSettings],
+    [ui, install, retry, dismiss, openInstallSettings, openInBrowser],
   );
 
   useEffect(() => {
