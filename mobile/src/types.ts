@@ -45,6 +45,10 @@ export type LeaderboardEntry = {
   totalHours?: number;
   streak?: number;
   status?: string;
+  rankOverall?: number;
+  rankWeekly?: number;
+  weekStart?: string;
+  weekEnd?: string;
 };
 
 export type WeeklyReport = {
@@ -74,6 +78,8 @@ export type StudyNote = {
   date?: string;
   subject?: string;
   category?: string;
+  /** Mentor ka chapter label ("Ch 2 — Audit Strategy") — folder banata hai. */
+  chapter?: string;
   fileId?: string;
   url?: string;
 };

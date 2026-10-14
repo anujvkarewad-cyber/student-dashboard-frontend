@@ -18,6 +18,7 @@ export const NoteSubjectScreen = ({ route, navigation }: Props) => {
   const { backendMode } = useAuth();
   const { data, refreshNotes } = useData();
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [selectedChapter, setSelectedChapter] = useState<string | null>(null);
   const [query, setQuery] = useState('');
 
   useFocusEffect(useCallback(() => {
@@ -38,12 +39,87 @@ export const NoteSubjectScreen = ({ route, navigation }: Props) => {
     });
   }, [allNotes]);
 
+  const chapterNumber = (label: string) => {
+    const match = label.match(/\d+/);
+    return match ? Number(match[0]) : 999;
+  };
+
+  const categoryNotes = useMemo(
+    () => (selectedCategory ? categoryGroups.find(([category]) => category === selectedCategory)?.[1] || [] : []),
+    [categoryGroups, selectedCategory],
+  );
+
+  // Teen level (owner, 14 Oct): Subject -> category (Super 75 / teacher) ->
+  // CHAPTER folders ("Ch 2 — …", "Ch 11 — …") -> files. Chapter label mentor
+  // dashboard se aata hai; jo note bina chapter ke hai wo "Other material" me.
+  const chapterGroups = useMemo(() => {
+    const groups: Record<string, typeof categoryNotes> = {};
+    categoryNotes.forEach((note) => {
+      const chapter = note.chapter?.trim() || 'Other material';
+      (groups[chapter] ||= []).push(note);
+    });
+    // "Ch 2" pehle, "Ch 10" baad me (plain alphabet ka ulta order nahi).
+    return Object.entries(groups).sort(([a], [b]) => {
+      const diff = chapterNumber(a) - chapterNumber(b);
+      return diff !== 0 ? diff : a.localeCompare(b);
+    });
+  }, [categoryNotes]);
+
+  // Sirf ek hi group aur wo bhi bina chapter wala ho to seedha files dikhao
+  // (warna har purane note ke liye faltu ek extra tap).
+  const hasChapterFolders = chapterGroups.length > 1 || (chapterGroups.length === 1 && chapterGroups[0][0] !== 'Other material');
+
+  const fileNotes = useMemo(() => {
+    if (!selectedChapter) return categoryNotes;
+    return chapterGroups.find(([chapter]) => chapter === selectedChapter)?.[1] || [];
+  }, [categoryNotes, chapterGroups, selectedChapter]);
+
   const visibleNotes = useMemo(() => {
-    if (!selectedCategory) return [];
-    const notes = categoryGroups.find(([category]) => category === selectedCategory)?.[1] || [];
     const search = query.trim().toLowerCase();
-    return search ? notes.filter((note) => `${note.title} ${note.description || ''}`.toLowerCase().includes(search)) : notes;
-  }, [categoryGroups, query, selectedCategory]);
+    return search ? fileNotes.filter((note) => `${note.title} ${note.description || ''}`.toLowerCase().includes(search)) : fileNotes;
+  }, [fileNotes, query]);
+
+  const closeChapter = () => { setSelectedChapter(null); setQuery(''); };
+
+  const renderNoteCards = () => (
+    <View style={styles.notesList}>
+      {visibleNotes.length ? visibleNotes.map((item) => (
+        <Pressable key={item.id} onPress={() => navigation.navigate('NotePreview', { noteId: item.id })} style={({ pressed }) => [styles.noteCard, pressed && styles.pressed]}>
+          <View style={styles.pdfIcon}><Ionicons name="document-text" size={24} color={colors.red} /></View>
+          <View style={styles.noteBody}>
+            <Text style={styles.noteTitle}>{item.title}</Text>
+            {item.description ? <Text style={styles.description} numberOfLines={2}>{item.description}</Text> : null}
+            <View style={styles.noteMeta}><Ionicons name="calendar-outline" size={12} color={colors.muted} /><Text style={styles.noteDate}>{item.date || 'Recently added'}</Text><View style={styles.previewOnly}><Ionicons name="eye-outline" size={11} color={colors.success} /><Text style={styles.previewOnlyText}>PREVIEW</Text></View></View>
+          </View>
+          <View style={styles.openIcon}><Ionicons name="eye-outline" size={18} color={colors.primary} /></View>
+        </Pressable>
+      )) : <EmptyState icon="document-outline" title="No matching files" message="Try another title or go back." />}
+    </View>
+  );
+
+  const renderChapterCards = () => {
+    const tones = [
+      { color: colors.primary, soft: colors.primarySoft, icon: 'albums' as const },
+      { color: colors.purple, soft: colors.purpleSoft, icon: 'layers' as const },
+      { color: colors.teal, soft: colors.tealSoft, icon: 'book' as const },
+      { color: '#B36A16', soft: colors.amberSoft, icon: 'bookmark' as const },
+    ];
+    return (
+      <View style={styles.categoryGrid}>
+        {chapterGroups.map(([chapter, notes], index) => {
+          const tone = tones[index % tones.length];
+          return (
+            <Pressable key={chapter} onPress={() => { setSelectedChapter(chapter); setQuery(''); }} style={({ pressed }) => [styles.categoryCard, pressed && styles.pressed]}>
+              <View style={[styles.categoryIcon, { backgroundColor: tone.soft }]}><Ionicons name="folder" size={25} color={tone.color} /></View>
+              <Text style={styles.categoryTitle} numberOfLines={2}>{chapter}</Text>
+              <Text style={styles.categoryCount}>{notes.length} {notes.length === 1 ? 'file' : 'files'}</Text>
+              <View style={[styles.categoryArrow, { backgroundColor: tone.soft }]}><Ionicons name="arrow-forward" size={15} color={tone.color} /></View>
+            </Pressable>
+          );
+        })}
+      </View>
+    );
+  };
 
   const group = subjectGroup(subject);
   const groupDetails = group === 'General' ? null : caGroupDetails[group];
@@ -85,25 +161,19 @@ export const NoteSubjectScreen = ({ route, navigation }: Props) => {
               </View>
             ) : <EmptyState icon="folder-open-outline" title="No categories yet" message="Materials will appear after the mentor assigns subject and category metadata." />}
           </>
-        ) : (
+        ) : hasChapterFolders && !selectedChapter ? (
           <>
             <Pressable onPress={() => { setSelectedCategory(null); setQuery(''); }} style={styles.backToCategories}><Ionicons name="arrow-back" size={17} color={colors.primary} /><Text style={styles.backText}>All categories</Text></Pressable>
-            <View style={styles.categoryHeading}><View><Text style={styles.sectionEyebrow}>CATEGORY</Text><Text style={styles.sectionTitle}>{selectedCategory}</Text></View><View style={styles.fileCountPill}><Text style={styles.fileCountText}>{visibleNotes.length} files</Text></View></View>
-            <View style={styles.search}><Ionicons name="search" size={20} color={colors.muted} /><TextInput value={query} onChangeText={setQuery} placeholder={`Search in ${selectedCategory}`} placeholderTextColor={colors.muted} style={styles.searchInput} /></View>
-
-            <View style={styles.notesList}>
-              {visibleNotes.length ? visibleNotes.map((item) => (
-                <Pressable key={item.id} onPress={() => navigation.navigate('NotePreview', { noteId: item.id })} style={({ pressed }) => [styles.noteCard, pressed && styles.pressed]}>
-                  <View style={styles.pdfIcon}><Ionicons name="document-text" size={24} color={colors.red} /></View>
-                  <View style={styles.noteBody}>
-                    <Text style={styles.noteTitle}>{item.title}</Text>
-                    {item.description ? <Text style={styles.description} numberOfLines={2}>{item.description}</Text> : null}
-                    <View style={styles.noteMeta}><Ionicons name="calendar-outline" size={12} color={colors.muted} /><Text style={styles.noteDate}>{item.date || 'Recently added'}</Text><View style={styles.previewOnly}><Ionicons name="eye-outline" size={11} color={colors.success} /><Text style={styles.previewOnlyText}>PREVIEW</Text></View></View>
-                  </View>
-                  <View style={styles.openIcon}><Ionicons name="eye-outline" size={18} color={colors.primary} /></View>
-                </Pressable>
-              )) : <EmptyState icon="document-outline" title="No matching files" message="Try another title or return to categories." />}
-            </View>
+            <View style={styles.categoryHeading}><View><Text style={styles.sectionEyebrow}>CATEGORY</Text><Text style={styles.sectionTitle}>{selectedCategory}</Text></View><View style={styles.fileCountPill}><Text style={styles.fileCountText}>{categoryNotes.length} files</Text></View></View>
+            <View style={styles.sectionHeader}><View><Text style={styles.sectionEyebrow}>STEP 4</Text><Text style={styles.sectionTitle}>Choose chapter</Text></View><Text style={styles.sectionCount}>{chapterGroups.length} folders</Text></View>
+            {renderChapterCards()}
+          </>
+        ) : (
+          <>
+            <Pressable onPress={() => { if (selectedChapter) closeChapter(); else setSelectedCategory(null); setQuery(''); }} style={styles.backToCategories}><Ionicons name="arrow-back" size={17} color={colors.primary} /><Text style={styles.backText}>{selectedChapter ? `All chapters` : 'All categories'}</Text></Pressable>
+            <View style={styles.categoryHeading}><View><Text style={styles.sectionEyebrow}>{selectedChapter ? 'CHAPTER' : 'CATEGORY'}</Text><Text style={styles.sectionTitle} numberOfLines={2}>{selectedChapter || selectedCategory}</Text></View><View style={styles.fileCountPill}><Text style={styles.fileCountText}>{visibleNotes.length} files</Text></View></View>
+            <View style={styles.search}><Ionicons name="search" size={20} color={colors.muted} /><TextInput value={query} onChangeText={setQuery} placeholder={`Search in ${selectedChapter || selectedCategory}`} placeholderTextColor={colors.muted} style={styles.searchInput} /></View>
+            {renderNoteCards()}
           </>
         )}
         <View style={{ height: 30 }} />

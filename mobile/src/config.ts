@@ -1,3 +1,5 @@
+import Constants from 'expo-constants';
+
 export type BackendDefaultMode = 'mock' | 'live-readonly' | 'live';
 
 const configuredBaseUrl = (process.env.EXPO_PUBLIC_API_BASE_URL || '').trim();
@@ -27,5 +29,6 @@ export const config = {
   // preview/read-only profiles still override both values through environment.
   allowModeSelection: requestedModeSwitch === 'true',
   requestTimeoutMs: 60_000,
-  appVersion: (process.env.EXPO_PUBLIC_APP_VERSION || '1.15.0').trim(),
+  // Order: build env var -> app.json version baked into the binary -> fallback.
+  appVersion: (process.env.EXPO_PUBLIC_APP_VERSION || Constants.expoConfig?.version || '1.15.2').trim(),
 };
