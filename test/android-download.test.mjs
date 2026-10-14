@@ -1,12 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { Writable } from "node:stream";
+
 import {
   androidDownloadConfig,
+  apkFilenameFromUrl,
   isAllowedAndroidApkUrl,
   resolveAndroidApkUrl,
   resolveAndroidApkDownloadUrl,
   resolveRedirectChain,
+  streamAndroidApk,
 } from "../lib/android-download.js";
 
 const RELEASE_URL =
@@ -184,4 +188,138 @@ test("resolveRedirectChain gives up gracefully and keeps the last good URL", asy
   });
   // On failure we still hand back the canonical github URL (browser can follow it).
   assert.equal(finalUrl, GITHUB_APK_URL);
+});
+
+// --- stable in-app update delivery (14-Oct-2026) -----------------------------
+//
+// Students were getting stuck on the blocking update modal because the gateway
+// handed the app a release-assets signed URL that expired after ~1h while the app
+// kept retrying it. /download/android now streams the bytes from our own origin.
+
+function mockRes() {
+  const chunks = [];
+  const res = new Writable({
+    write(chunk, _encoding, callback) {
+      chunks.push(Buffer.from(chunk));
+      callback();
+    },
+  });
+  res.chunks = chunks;
+  res.statusCode = null;
+  res.headers = null;
+  res.writeHead = (status, headers) => {
+    res.statusCode = status;
+    res.headers = headers || {};
+    return res;
+  };
+  return res;
+}
+
+const APK_BODY = "APK-BYTES-0123456789";
+
+function apkResponse(status = 200, extraHeaders = {}) {
+  return new Response(APK_BODY, {
+    status,
+    headers: {
+      "content-length": String(APK_BODY.length),
+      "content-type": "application/octet-stream",
+      ...extraHeaders,
+    },
+  });
+}
+
+function apkFetch({ apkStatus = 200, apkHeaders = {}, onUpstream } = {}) {
+  return async (url, init) => {
+    if (String(url).startsWith("https://raw.githubusercontent.com/")) {
+      return new Response(
+        JSON.stringify({
+          version: "1.15.1",
+          versionCode: 45,
+          apkUrl:
+            "https://github.com/anujvkarewad-cyber/UPM-Android-Releases/releases/download/v1.15.1-45/UPM-v1.15.1-45-release.apk",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    if (onUpstream) onUpstream(url, init);
+    return apkResponse(apkStatus, apkHeaders);
+  };
+}
+
+test("apkFilenameFromUrl keeps the release asset name and never leaks a path", () => {
+  assert.equal(
+    apkFilenameFromUrl(
+      "https://github.com/anujvkarewad-cyber/UPM-Android-Releases/releases/download/v1.15.1-45/UPM-v1.15.1-45-release.apk",
+    ),
+    "UPM-v1.15.1-45-release.apk",
+  );
+  assert.equal(apkFilenameFromUrl("not a url"), "UPM-release.apk");
+});
+
+test("streamAndroidApk pipes the APK with real headers instead of redirecting", async () => {
+  const res = mockRes();
+  await streamAndroidApk({ method: "GET", headers: {} }, res, {
+    fetchImpl: apkFetch(),
+  });
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers["Content-Type"], "application/vnd.android.package-archive");
+  assert.equal(res.headers["Content-Length"], String(APK_BODY.length));
+  assert.equal(res.headers["Accept-Ranges"], "bytes");
+  assert.equal(res.headers["Cache-Control"], "no-store, no-cache, must-revalidate");
+  assert.equal(
+    res.headers["Content-Disposition"],
+    'attachment; filename="UPM-v1.15.1-45-release.apk"',
+  );
+  assert.equal(Buffer.concat(res.chunks).toString(), APK_BODY);
+});
+
+test("streamAndroidApk forwards a Range request (206 + Content-Range)", async () => {
+  const res = mockRes();
+  let sentRange = "";
+  await streamAndroidApk({ method: "GET", headers: { range: "bytes=0-9" } }, res, {
+    fetchImpl: apkFetch({
+      apkStatus: 206,
+      apkHeaders: { "content-range": "bytes 0-9/21" },
+      onUpstream: (_url, init) => {
+        sentRange = init.headers.range;
+      },
+    }),
+  });
+  assert.equal(sentRange, "bytes=0-9");
+  assert.equal(res.statusCode, 206);
+  assert.equal(res.headers["Content-Range"], "bytes 0-9/21");
+});
+
+test("streamAndroidApk answers HEAD without a body", async () => {
+  const res = mockRes();
+  await streamAndroidApk({ method: "HEAD", headers: {} }, res, { fetchImpl: apkFetch() });
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.chunks.length, 0);
+});
+
+test("streamAndroidApk falls back to the canonical release URL when the upstream fails", async () => {
+  const res = mockRes();
+  await streamAndroidApk({ method: "GET", headers: {} }, res, {
+    fetchImpl: apkFetch({ apkStatus: 500 }),
+  });
+  assert.equal(res.statusCode, 302);
+  assert.match(
+    res.headers.Location,
+    /^https:\/\/github\.com\/anujvkarewad-cyber\/UPM-Android-Releases\/releases\/download\//,
+  );
+  // Still no expiry in that URL - it is the canonical github.com release path.
+  assert.equal(/[?&]se=/.test(res.headers.Location), false);
+});
+
+test("streamAndroidApk rejects an unapproved upstream and other methods", async () => {
+  const bad = mockRes();
+  await streamAndroidApk({ method: "GET", headers: {} }, bad, {
+    resolveRelease: async () => ({ apkUrl: "https://evil.example/fake.apk", source: "manifest" }),
+    fetchImpl: apkFetch(),
+  });
+  assert.equal(bad.statusCode, 503);
+
+  const post = mockRes();
+  await streamAndroidApk({ method: "POST", headers: {} }, post, { fetchImpl: apkFetch() });
+  assert.equal(post.statusCode, 405);
 });

@@ -1,4 +1,3 @@
-import { resolveAndroidApkDownloadUrl } from "../lib/android-download.js";
 
 export const config = {
   api: {
@@ -353,7 +352,27 @@ async function mirrorStudyLogToMongo(payload, gasResult) {
 
 export default async function handler(req, res) {
   try {
-    const updateAction = req.body?.action || req.query?.action;
+    /**
+ * Build the stable, non-expiring download URL for the app.
+ *
+ * The URL points at our own origin (/download/android), which streams the APK with a
+ * real Content-Length and no redirect. Students keep working downloads even hours
+ * after the update banner appeared - the previous behaviour (a 1-hour signed
+ * release-assets URL, cached for the session and reused on every Retry) is what made
+ * "maximum bachon ko update krte samay issue" happen.
+ */
+function stableApkDownloadUrl(req, canonicalUrl) {
+  const headers = (req && req.headers) || {};
+  const first = (value) => String(value || "").split(",")[0].trim();
+  const host = first(headers["x-forwarded-host"]) || first(headers.host);
+  const proto = first(headers["x-forwarded-proto"]) || "https";
+  const override = String(process.env.APP_ANDROID_STABLE_URL || "").trim();
+  if (override) return override;
+  if (host) return `${proto}://${host}/download/android`;
+  return canonicalUrl; // last resort: the canonical (non-expiring) release URL
+}
+
+const updateAction = req.body?.action || req.query?.action;
     if (updateAction === "ai.ask" || updateAction === "ai.dailyTarget" || updateAction === "ai.evaluate" || updateAction === "revision.plan" || updateAction === "messages.thread" || updateAction === "messages.send") {
       await serveMentorTool(req, res, updateAction);
       return;
@@ -373,16 +392,20 @@ export default async function handler(req, res) {
             // Resolve GitHub's double-redirect to a single-hop signed URL so the
             // in-app downloader (incl. older v1.14.6 force-update modal) and any
             // download manager finish instead of stalling on content-length:0.
-            const apkUrl = await resolveAndroidApkDownloadUrl(
-              latest.apkUrl || process.env.APP_ANDROID_APK_URL || "",
-            );
+            // NEVER hand the app a release-assets.githubusercontent.com signed URL:
+            // it expires after ~1h, the app caches it for the session and retries it
+            // forever, and the student ends up stuck on the blocking update modal.
+            // Our own /download/android streams the bytes with no expiry and no
+            // redirect - the same origin the app already talks to.
+            const canonicalApkUrl = String(latest.apkUrl || process.env.APP_ANDROID_APK_URL || "").trim();
+            const apkUrl = stableApkDownloadUrl(req, canonicalApkUrl);
             return res.status(200).json({
               result: {
                 version: latest.version || process.env.APP_ANDROID_VERSION || "1.11.8",
                 versionCode: Number(latest.versionCode || process.env.APP_ANDROID_VERSION_CODE || 30),
                 minimumVersionCode: Number(latest.minimumVersionCode || process.env.APP_ANDROID_MIN_VERSION_CODE || latest.versionCode || 30),
                 apkUrl,
-                downloadUrl: apkUrl,
+                downloadUrl: canonicalApkUrl || apkUrl,
                 releaseNotes: latest.notes || process.env.APP_ANDROID_RELEASE_NOTES || "ChatGPT-style AI assistant UI - headings, bold without stars, bullets, tables, avatar + typing bar fix",
                 forceUpdate: true,
                 publishedAt: latest.publishedAt || process.env.APP_ANDROID_PUBLISHED_AT || new Date().toISOString().slice(0, 10)
@@ -393,16 +416,17 @@ export default async function handler(req, res) {
       } catch (e) {
         console.error("latest.json fetch failed, falling back to env", e && e.message);
       }
-      const fallbackApkUrl = await resolveAndroidApkDownloadUrl(
-        process.env.APP_ANDROID_APK_URL || "https://github.com/anujvkarewad-cyber/UPM-Android-Releases/releases/download/v1.11.8-30/UPM-v1.11.8-30-release.apk",
-      );
+      const canonicalFallbackUrl =
+        process.env.APP_ANDROID_APK_URL ||
+        "https://github.com/anujvkarewad-cyber/UPM-Android-Releases/releases/download/v1.11.8-30/UPM-v1.11.8-30-release.apk";
+      const fallbackApkUrl = stableApkDownloadUrl(req, canonicalFallbackUrl);
       return res.status(200).json({
         result: {
           version: process.env.APP_ANDROID_VERSION || "1.11.8",
           versionCode: Number(process.env.APP_ANDROID_VERSION_CODE || 30),
           minimumVersionCode: Number(process.env.APP_ANDROID_MIN_VERSION_CODE || 30),
           apkUrl: fallbackApkUrl,
-          downloadUrl: fallbackApkUrl,
+          downloadUrl: canonicalFallbackUrl,
           releaseNotes: process.env.APP_ANDROID_RELEASE_NOTES || "ChatGPT-style AI assistant UI - headings, bold without stars, bullets, tables, avatar + typing bar fix",
           forceUpdate: true,
           publishedAt: process.env.APP_ANDROID_PUBLISHED_AT || new Date().toISOString().slice(0, 10)

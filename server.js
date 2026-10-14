@@ -26,7 +26,7 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { handleAndroidDownload } from "./lib/android-download.js";
+import { handleAndroidDownload, streamAndroidApk } from "./lib/android-download.js";
 import { handleProofUpload } from "./lib/proof-upload.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -497,7 +497,13 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (pathname === "/download/android" || pathname === "/download/android/") {
-      await handleAndroidDownload(req, res);
+      // Stable, non-expiring, single-hop stream (the URL handed to the app by
+      // app.version). ?mode=redirect keeps the old 302 for links/emails.
+      if (url.searchParams.get("mode") === "redirect") {
+        await handleAndroidDownload(req, res);
+      } else {
+        await streamAndroidApk(req, res);
+      }
       return;
     }
 

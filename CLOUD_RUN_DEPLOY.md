@@ -41,6 +41,8 @@ browser/APK ──> Vercel static files
 browser/APK ──> Cloud Run container (server.js)
                  ├─ static files      (index.html, app.js, style.css, assets, icon)
                  ├─ POST /api/proxy   -> api/proxy.js (bilkul wahi Vercel function)
+                 ├─ GET /download/android -> APK ka live stream (kabhi expire
+                 │                          nahi hota; app isi URL se update karta hai)
                  ├─ /api/mentor/*     -> FastAPI backend (reverse proxy)
                  └─ /health, /api/health
 ```
@@ -109,7 +111,7 @@ gcloud run deploy student-dashboard \
   --allow-unauthenticated \
   --port 8080 \
   --min-instances 1 --max-instances 10 \
-  --memory 512Mi --cpu 1 --concurrency 80 --timeout 300 \
+  --memory 512Mi --cpu 1 --concurrency 80 --timeout 1800 \
   --set-env-vars MENTOR_API_URL=https://ujjwal-pathak-app-566076646952.asia-south1.run.app
 ```
 
@@ -196,3 +198,37 @@ docker run -p 8080:8080 \
   -e MENTOR_API_URL=https://ujjwal-pathak-app-566076646952.asia-south1.run.app \
   ump-dashboard
 ```
+
+
+---
+
+## 7. App update delivery fix (14-Oct-2026)
+
+**Problem:** `app.version` students ko GitHub ka *signed* URL deta tha
+(`release-assets.githubusercontent.com/...&se=<1 ghante baad expire>`). App us URL
+ko poore session ke liye yaad rakhta hai aur har **Retry** par wahi bhejta hai. Jo
+student modal aane ke kaafi der baad download karta - ya jiska download ek baar fail
+hokar retry hua - uske paas dead URL reh jaata tha: blocking modal, hamesha fail.
+Isi wajah se "maximum bachon ko update krte samay issue" aa raha tha.
+
+**Fix (sirf server-side - koi student APK update nahi chahiye):**
+
+| Change | File |
+|---|---|
+| `app.version` ab apne hi origin ka stable URL deta hai: `https://<origin>/download/android` (no expiry, no redirect) | `api/proxy.js` |
+| Naya `streamAndroidApk`: APK bytes seedha stream karta hai - 200, asli `Content-Length`, `Accept-Ranges: bytes`, `Content-Type: application/vnd.android.package-archive`. Range/206 pass-through. Upstream fail ho to canonical GitHub release URL par 302 | `lib/android-download.js` |
+| `/download/android?mode=redirect` = purana 302 (website/email links) | `server.js` |
+| Manifest read 60s cache (200 students ek saath → raw.githubusercontent rate-limit se bachav) | `lib/android-download.js` |
+| `--timeout 1800` + `--update-env-vars` (existing env/secrets wipe na hon) | `scripts/deploy-cloudrun.sh` |
+
+Tests: `npm test` (16 android-download tests incl. 5 naye streaming tests) - sab pass.
+
+**Deploy (ye ek hi cheez bachi hai):**
+
+```bash
+cd student-dashboard-frontend && ./scripts/deploy-cloudrun.sh
+```
+
+Deploy ke baad students ko sirf itna: **app band karke dobara kholo** → naya
+`app.version` milega (stable URL) aur update chal jayega. Jo students already
+update kar chuke hain, unke liye kuch nahi badalta.

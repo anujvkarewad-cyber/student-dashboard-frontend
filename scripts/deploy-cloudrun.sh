@@ -47,6 +47,10 @@ if [[ -n "$DRIVE_PROOF_FOLDER_ID" ]]; then
 fi
 
 echo "==> Building and deploying from source"
+# --update-env-vars (not --set-env-vars) so existing APPS_SCRIPT_URL /
+# DRIVE_PROOF_FOLDER_ID / secrets on the service are preserved.
+# --timeout 1800 because a 52 MB APK streamed to a slow phone easily outlives the
+# old 300 s limit - Cloud Run would cut the download and the student would retry.
 gcloud run deploy "$SERVICE" \
   --source . \
   --project "$PROJECT" \
@@ -59,8 +63,8 @@ gcloud run deploy "$SERVICE" \
   --concurrency 80 \
   --min-instances 1 \
   --max-instances 10 \
-  --timeout 300 \
-  --set-env-vars "$ENV_VARS"
+  --timeout 1800 \
+  --update-env-vars "$ENV_VARS"
 
 URL="$(gcloud run services describe "$SERVICE" --project "$PROJECT" --region "$REGION" --format='value(status.url)')"
 
@@ -70,6 +74,7 @@ echo "==> Smoke tests"
 curl -fsS "$URL/api/health" && echo
 curl -fsS -o /dev/null -w "   index.html  -> %{http_code}\n" "$URL/"
 curl -fsS -o /dev/null -w "   app.js      -> %{http_code}\n" "$URL/app.js"
+curl -fsS -o /dev/null -w "   /download/android -> %{http_code} %{content_type}\n" -r 0-99 "$URL/download/android"
 curl -fsS -X POST "$URL/api/proxy" \
   -H 'Content-Type: application/json' \
   -d '{"action":"getAnnouncements","payload":{}}' \
