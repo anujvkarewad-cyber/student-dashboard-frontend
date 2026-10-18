@@ -1,0 +1,21 @@
+{
+  "name": "content-pipeline",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "generate": "node scripts/generate-chapter-bank.js",
+    "dry-run": "node scripts/generate-chapter-bank.js --dry-run",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "dotenv": "^16.4.5",
+    "googleapis": "^140.0.1",
+    "mammoth": "^1.8.0",
+    "mongodb": "^6.8.0",
+    "pdf-parse": "^1.1.1"
+  }
+}

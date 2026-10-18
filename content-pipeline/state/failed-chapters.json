@@ -1,0 +1,13 @@
+[
+  {
+    "chapterId": "income-tax-3",
+    "subject": "Taxation",
+    "paper": "Paper 3: Taxation",
+    "module": "Module 1",
+    "chapterNumber": 3,
+    "chapterTitle": "Heads of Income",
+    "attempts": 3,
+    "reason": "Validation errors:\n- S3Q2: duplicate prompt",
+    "at": "2026-08-16T14:21:01.087Z"
+  }
+]

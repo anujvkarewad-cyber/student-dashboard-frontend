@@ -1,0 +1,1239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>UMP Dashboard · Super 75 by Ujjwal</title> 
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<link rel="manifest" href="/manifest.json">
+  
+
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="UPM">
+
+<link rel="apple-touch-icon" href="/icon/icon-192.png">
+<link rel="icon" type="image/png" href="/icon/icon-192.png">
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+<meta name="theme-color" content="#2563EB">
+
+<link rel="stylesheet" href="style.css">
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+
+
+    <!-- ================= BOOT LOADER (shown while we check for a saved session) ================= -->
+    <div id="boot-loader" class="boot-loader">
+        <div class="boot-spinner"></div>
+    </div>
+
+    <!-- ================= HERO SECTION ================= -->
+  <section id="login-screen" class="login-wrap" hidden>
+
+    <!-- Background -->
+    <div class="login-bg-orbs" aria-hidden="true">
+        <span></span>
+        <span></span>
+        <span></span>
+    </div>
+
+    <!-- Login Card -->
+    <div class="login-card" data-testid="login-card">
+
+        <!-- Brand -->
+        <div class="login-brand">
+            <div class="brand-badge">UP</div>
+
+            <div>
+                <div class="brand-name">SUPER 75</div>
+                <div class="brand-sub">BY UJJWAL</div>
+            </div>
+        </div>
+
+        <!-- Heading -->
+        <h1 class="login-title">Welcome Back</h1>
+
+        <p class="login-sub">
+            Sign in with your Student ID to continue your CA Inter journey.
+        </p>
+
+        <!-- Login Form -->
+        <form id="login-form" class="login-form" autocomplete="off">
+
+            <div class="field">
+                <label class="field-label" for="student-id">Student ID</label>
+
+                <div class="field-control">
+                    <i class="fas fa-user"></i>
+
+                    <input
+                        id="student-id"
+                        type="text"
+                        placeholder="Enter Student ID"
+                        autocomplete="username"
+                        required>
+                </div>
+            </div>
+
+            <div class="field">
+                <label class="field-label" for="password">Password</label>
+
+                <div class="field-control">
+                    <i class="fas fa-lock"></i>
+
+                    <input
+                        id="password"
+                        type="password"
+                        placeholder="Enter Password"
+                        autocomplete="current-password"
+                        required>
+                </div>
+            </div>
+
+            <div class="forgot-row">
+                <a href="#" id="forgot-password-link">
+                    Forgot Password?
+                </a>
+            </div>
+
+            <button
+                id="login-btn"
+                class="btn-login"
+                type="submit">
+
+                <i class="fas fa-arrow-right-to-bracket"></i>
+                <span>Login</span>
+
+            </button>
+
+            <div
+                id="login-error"
+                class="login-error"
+                style="display:none;">
+            </div>
+
+        </form>
+
+    </div>
+
+    <!-- Hero -->
+    <aside class="login-hero" aria-hidden="true">
+
+        <svg class="hero-network" viewBox="0 0 600 600">
+
+            <line x1="180" y1="170" x2="310" y2="120"/>
+            <line x1="310" y1="120" x2="430" y2="230"/>
+            <line x1="180" y1="170" x2="250" y2="360"/>
+            <line x1="250" y1="360" x2="430" y2="230"/>
+
+            <circle cx="180" cy="170" r="8"/>
+            <circle cx="310" cy="120" r="8"/>
+            <circle cx="430" cy="230" r="8"/>
+            <circle cx="250" cy="360" r="8"/>
+
+        </svg>
+
+        <div class="hero-content">
+
+            <span class="hero-tag">
+                SUPER 75 BY UJJWAL
+            </span>
+
+            <h1>
+                START YOUR<br>
+                <span>SUCCESS</span><br>
+                STORY
+            </h1>
+
+            <p>
+                Every disciplined study session brings you one step closer to becoming a Chartered Accountant.
+            </p>
+
+        </div>
+
+    </aside>
+
+</section>
+<!-- =================== APP SHELL =================== -->
+<div id="app-shell" class="app-shell" hidden data-testid="app-shell">
+
+  <!-- Sidebar -->
+<aside class="sidebar" data-testid="sidebar">
+
+    <div class="sidebar-top">
+
+        <div class="sidebar-brand">
+
+            <div class="brand-badge">
+                UP
+            </div>
+
+            <div class="brand-info">
+                <h3>Super 75 by Ujjwal</h3>
+                <span>Student Dashboard</span>
+            </div>
+      <div class="app-version">
+    <div class="version-title">UMP Dashboard</div>
+    <div id="app-version">v1.0.1</div>
+</div>
+        </div>
+
+        <div class="sidebar-divider"></div>
+
+        <nav class="nav">
+
+            <a href="#dashboard" class="nav-item active" data-view="dashboard" data-testid="nav-dashboard">
+                <i class="fa-solid fa-house"></i>
+                <span>Dashboard</span>
+            </a>
+
+            <a href="#tracker" class="nav-item" data-view="tracker" data-testid="nav-tracker">
+                <i class="fa-solid fa-book-open"></i>
+                <span>Daily Study Tracker</span>
+            </a>
+
+            <a href="#focus" class="nav-item" data-view="focus" data-testid="nav-focus">
+                <i class="fa-solid fa-stopwatch"></i>
+                <span>Focus Room</span>
+            </a>
+
+            <a href="#tutor" class="nav-item" data-view="tutor" data-testid="nav-tutor">
+                <i class="fa-solid fa-comments"></i>
+                <span>Tutor &amp; Messages</span>
+            </a>
+
+            <a href="#tests" class="nav-item" data-view="tests" data-testid="nav-tests">
+                <i class="fa-solid fa-file-pen"></i>
+                <span>Tests</span>
+            </a>
+
+            <a href="#mcq" class="nav-item" data-view="mcq" data-testid="nav-mcq">
+                <i class="fa-solid fa-list-check"></i>
+                <span>Daily &amp; Practice MCQ</span>
+            </a>
+
+            <a href="#performance" class="nav-item" data-view="performance" data-testid="nav-performance">
+                <i class="fa-solid fa-chart-line"></i>
+                <span>Performance</span>
+            </a>
+
+            <a href="#leaderboard" class="nav-item" data-view="leaderboard" data-testid="nav-leaderboard">
+                <i class="fa-solid fa-trophy"></i>
+                <span>Leaderboard</span>
+            </a>
+
+            <a href="#reports" class="nav-item" data-view="reports" data-testid="nav-reports">
+                <i class="fa-solid fa-envelope-open-text"></i>
+                <span>Weekly Reports</span>
+            </a>
+
+            <a href="#notes" class="nav-item" data-view="notes" data-testid="nav-notes">
+                <i class="fa-solid fa-file-pdf"></i>
+                <span>Notes</span>
+            </a>
+
+            <a href="#profile" class="nav-item" data-view="profile" data-testid="nav-profile">
+                <i class="fa-regular fa-user"></i>
+                <span>Profile</span>
+            </a>
+
+        </nav>
+
+    </div>
+
+    <button class="nav-item logout" id="logout-btn" data-testid="logout-btn">
+        <i class="fa-solid fa-right-from-bracket"></i>
+        <span>Logout</span>
+    </button>
+
+</aside>
+  <!-- Main -->
+  <main class="main" data-testid="main-content">
+
+    <header class="topbar" data-testid="topbar">
+  <button class="menu-toggle" id="menu-toggle-btn" aria-label="Open menu">
+    <i class="fa-solid fa-bars"></i>
+  </button>
+  <div class="topbar-center">
+    <h2 id="view-title">Dashboard</h2>
+    <p class="topbar-subtitle">
+      Welcome back! Keep pushing towards your CA dream.
+    </p>
+  </div>
+
+  <div class="topbar-actions">
+
+    <div class="notif-wrap" id="notif-wrap">
+      <button type="button" class="notif-bell" id="notif-bell" data-testid="notif-bell" title="Notifications">
+        <i class="fa-solid fa-bell"></i>
+        <span class="notif-badge" id="notif-badge" hidden>0</span>
+      </button>
+      <div id="notif-panel" class="notif-panel" hidden>
+        <div class="notif-panel-head">Notifications</div>
+        <div id="notif-panel-list" class="notif-panel-list"></div>
+      </div>
+    </div>
+
+    <div class="topbar-card streak-card">
+      <div class="card-icon">
+    <dotlottie-player
+        src="assets/fire.lottie"
+        background="transparent"
+        speed="1"
+        autoplay
+        loop
+        style="width:42px;height:42px;">
+    </dotlottie-player>
+</div>
+      <div class="card-content">
+        <span class="card-label">Current Streak</span>
+        <strong>
+          <span id="topbar-streak">0</span> Days
+        </strong>
+      </div>
+    </div>
+
+    <div class="user-chip" data-testid="user-chip">
+      <div class="avatar" id="user-avatar">S</div>
+
+      <div class="user-meta">
+        <b id="user-name">Student</b>
+        <span id="user-id">UMP0000</span>
+      </div>
+
+      <i class="fa-solid fa-chevron-down profile-arrow"></i>
+    </div>
+
+  </div>
+</header>
+    <div class="view-container" id="view-container">
+      <!-- Views injected here -->
+    </div>
+  </main>
+
+</div>
+
+<!-- =================== TEMPLATES =================== -->
+
+<template id="tpl-dashboard">
+
+<div class="welcome-strip">
+
+    <div class="hero-overlay"></div>
+
+    <!-- 3D Clouds -->
+    <img src="assets/cloud-large.png" class="hero-cloud cloud-one" alt="">
+    <img src="assets/cloud-medium.png" class="hero-cloud cloud-two" alt="">
+    <img src="assets/cloud-small.png" class="hero-cloud cloud-three" alt="">
+
+    <div class="hero-sun"></div>
+
+    <div class="hero-content">
+
+        <div class="eyebrow">
+            Good <span data-tod></span>
+        </div>
+
+       <h1 class="hello">
+    <span data-hello></span>
+
+    <dotlottie-player
+    id="waveHand"
+    src="assets/waving-hand.lottie"
+    background="transparent"
+    speed="1"
+    autoplay
+    style="
+        width:72px;
+        height:72px;
+        display:inline-block;
+        vertical-align:middle;
+        margin-left:10px;
+        transform:rotate(-18deg) translateY(-4px);
+    ">
+</dotlottie-player>
+
+</h1>
+
+        <p class="sub">
+            Stay consistent today.
+            Every hour you study brings you one step closer to becoming a Chartered Accountant.
+        </p>
+
+    </div>
+
+    <div class="hero-right">
+
+
+        <div class="hero-badge" data-caLevel></div>
+
+    </div>
+
+</div>
+    <section class="kpi-grid">
+      <div class="kpi kpi-blue">
+        <div class="card-icon">
+    <dotlottie-player
+        id="dashboardStreakFire"
+        src="assets/fire.lottie"
+        background="transparent"
+        speed="1"
+        autoplay
+        loop
+        style="width:46px;height:46px;">
+    </dotlottie-player>
+</div>
+        <div class="kpi-label">Current Streak</div>
+        <div class="kpi-value" data-k="streak">—</div>
+        <div class="kpi-foot">days in a row</div>
+      </div>
+      <div class="kpi kpi-mint">
+        <div class="kpi-icon"><i class="fa-regular fa-clock"></i></div>
+        <div class="kpi-label">Today</div>
+        <div class="kpi-value" data-k="today">—</div>
+        <div class="kpi-foot">hours studied today</div>
+      </div>
+      <div class="kpi kpi-lilac">
+        <div class="kpi-icon"><i class="fa-solid fa-calendar-week"></i></div>
+        <div class="kpi-label">This Week</div>
+        <div class="kpi-value" data-k="weekly">—</div>
+        <div class="kpi-foot">/ 70 hr target</div>
+      </div>
+      <div class="kpi kpi-peach">
+        <div class="kpi-icon"><i class="fa-solid fa-calendar"></i></div>
+        <div class="kpi-label">This Month</div>
+        <div class="kpi-value" data-k="monthly">—</div>
+        <div class="kpi-foot">hours this month</div>
+      </div>
+    </section>
+
+
+    <section class="two-col">
+      <div class="card">
+        <div class="card-head">
+          <h3>Overall Progress</h3>
+          <span class="chip" data-progressPct>—</span>
+        </div>
+        <div class="progress-wrap">
+          <div class="progress-bar"><div class="progress-fill" data-progressBar></div></div>
+          <div class="progress-labels">
+            <span>Total logged: <b data-k="total">—</b> hrs</span>
+            <span>Target: <b>1000 hrs</b></span>
+          </div>
+        </div>
+
+        <div class="mini-stats">
+          <div><span>Avg / day</span><b data-k="avg">—</b></div>
+          <div><span>Study sessions</span><b data-k="sessions">—</b></div>
+          <div><span>Last submission</span><b data-k="last">—</b></div>
+        </div>
+      </div>
+
+      <div class="card rank-card">
+        <div class="card-head">
+          <h3>Leaderboard Rank</h3>
+          <a href="#leaderboard" class="link" data-navigate="leaderboard">View all →</a>
+        </div>
+        <div class="rank-display">
+          <div class="rank-num" data-k="rank">—</div>
+          <div>
+            <div class="rank-label">Weekly Rank</div>
+            <div class="rank-badge" data-rankBadge>—</div>
+          </div>
+        </div>
+        <div class="rank-progress">
+
+    <div class="rank-progress-bar">
+
+        <div class="rank-progress-fill" style="width:84%"></div>
+
+    </div>
+
+    <div class="rank-progress-text">
+        58 / 70 Hours
+    </div>
+
+</div>
+        <div class="rank-footer">
+          <span><i class="fa-solid fa-arrow-trend-up"></i> Weekly hrs: <b data-k="weekly2">—</b></span>
+          <span><i class="fa-solid fa-users"></i> Cohort: <b data-cohort>—</b></span>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h3>Last 7 days · Study hours</h3>
+        <span class="muted">Auto-updated from your daily tracker</span>
+      </div>
+      <div class="chart-holder"><canvas id="chart-weekly"></canvas></div>
+    </section>
+  
+</template>
+
+<template id="tpl-tracker">
+  <div class="view" data-testid="view-tracker">
+    <div class="card">
+      <div class="card-head">
+        <h3>Daily Study Tracker</h3>
+        <div style="display:flex; gap:8px;">
+          <button type="button" class="btn-icon" id="refresh-tracker-btn" data-testid="refresh-tracker-btn" title="Refresh">
+  <i class="fa-solid fa-rotate"></i>
+</button>
+          <button type="button" class="btn-primary sm" id="open-tracker-form" data-testid="open-tracker-form-btn">
+            <i class="fa-solid fa-plus"></i> Log study hours
+          </button>
+        </div>
+      </div>
+      <p class="muted">Submissions from your Google Form appear here in real-time.</p>
+
+      <div class="tracker-summary">
+        <div><span>Total sessions</span><b data-k="sessions">—</b></div>
+        <div><span>Total hours</span><b data-k="total">—</b></div>
+        <div><span>Average / day</span><b data-k="avg">—</b></div>
+        <div><span>This week</span><b data-k="weekly">—</b></div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="data-table" data-testid="tracker-table">
+          <thead>
+            <tr><th>Date</th><th>Topic</th><th>Hours</th><th>Proof</th><th></th></tr>
+          </thead>
+          <tbody id="tracker-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</template>
+
+<template id="tpl-focus">
+  <div class="view" data-testid="view-focus">
+    <div id="focus-root"></div>
+  </div>
+</template>
+
+<template id="tpl-tutor">
+  <div class="view" data-testid="view-tutor">
+
+    <section class="card">
+
+    <div class="card-head">
+        <h3>📢 Updates</h3>
+    </div>
+
+    <div class="two-col">
+
+        <!-- Announcements -->
+        <div class="announcement-card">
+            <div class="card-head">
+                <h3>📢 Announcements</h3>
+            </div>
+
+            <div class="announcement-container">
+                <div id="announcement-list"></div>
+            </div>
+        </div>
+
+        <!-- Mentor Notes -->
+        <div class="announcement-card">
+            <div class="card-head">
+                <h3>📝 Mentor Notes</h3>
+            </div>
+
+            <div class="announcement-container mentor-notes-container">
+                <div id="mentor-notes-list"></div>
+            </div>
+        </div>
+
+    </div>
+
+</section>
+
+    <div class="card">
+      <div class="card-head"><h3>Today's target</h3><span class="muted">Tick it off once today’s target is finished.</span></div>
+      <div id="tutor-target" class="muted">Loading today's target...</div>
+
+      <button type="button" class="target-done" id="tutor-target-done" aria-pressed="false" data-testid="target-done"><span class="target-tick"><i class="fa-solid fa-check"></i></span><span class="target-done-label">Mark target as done</span></button>
+
+    </div>
+
+    <div class="card" style="margin-top:16px;">
+      <div class="card-head"><h3>Messages</h3><span class="muted">Write to your mentor</span></div>
+      <div id="tutor-thread" class="muted">Loading messages...</div>
+      <textarea id="tutor-message" rows="3" style="width:100%;border:1px solid #e5e7eb;border-radius:12px;padding:12px;font:inherit;margin-top:12px;" placeholder="Write a message in English"></textarea>
+      <button type="button" class="btn-primary sm" id="tutor-send" style="margin-top:10px;">Send</button>
+    </div>
+  </div>
+</template>
+
+<template id="tpl-tests">
+  <div class="view" data-testid="view-tests">
+    <div class="card">
+      <div class="card-head"><h3>Tests</h3><span class="muted">Same mentor tests as the Android app</span></div>
+      <div id="tests-list"></div>
+      <div id="tests-player" style="margin-top:16px;"></div>
+    </div>
+  </div>
+</template>
+
+<template id="tpl-mcq">
+  <div class="view" data-testid="view-mcq">
+    <div id="mcq-root"></div>
+  </div>
+</template>
+
+<template id="tpl-performance">
+  <div class="view" data-testid="view-performance">
+    <div class="perf-grid">
+      <div class="kpi kpi-blue"><div class="kpi-label">Overall accuracy</div><div class="kpi-value" data-p="overall">—</div></div>
+      <div class="kpi kpi-mint"><div class="kpi-label">Avg score</div><div class="kpi-value" data-p="avg">—</div></div>
+      <div class="kpi kpi-lilac"><div class="kpi-label">Questions solved</div><div class="kpi-value" data-p="solved">—</div></div>
+      <div class="kpi kpi-peach"><div class="kpi-label">Attempts</div><div class="kpi-value" data-p="attempts">—</div></div>
+    </div>
+
+    <section class="two-col">
+      <div class="card">
+        <div class="card-head"><h3>Subject-wise Accuracy</h3></div>
+        <div class="chart-holder"><canvas id="chart-subjects"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h3>Strong vs Weak Chapters</h3></div>
+        <div class="strong-weak">
+          <div>
+            <h4 class="tag good"><i class="fa-solid fa-arrow-up"></i> Strong</h4>
+            <ul id="strong-list" class="chip-list"></ul>
+          </div>
+          <div>
+            <h4 class="tag bad"><i class="fa-solid fa-arrow-down"></i> Needs work</h4>
+            <ul id="weak-list" class="chip-list"></ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h3>Recent Quiz Attempts</h3></div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th>Date</th><th>Subject</th><th>Chapter</th><th>Score</th><th>Accuracy</th><th>Time</th></tr></thead>
+          <tbody id="attempts-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</template>
+
+<template id="tpl-leaderboard">
+  <div class="view" data-testid="view-leaderboard">
+    <div class="rank-tiles">
+      <div class="card rank-tile">
+        <div class="rt-label">Current Rank</div>
+        <div class="rt-value" data-lb="current">—</div>
+      </div>
+      <div class="card rank-tile">
+        <div class="rt-label">Weekly Rank</div>
+        <div class="rt-value" data-lb="weekly">—</div>
+      </div>
+      <div class="card rank-tile">
+        <div class="rt-label">Monthly Rank</div>
+        <div class="rt-value" data-lb="monthly">—</div>
+      </div>
+    </div>
+
+    <section class="card">
+      <div class="card-head">
+        <h3>Top 10 · Weekly Leaderboard</h3>
+        <span class="muted">Sorted by weekly study hours</span>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table lb-table" data-testid="lb-table">
+          <thead><tr><th>Rank</th><th>Student</th><th>Weekly hrs</th><th>Total hrs</th><th>Streak</th><th>Status</th></tr></thead>
+          <tbody id="lb-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</template>
+
+<template id="tpl-reports">
+  <div class="view" data-testid="view-reports">
+    <div class="card">
+      <div class="card-head">
+        <h3>Weekly Performance Reports</h3>
+        <span class="muted">Auto-emailed every Sunday</span>
+      </div>
+      <div id="reports-list" class="reports-list"></div>
+    </div>
+  </div>
+</template>
+
+<template id="tpl-notes">
+  <div class="view" data-testid="view-notes">
+    <div class="card">
+      <div class="card-head">
+        <h3>Notes &amp; Study Material</h3>
+        <span class="muted">Uploaded by your mentor · PDF</span>
+      </div>
+      <div id="notes-list" class="notes-list"></div>
+    </div>
+  </div>
+</template>
+
+<template id="tpl-profile">
+  <div class="view" data-testid="view-profile">
+    <div class="card profile-card">
+      <div class="profile-hero">
+        <div class="profile-avatar" id="profile-avatar">S</div>
+        <div>
+          <h2 id="profile-name">—</h2>
+          <div class="profile-id">
+            <span id="profile-id">—</span>
+            <span class="chip" id="profile-caLevel">—</span>
+          </div>
+        </div>
+      </div>
+
+      <div id="share-progress-card" class="card" style="margin:16px 0;padding:16px;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:200px;">
+          <div style="font-weight:800;font-size:14px;">Share MCQ progress with mentor</div>
+          <div id="share-progress-text" style="font-size:13px;color:#64748B;margin-top:4px;line-height:1.4;">
+            Mentor sirf chapter-level summary dekhenge — raw answers nahi.
+          </div>
+        </div>
+        <button id="share-progress-btn" class="btn-primary" type="button">Turn on</button>
+      </div>
+
+      <div class="profile-grid">
+        <div><span>Email</span><b id="p-email">—</b></div>
+        <div><span>Phone</span><b id="p-phone">—</b></div>
+        <div><span>Join Date</span><b id="p-join">—</b></div>
+        <div><span>Group</span><b id="p-group">—</b></div>
+        <div><span>Attempt</span><b id="p-attempt">—</b></div>
+        <div><span>Batch</span><b id="p-batch">—</b></div>
+        <div><span>Target hours / week</span><b id="p-target">70</b></div>
+        <div><span>Total study hours</span><b id="p-total">—</b></div>
+      </div>
+    </div>
+  </div>
+
+      <div class="card password-card">
+
+  <h3>
+    <i class="fa-solid fa-lock"></i>
+    Change Password
+  </h3>
+
+  <div class="field">
+    <span class="field-label">Current Password</span>
+    <input type="password" id="current-password">
+  </div>
+
+  <div class="field">
+    <span class="field-label">New Password</span>
+    <input type="password" id="new-password">
+  </div>
+
+  <div class="field">
+    <span class="field-label">Confirm Password</span>
+    <input type="password" id="confirm-password">
+  </div>
+
+  <button
+      class="btn-primary"
+      id="change-password-btn">
+      Update Password
+  </button>
+
+  <div id="password-msg"></div>
+
+</div>
+</template>
+<!-- ================= Forgot Password Modal ================= -->
+
+<div id="forgot-modal" class="modal-overlay" hidden>
+
+    <div class="modal-card">
+
+        <div class="modal-icon">
+            <i class="fa-solid fa-key"></i>
+        </div>
+
+        <h2>Forgot Password?</h2>
+
+        <p>
+            Enter your Student ID and registered email address.
+        </p>
+
+        <div class="field">
+
+            <span class="field-label">Student ID</span>
+
+            <div class="field-control">
+                <i class="fa-regular fa-id-card"></i>
+
+                <input
+                    type="text"
+                    id="fp-student-id"
+                    placeholder="UMP0001"
+                    autocomplete="off">
+            </div>
+
+        </div>
+
+        <div class="field">
+
+            <span class="field-label">Registered Email</span>
+
+            <div class="field-control">
+                <i class="fa-regular fa-envelope"></i>
+
+                <input
+                    type="email"
+                    id="fp-email"
+                    placeholder="student@gmail.com"
+                    autocomplete="off">
+            </div>
+
+        </div>
+
+        <div id="fp-error" class="login-error" hidden></div>
+
+        <div class="modal-actions">
+
+            <button
+                type="button"
+                class="btn-secondary"
+                id="fp-cancel">
+
+                Cancel
+
+            </button>
+
+            <button
+                type="button"
+                class="btn-primary"
+                id="fp-send-otp">
+
+                <span>Send OTP</span>
+
+                <i class="fa-solid fa-paper-plane"></i>
+
+            </button>
+
+        </div>
+
+    </div>
+
+</div>
+<!-- ================= OTP Modal ================= -->
+
+<div id="otp-modal" class="modal-overlay" hidden>
+
+    <div class="modal-card">
+
+        <div class="modal-icon">
+            <i class="fa-solid fa-shield-halved"></i>
+        </div>
+
+        <h2>Verify OTP</h2>
+
+        <p id="otp-email-text">
+            We've sent a verification code to your email.
+        </p>
+
+        <div class="otp-boxes">
+
+            <input class="otp-input" maxlength="1">
+            <input class="otp-input" maxlength="1">
+            <input class="otp-input" maxlength="1">
+            <input class="otp-input" maxlength="1">
+            <input class="otp-input" maxlength="1">
+            <input class="otp-input" maxlength="1">
+
+        </div>
+
+        <div class="otp-timer">
+
+            Resend OTP in
+            <span id="otp-countdown">60</span>s
+
+        </div>
+
+        <button
+            id="verify-otp-btn"
+            class="btn-primary"
+            style="width:100%;margin-top:20px;">
+
+            Verify OTP
+
+        </button>
+
+    </div>
+
+</div>
+
+  <div class="modal" id="reset-modal" hidden>
+
+  <div class="modal-card">
+
+    <div class="modal-icon">
+      <i class="fa-solid fa-lock"></i>
+    </div>
+
+    <h2>Create New Password</h2>
+
+    <p>
+      Enter your new password below.
+    </p>
+
+    <div class="field-control">
+      <i class="fa-solid fa-key"></i>
+
+      <input
+        type="password"
+        id="reset-password"
+        placeholder="New Password">
+    </div>
+
+    <div class="field-control">
+      <i class="fa-solid fa-key"></i>
+
+      <input
+        type="password"
+        id="reset-confirm-password"
+        placeholder="Confirm Password">
+    </div>
+
+    <div
+      id="reset-error"
+      class="form-error"
+      hidden>
+    </div>
+
+    <button
+      id="reset-password-btn"
+      class="btn-primary">
+
+      Reset Password
+
+    </button>
+
+  </div>
+
+</div>
+    <div id="update-banner" hidden>
+    <span>🚀 New version available</span>
+    <button id="update-btn">
+        Update Now
+    </button>
+</div>
+  
+<!-- ================= Log Study Hours Modal ================= -->
+
+<div id="tracker-modal" class="modal-overlay" hidden>
+
+    <div class="modal-card" style="max-height:88vh; overflow-y:auto;">
+
+        <div class="modal-icon">
+            <i class="fa-solid fa-book"></i>
+        </div>
+
+        <h2>Daily Study Progress Tracker</h2>
+
+        <p>Logging for: <b id="tracker-modal-student-name">—</b> (<span id="tracker-modal-student-id">—</span>)</p>
+
+        <div class="field">
+            <span class="field-label">Study Date</span>
+            <div class="field-control">
+                <i class="fa-regular fa-calendar"></i>
+                <input type="date" id="tl-date" autocomplete="off">
+            </div>
+        </div>
+
+        <div class="field">
+            <span class="field-label">Total Study Hours</span>
+            <div class="field-control">
+                <i class="fa-regular fa-clock"></i>
+                <input type="number" id="tl-hours" placeholder="e.g. 2.5" step="0.5" min="0" max="24" autocomplete="off">
+            </div>
+        </div>
+
+        <!-- ---------- Were you able to study today as planned? (Yes / No / Maybe) ---------- -->
+        <div class="field">
+            <span class="field-label">Were you able to study today as planned? *</span>
+            <div class="choice-group segmented" id="tl-planned-group" data-name="planned">
+                <label class="choice-chip"><input type="radio" name="tl-planned" value="Yes"><span>Yes</span></label>
+                <label class="choice-chip"><input type="radio" name="tl-planned" value="No"><span>No</span></label>
+                <label class="choice-chip"><input type="radio" name="tl-planned" value="Maybe"><span>Maybe</span></label>
+            </div>
+        </div>
+
+        <!-- ================= Shown only when planned = No ================= -->
+        <div id="tl-no-section" hidden>
+
+            <div class="field">
+                <span class="field-label">What was the main reason you couldn't study today? *</span>
+                <div class="choice-group" id="tl-reason-group" data-name="reason">
+                    <label class="choice-chip"><input type="radio" name="tl-reason" value="Health Issue"><span class="chip-icon"><i class="fa-solid fa-heart-pulse"></i></span><span>Health Issue</span></label>
+                    <label class="choice-chip"><input type="radio" name="tl-reason" value="Family Function"><span class="chip-icon"><i class="fa-solid fa-gift"></i></span><span>Family Function</span></label>
+                    <label class="choice-chip"><input type="radio" name="tl-reason" value="Office / Job"><span class="chip-icon"><i class="fa-solid fa-briefcase"></i></span><span>Office / Job</span></label>
+                    <label class="choice-chip"><input type="radio" name="tl-reason" value="College"><span class="chip-icon"><i class="fa-solid fa-graduation-cap"></i></span><span>College</span></label>
+                    <label class="choice-chip"><input type="radio" name="tl-reason" value="Travelling"><span class="chip-icon"><i class="fa-solid fa-plane"></i></span><span>Travelling</span></label>
+                    <label class="choice-chip"><input type="radio" name="tl-reason" value="Power / Internet Issue"><span class="chip-icon"><i class="fa-solid fa-wifi"></i></span><span>Power / Internet Issue</span></label>
+                    <label class="choice-chip"><input type="radio" name="tl-reason" value="Personal Work"><span class="chip-icon"><i class="fa-solid fa-user"></i></span><span>Personal Work</span></label>
+                    <label class="choice-chip"><input type="radio" name="tl-reason" value="Low Motivation"><span class="chip-icon"><i class="fa-regular fa-face-frown"></i></span><span>Low Motivation</span></label>
+                    <label class="choice-chip"><input type="radio" name="tl-reason" value="Other"><span class="chip-icon"><i class="fa-solid fa-ellipsis"></i></span><span>Other</span></label>
+                </div>
+                <input type="text" id="tl-reason-other" class="choice-other-input" placeholder="Please specify" hidden autocomplete="off">
+            </div>
+
+        </div>
+
+        <!-- ================= Shown only when planned = Yes / Maybe ================= -->
+        <div id="tl-yes-section" hidden>
+
+            <div class="field">
+                <span class="field-label">Which subjects did you study today? *</span>
+                <div class="choice-group" id="tl-subjects-group" data-name="subjects">
+                    <label class="choice-chip"><input type="checkbox" value="Accounts"><span class="chip-icon"><i class="fa-solid fa-calculator"></i></span><span>Accounts</span></label>
+                    <label class="choice-chip"><input type="checkbox" value="Law"><span class="chip-icon"><i class="fa-solid fa-scale-balanced"></i></span><span>Law</span></label>
+                    <label class="choice-chip"><input type="checkbox" value="Taxation"><span class="chip-icon"><i class="fa-solid fa-file-invoice-dollar"></i></span><span>Taxation</span></label>
+                    <label class="choice-chip"><input type="checkbox" value="Costing"><span class="chip-icon"><i class="fa-solid fa-coins"></i></span><span>Costing</span></label>
+                    <label class="choice-chip"><input type="checkbox" value="Audit"><span class="chip-icon"><i class="fa-solid fa-magnifying-glass-chart"></i></span><span>Audit</span></label>
+                    <label class="choice-chip"><input type="checkbox" value="FM"><span class="chip-icon"><i class="fa-solid fa-chart-line"></i></span><span>FM</span></label>
+                    <label class="choice-chip"><input type="checkbox" value="SM"><span class="chip-icon"><i class="fa-solid fa-chess"></i></span><span>SM</span></label>
+                    <label class="choice-chip"><input type="checkbox" value="Revision"><span class="chip-icon"><i class="fa-solid fa-rotate"></i></span><span>Revision</span></label>
+                    <label class="choice-chip"><input type="checkbox" value="Mock Test"><span class="chip-icon"><i class="fa-solid fa-clipboard-check"></i></span><span>Mock Test</span></label>
+                    <label class="choice-chip"><input type="checkbox" value="Question Bank Practice"><span class="chip-icon"><i class="fa-solid fa-book-open"></i></span><span>Question Bank Practice</span></label>
+                </div>
+            </div>
+
+            <div class="field">
+                <span class="field-label">Did you complete today's target? *</span>
+                <div class="choice-group segmented" id="tl-target-group" data-name="targetDone">
+                    <label class="choice-chip"><input type="radio" name="tl-target" value="Yes"><span>Yes</span></label>
+                    <label class="choice-chip"><input type="radio" name="tl-target" value="No"><span>No</span></label>
+                    <label class="choice-chip"><input type="radio" name="tl-target" value="Maybe"><span>Maybe</span></label>
+                </div>
+            </div>
+
+            <div class="field">
+                <span class="field-label">Upload today's study proof *</span>
+                <div class="field-control">
+                    <i class="fa-solid fa-paperclip"></i>
+                    <input type="file" id="tl-proof-file" accept="image/*,.pdf" autocomplete="off">
+                </div>
+                <small class="muted" style="display:block;margin-top:4px;">Photo or PDF, max 3 MB (1 file).</small>
+            </div>
+
+            <div class="field">
+                <span class="field-label">What is your target for tomorrow?</span>
+                <div class="field-control">
+                    <i class="fa-solid fa-flag"></i>
+                    <input type="text" id="tl-tomorrow" placeholder="e.g. Finish Chapter 4" autocomplete="off">
+                </div>
+            </div>
+
+        </div>
+
+        <!-- ---------- Always shown ---------- -->
+        <div class="field">
+            <span class="field-label">Do you need mentor support?</span>
+            <div class="field-control select-control">
+                <i class="fa-solid fa-hand"></i>
+                <select id="tl-mentor-support">
+                    <option value="">Select...</option>
+                    <option value="No">No</option>
+                    <option value="Subject Doubt">Subject Doubt</option>
+                    <option value="Time Management">Time Management</option>
+                    <option value="Motivation">Motivation</option>
+                    <option value="Study Planning">Study Planning</option>
+                    <option value="Personal Discussion">Personal Discussion</option>
+                </select>
+                <i class="fa-solid fa-chevron-down select-caret"></i>
+            </div>
+        </div>
+
+        <div id="tl-error" class="login-error" hidden></div>
+
+        <div class="modal-actions">
+
+            <button type="button" class="btn btn-secondary" id="tl-cancel">
+    Cancel
+</button>
+
+            <button type="button" class="btn-primary" id="tl-submit">
+                <span>Submit</span>
+                <i class="fa-solid fa-paper-plane"></i>
+            </button>
+
+        </div>
+
+    </div>
+
+</div>
+
+<!-- =================== SCRIPTS =================== -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js"></script>
+<script src="api.js"></script>
+<script src="firebase-init.js"></script>
+<script src="learning-data.js"></script>
+<script src="mentor-host.js"></script>
+<script>
+  // Provider origins are not exposed to browsers. This guard uses only the
+  // same-origin Cloudflare gateway if the resolver failed to load.
+  if (!window.MENTOR_API_URL) {
+    window.MENTOR_API_URL = "/api/mentor";
+  }
+</script>
+<script src="live-bank-loader.js"></script>
+<script src="mcq-cloud-sync.js"></script>
+<script src="mcq-progress-share.js"></script>
+<script src="learning-tools.js"></script>
+<script src="web-tests.js"></script>
+<script src="app.js"></script>
+<script>
+
+if ("serviceWorker" in navigator) {
+
+    let newWorker = null;
+
+    window.addEventListener("load", async () => {
+
+        const reg = await navigator.serviceWorker.register("/service-worker.js");
+        if (reg.waiting) {
+
+    newWorker = reg.waiting;
+
+    document.getElementById("update-banner").hidden = false;
+
+}
+        console.log("Service Worker Registered");
+
+        // Check immediately
+      await reg.update();
+
+        // Check every minute
+        setInterval(() => {
+            reg.update();
+        }, 60000);
+
+        reg.addEventListener("updatefound", () => {
+
+            newWorker = reg.installing;
+
+            newWorker.addEventListener("statechange", () => {
+
+                if (
+                    newWorker.state === "installed" &&
+                    navigator.serviceWorker.controller
+                ) {
+
+                    document.getElementById("update-banner").hidden = false;
+
+                }
+
+            });
+
+        });
+document
+    .getElementById("update-btn")
+    .addEventListener("click", () => {
+
+        const btn = document.getElementById("update-btn");
+
+        btn.disabled = true;
+
+        btn.textContent = "Updating...";
+
+        if (newWorker) {
+
+            newWorker.postMessage({
+                type: "SKIP_WAITING"
+            });
+
+        }
+
+    });
+
+    });
+
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+
+        window.location.reload();
+
+    });
+
+}
+
+</script>
+<!-- Developer Theme Panel -->
+<div class="dev-toggle" id="devToggle">🛠</div>
+
+<div class="dev-panel" id="devPanel">
+
+    <h3>Developer Mode</h3>
+
+    <button data-theme="auto">🔄 Auto</button>
+
+    <button data-theme="morning">🌅 Morning</button>
+
+    <button data-theme="afternoon">☀ Afternoon</button>
+
+    <button data-theme="evening">🌇 Evening</button>
+
+    <button data-theme="night">🌙 Night</button>
+
+</div>
+
+<div id="note-viewer-overlay" class="note-viewer-overlay" style="display:none; z-index:100000;">
+  <div class="note-viewer-header">
+    <span id="note-viewer-title" class="note-viewer-title"></span>
+    <div class="note-viewer-actions">
+      <a id="note-viewer-newtab" href="#" target="_blank" rel="noreferrer" class="note-viewer-btn" title="Open in new tab">
+        <i class="fa-solid fa-up-right-from-square"></i>
+      </a>
+      <button id="note-viewer-close" class="note-viewer-btn" title="Close">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+    </div>
+  </div>
+  <iframe id="note-viewer-frame" class="note-viewer-frame" src="" title="Note preview"></iframe>
+</div>
+
+<!-- ================= Notes: Subject PDF-list Popup (NEW) ================= -->
+<!-- Shows when a subject folder card in the Notes section is clicked.
+     Lists that subject's PDFs, each with Open + Download buttons. -->
+<div id="notes-subject-modal" class="modal-overlay" style="z-index:9000;" hidden>
+  <div class="modal-card" style="max-width:600px; width:92vw; max-height:82vh; overflow-y:auto; text-align:left; padding:24px;">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:18px;">
+      <h2 id="notes-subject-modal-title" style="margin:0;">Subject</h2>
+      <button type="button" class="btn btn-secondary" id="notes-subject-modal-close" title="Close">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+    </div>
+    <div id="notes-subject-modal-search-wrap" style="margin-bottom:16px;">
+      <div class="field-control">
+        <i class="fa-solid fa-magnifying-glass"></i>
+        <input type="text" id="notes-subject-modal-search" placeholder="Search notes..." autocomplete="off">
+      </div>
+    </div>
+    <div id="notes-subject-modal-list"></div>
+  </div>
+</div>
+
+<script type="module" src="https://unpkg.com/@dotlottie/player-component@2.7.12/dist/dotlottie-player.mjs"></script>
+
+
+<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a2f895925a98752b',t:'MTc4NzQ3MjAzMw=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>

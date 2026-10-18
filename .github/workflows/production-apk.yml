@@ -1,0 +1,370 @@
+name: Production Signed APK - Live Channel
+
+# FIXED VERSION - drop-in replacement for
+# student-dashboard-frontend/.github/workflows/production-apk.yml
+#
+# Fixes vs old file:
+#   1. Old file wrote MYAPP_RELEASE_* into gradle.properties but Expo SDK 57's
+#      generated build.gradle NEVER reads them -> release APK was silently
+#      signed with the template debug key. This version patches build.gradle
+#      after prebuild so release signing actually works.
+#   2. Old file silently built a debug-signed "preview" when secrets were
+#      missing. This version FAILS when secrets are missing.
+#   3. Old file uploaded the 50MB APK into git history of UPM-Android-Releases.
+#      This version uploads the APK as a proper GitHub Release asset there
+#      (needs RELEASES_PAT secret) and commits only latest.json/README.
+#   4. Verifies the built APK is actually signed with YOUR keystore and fails
+#      otherwise.
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_notes:
+        description: 'Release notes'
+        required: false
+        default: 'Moved to Google Cloud Run. Login and dashboard errors fixed. App is now Super 75 by Ujjwal.'
+      publish_live:
+        description: 'Publish to the live release channel after build'
+        type: boolean
+        required: true
+        default: false
+  push:
+    branches:
+      - main
+    paths:
+      - 'mobile/**'
+      - '.github/workflows/production-apk.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: prod-apk-main
+  cancel-in-progress: false
+
+jobs:
+  build-signed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      EXPO_PUBLIC_USE_MOCKS: "false"
+      EXPO_PUBLIC_BACKEND_MODE: "live"
+      EXPO_PUBLIC_ALLOW_MODE_SWITCH: "false"
+      # The origin is compiled into the bundle: without it config.gatewayOrigin
+      # is empty and every request fails with "gateway is not configured".
+      # This is the Cloud Run service that replaced the dead Vercel host.
+      # Override it in repo variables (Settings > Secrets and variables >
+      # Actions > Variables) when the host moves again.
+      EXPO_PUBLIC_API_BASE_URL: ${{ vars.EXPO_PUBLIC_API_BASE_URL || 'https://student-dashboard-566076646952.asia-south1.run.app' }}
+      NODE_ENV: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Require signing secrets (fail fast, no silent debug builds)
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          missing=0
+          for v in ANDROID_KEYSTORE_BASE64 STORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [ -z "${!v}" ]; then echo "::error::$v secret is NOT set. Add it in Settings > Secrets and variables > Actions."; missing=1; fi
+          done
+          if [ "$missing" = "1" ]; then
+            echo "::error::Refusing to build - without the release keystore the APK gets a random/public debug signature and existing users cannot update."
+            exit 1
+          fi
+          echo "All signing secrets present."
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # NOTE: android-actions/setup-android@v3 is NOT used — the 2026-09 runner
+      # image ships cmdline-tools 16.0 which removed the legacy 'tools'
+      # package that action installs, so it crashes with exit code 1. The
+      # ubuntu-latest runner already has the Android SDK preinstalled at
+      # $ANDROID_HOME, so we install the needed packages directly.
+      - name: Install Android packages (preinstalled SDK)
+        run: |
+          set -e
+          SDKMGR="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          echo "Using sdkmanager at: $SDKMGR"
+          yes | "$SDKMGR" --licenses > /dev/null 2>&1 || true
+          "$SDKMGR" "platforms;android-36" "build-tools;36.0.0" "ndk;27.1.12297006"
+
+      - name: Decode Keystore (mobile/ root - survives prebuild --clean)
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > mobile/upm-release-key.jks
+          if ! keytool -list -keystore mobile/upm-release-key.jks -storepass "${{ secrets.STORE_PASSWORD }}" >/dev/null 2>&1; then
+            echo "::error::Keystore decoded but STORE_PASSWORD does not open it. Check ANDROID_KEYSTORE_BASE64 / STORE_PASSWORD secrets."
+            exit 1
+          fi
+          if ! keytool -list -keystore mobile/upm-release-key.jks -storepass "${{ secrets.STORE_PASSWORD }}" -alias "${{ secrets.KEY_ALIAS }}" >/dev/null 2>&1; then
+            echo "::error::KEY_ALIAS '${{ secrets.KEY_ALIAS }}' not found in keystore. Check KEY_ALIAS secret."
+            exit 1
+          fi
+          echo "Keystore decoded, password and alias verified."
+          keytool -list -v -keystore mobile/upm-release-key.jks -storepass "${{ secrets.STORE_PASSWORD }}" -alias "${{ secrets.KEY_ALIAS }}" 2>/dev/null | grep -iE "alias|sha-?256" || true
+
+      - name: Install deps
+        working-directory: mobile
+        run: npm ci
+
+      - name: Typecheck
+        working-directory: mobile
+        run: npm run typecheck
+
+      - name: Prebuild Android
+        working-directory: mobile
+        run: npx expo prebuild --platform android --clean --no-install
+
+      - name: Wire release signing into generated Gradle files
+        working-directory: mobile/android
+        env:
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          mv ../upm-release-key.jks app/upm-release-key.jks
+          # CRITICAL: gradle.properties from prebuild has NO trailing newline.
+          # Appending without this guard merges our first line into the last
+          # generated property (expo.inlineModules.watchedDirectories) and
+          # crashes expo autolinking's JSON.parse at projectsEvaluated.
+          [ -n "$(tail -c 1 gradle.properties)" ] && printf '\n' >> gradle.properties
+          cat >> gradle.properties <<PROPS
+          MYAPP_RELEASE_STORE_FILE=upm-release-key.jks
+          MYAPP_RELEASE_KEY_ALIAS=$KEY_ALIAS
+          MYAPP_RELEASE_STORE_PASSWORD=$STORE_PASSWORD
+          MYAPP_RELEASE_KEY_PASSWORD=$KEY_PASSWORD
+          PROPS
+
+          python3 - <<'PY'
+          import re, sys, pathlib
+
+          p = pathlib.Path('app/build.gradle')
+          s = p.read_text()
+          orig = s
+
+          # 1) Insert a release signingConfig right after "signingConfigs {"
+          if 'MYAPP_RELEASE_STORE_FILE' not in s:
+              if 'signingConfigs {' not in s:
+                  sys.exit('FATAL: signingConfigs block not found in build.gradle')
+              release_cfg = """signingConfigs {
+                  release {
+                      if (project.hasProperty('MYAPP_RELEASE_STORE_FILE')) {
+                          storeFile file(MYAPP_RELEASE_STORE_FILE)
+                          storePassword MYAPP_RELEASE_STORE_PASSWORD
+                          keyAlias MYAPP_RELEASE_KEY_ALIAS
+                          keyPassword MYAPP_RELEASE_KEY_PASSWORD
+                      }
+                  }"""
+              s = s.replace('signingConfigs {', release_cfg, 1)
+
+          # 2) In buildTypes, switch the RELEASE buildType (the 2nd occurrence of
+          #    "signingConfig signingConfigs.debug" after "buildTypes {") to
+          #    signingConfigs.release.
+          bt = re.search(r'buildTypes\s*\{', s)
+          if not bt:
+              sys.exit('FATAL: buildTypes block not found in build.gradle')
+          pat = re.compile(r'signingConfig signingConfigs\.debug')
+          first = pat.search(s, bt.end())
+          second = pat.search(s, first.end()) if first else None
+          if second:
+              s = s[:second.start()] + 'signingConfig signingConfigs.release' + s[second.end():]
+          elif 'signingConfig signingConfigs.release' in s:
+              print('Already patched, skipping step 2')
+          else:
+              sys.exit('FATAL: release signingConfig reference not found in buildTypes')
+
+          if s == orig:
+              sys.exit('FATAL: patch made no changes')
+          p.write_text(s)
+          print('build.gradle patched for release signing')
+          PY
+
+          grep -n "signingConfig signingConfigs" app/build.gradle
+
+      - name: Build signed release APK
+        working-directory: mobile/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,armeabi-v7a --no-daemon
+
+      - name: Verify APK is signed with OUR keystore (not debug)
+        working-directory: mobile/android
+        env:
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: |
+          set -e
+          APK=app/build/outputs/apk/release/app-release.apk
+          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          KEY_OUT=$(keytool -list -v -keystore app/upm-release-key.jks -storepass "$STORE_PASSWORD" -alias "$KEY_ALIAS" 2>&1)
+          echo "$KEY_OUT" | grep -iE "alias|sha-?256" || true
+          # Works with both Java 8 ("SHA256: AA:..") and Java 9+ ("Certificate fingerprint (SHA-256): AA:..") formats
+          KEY_SHA=$(echo "$KEY_OUT" | grep -oiE '[0-9a-f]{2}(:[0-9a-f]{2}){31}' | head -1 | tr -d ':' | tr 'A-F' 'a-f')
+          APK_SHA=$("$APKSIGNER" verify --print-certs "$APK" | awk '/certificate SHA-256 digest:/ {print $NF; exit}' | tr 'A-F' 'a-f')
+          echo "Keystore cert SHA-256: $KEY_SHA"
+          echo "APK signer  SHA-256: $APK_SHA"
+          "$APKSIGNER" verify --print-certs "$APK" | head -5
+          if [ -z "$KEY_SHA" ] || [ -z "$APK_SHA" ] || [ "$KEY_SHA" != "$APK_SHA" ]; then
+            echo "::error::APK is NOT signed with the release keystore! Do not ship this build."
+            exit 1
+          fi
+          echo "SIGNATURE VERIFIED - APK signed with upm-release-key.jks"
+
+      - name: Get version info
+        id: meta
+        working-directory: mobile
+        run: |
+          VERSION=$(node -p "require('./app.json').expo.version")
+          CODE=$(node -p "require('./app.json').expo.android.versionCode")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "code=$CODE" >> $GITHUB_OUTPUT
+          echo "apk_name=UPM-v${VERSION}-${CODE}-release.apk" >> $GITHUB_OUTPUT
+
+      - name: Rename APK
+        run: |
+          cp mobile/android/app/build/outputs/apk/release/app-release.apk ${{ steps.meta.outputs.apk_name }}
+          ls -lh ${{ steps.meta.outputs.apk_name }}
+          sha256sum ${{ steps.meta.outputs.apk_name }}
+
+      # continue-on-error: the APK is also published as a GitHub Release asset
+      # below (the live distribution channel). If the free-tier artifact storage
+      # quota is temporarily full, the release still ships.
+      - name: Upload artifact
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.meta.outputs.apk_name }}
+          path: ${{ steps.meta.outputs.apk_name }}
+          retention-days: 7
+          compression-level: 0
+
+      - name: Create GitHub Release (this repo)
+        if: github.event_name == 'workflow_dispatch' && inputs.publish_live == true
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.code }}
+          name: UPM v${{ steps.meta.outputs.version }} (${{ steps.meta.outputs.code }})
+          body: |
+            ${{ inputs.release_notes }}
+            Version: ${{ steps.meta.outputs.version }}
+            Code: ${{ steps.meta.outputs.code }}
+          files: ${{ steps.meta.outputs.apk_name }}
+
+      - name: Publish APK to UPM-Android-Releases (live channel)
+        if: github.event_name == 'workflow_dispatch' && inputs.publish_live == true
+        env:
+          # NEVER hardcode tokens here (10-Oct-2026 incident: a PAT was committed
+          # in plaintext and leaked into git history). Use the repo secret.
+          RELEASES_PAT: ${{ secrets.RELEASES_PAT }}
+          APK_NAME: ${{ steps.meta.outputs.apk_name }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          CODE: ${{ steps.meta.outputs.code }}
+          NOTES: ${{ inputs.release_notes }}
+        run: |
+          if [ -z "$RELEASES_PAT" ]; then
+            echo "::warning::RELEASES_PAT not set - skipping auto-publish to UPM-Android-Releases. Download the artifact and upload it manually."
+            exit 0
+          fi
+          set -e
+          TAG="v${VERSION}-${CODE}"
+          API="https://api.github.com/repos/anujvkarewad-cyber/UPM-Android-Releases"
+          AUTH="Authorization: Bearer $RELEASES_PAT"
+          ACCEPT="Accept: application/vnd.github+json"
+
+          RID=$(curl -fsS -H "$AUTH" -H "$ACCEPT" "$API/releases/tags/$TAG" | jq -r '.id // empty') || RID=""
+          if [ -z "$RID" ]; then
+            echo "Creating release $TAG"
+            RID=$(curl -fsS -X POST -H "$AUTH" -H "$ACCEPT" \
+              -d "{\"tag_name\":\"$TAG\",\"name\":\"UPM Android v${VERSION} (${CODE})\",\"body\":\"$NOTES\"}" \
+              "$API/releases" | jq -r '.id')
+          fi
+          echo "Release id: $RID"
+          if [ -z "$RID" ] || [ "$RID" = "null" ]; then
+            echo "::error::Could not create or look up release $TAG in UPM-Android-Releases. Check RELEASES_PAT permissions (Contents: Read and write on the releases repo)."
+            exit 1
+          fi
+
+          AID=$(curl -fsS -H "$AUTH" -H "$ACCEPT" "$API/releases/$RID/assets" | jq -r ".[] | select(.name==\"$APK_NAME\") | .id")
+          if [ -n "$AID" ]; then
+            echo "Deleting old asset $APK_NAME ($AID)"
+            curl -fsS -X DELETE -H "$AUTH" -H "$ACCEPT" "$API/releases/assets/$AID"
+          fi
+
+          APK_URL=$(curl -fsS -X POST -H "$AUTH" \
+            -H "Content-Type: application/vnd.android.package-archive" \
+            --data-binary @"$APK_NAME" \
+            "https://uploads.github.com/repos/anujvkarewad-cyber/UPM-Android-Releases/releases/$RID/assets?name=$APK_NAME" \
+            | jq -r '.browser_download_url')
+          echo "Uploaded: $APK_URL"
+
+          SHA=$(sha256sum "$APK_NAME" | awk '{print $1}')
+          git clone https://x-access-token:${RELEASES_PAT}@github.com/anujvkarewad-cyber/UPM-Android-Releases.git /tmp/releases
+          cd /tmp/releases
+          cat > latest.json <<JSON
+          {
+            "version": "$VERSION",
+            "versionCode": $CODE,
+            "minimumVersionCode": $CODE,
+            "apkUrl": "$APK_URL",
+            "downloadUrl": "$APK_URL",
+            "sha256": "$SHA",
+            "notes": "$NOTES",
+            "releaseNotes": "$NOTES",
+            "publishedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          JSON
+          {
+            echo "# UPM Android Releases"
+            echo
+            echo "Official Android releases for Super 75 by Ujjwal"
+            echo
+            echo "Last release: v$VERSION ($CODE) on $(date -u +%Y-%m-%d) - see [latest.json](latest.json)"
+          } > README.md
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add latest.json README.md
+          git commit -m "Release v${VERSION}-${CODE} metadata" || echo "no metadata changes"
+          git push origin main
+          echo "DONE - live channel updated: $APK_URL"
+
+      # 10-Oct-2026 incident: a release went live with latest.json missing the
+      # `apkUrl` key, so every device silently saw NO update banner. This gate
+      # queries the exact endpoint devices use and fails the run if the live
+      # payload is incomplete or does not match the version we just published.
+      - name: Validate live update payload (app.version)
+        if: github.event_name == 'workflow_dispatch' && inputs.publish_live == true
+        env:
+          CODE: ${{ steps.meta.outputs.code }}
+        run: |
+          PROXY="https://student-dashboard-566076646952.asia-south1.run.app/api/proxy"
+          for i in 1 2 3 4 5 6; do
+            BODY=$(curl -s -m 30 -X POST -H 'Content-Type: application/json' \
+                   -d '{"action":"app.version","platform":"android"}' "$PROXY" || true)
+            if echo "$BODY" | jq -e --argjson code "$CODE" \
+                 '.result | (((.apkUrl // .downloadUrl) | type) == "string") and (.versionCode == $code)' \
+                 >/dev/null 2>&1; then
+              echo "Update payload validated: versionCode $CODE with a usable APK url."
+              exit 0
+            fi
+            echo "payload not ready/invalid (attempt $i); retrying in 20s..."
+            sleep 20
+          done
+          echo "::error::app.version payload is invalid after publish - devices will see NO update banner. Fix latest.json in UPM-Android-Releases (keys: version, versionCode, minimumVersionCode, apkUrl, downloadUrl, notes, releaseNotes, publishedAt)."
+          exit 1

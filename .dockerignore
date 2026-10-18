@@ -1,0 +1,15 @@
+.git
+.github
+.vercel
+node_modules
+cloudflare
+content-pipeline
+mobile
+scripts
+test_reports
+*.md
+*.gs
+vercel.json
+.gitignore
+Dockerfile
+.dockerignore

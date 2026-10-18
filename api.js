@@ -1,0 +1,111 @@
+const APPS_SCRIPT_URL = "/api/proxy";
+async function callAPI(action, payload = {}) {
+
+  const response = await fetch(APPS_SCRIPT_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      action,
+      payload
+    })
+  });
+
+  const data = await response.json();
+
+  if (data.error) {
+    throw new Error(data.error);
+  }
+
+  return data.result;
+}
+window.UMP_API = {
+
+  validateLogin(studentId, password) {
+    return callAPI("validateLogin", { studentId, password });
+  },
+
+  validateStudent(studentId) {
+    return callAPI("validateStudent", { studentId });
+  },
+
+  changePassword(studentId, currentPassword, newPassword) {
+    return callAPI("changePassword", {
+      studentId,
+      currentPassword,
+      newPassword
+    });
+  },
+  
+  forgotPassword(studentId, email) {
+  return callAPI("forgotPassword", {
+    studentId,
+    email
+  });
+},
+
+  getStats(studentId) {
+    return callAPI("getStats", { studentId });
+  },
+
+  getStudyLog(studentId) {
+    return callAPI("getStudyLog", { studentId });
+  },
+
+  addStudyLog(studentId, entry) {
+    return callAPI("addStudyLog", { studentId, ...entry });
+  },
+
+  deleteStudyLog(studentId, entry) {
+    return callAPI("deleteStudyLog", { studentId, ...entry });
+  },
+
+  getLeaderboard() {
+    return callAPI("getLeaderboard");
+  },
+
+  getWeeklyReports(studentId) {
+    return callAPI("getWeeklyReports", { studentId });
+},
+
+  testConnection() {
+    return Promise.resolve(true);
+  },
+
+  getMentorFeedback(studentId) {
+    return callAPI("getStudentFeedback", { studentId });
+  },
+
+  getAnnouncements() {
+    return callAPI("getAnnouncements");
+  },
+
+  getNotes(studentId) {
+  return callAPI("notes.listForStudent", { studentId });
+},
+
+  getStudentMentorNotes(studentId) {
+    return callAPI("getStudentMentorNotes", { studentId });
+  },
+
+
+verifyOTP(studentId, otp) {
+    return callAPI("verifyOTP", {
+        studentId,
+        otp
+    });
+},
+  resetPassword(studentId, password) {
+  return callAPI("resetPassword", {
+    studentId,
+    password
+  });
+},
+markMentorFeedbackRead(id) {
+  return callAPI("feedback.read", { id });
+},
+  saveDeviceToken(studentId, token) {
+  return callAPI("saveDeviceToken", { studentId, token });
+},
+};

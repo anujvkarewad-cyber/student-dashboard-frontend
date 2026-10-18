@@ -1,0 +1,15 @@
+name = "upm-emergency-gateway"
+main = "src/worker.js"
+compatibility_date = "2026-09-01"
+workers_dev = true
+
+[observability.logs]
+enabled = true
+
+# All values below are encrypted with `wrangler secret put`; do not add them here:
+# APPS_SCRIPT_URL
+# MENTOR_ORIGIN
+# MENTOR_SERVICE_TOKEN (optional)
+# GOOGLE_SERVICE_ACCOUNT_EMAIL
+# GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
+# DRIVE_PROOF_FOLDER_ID
