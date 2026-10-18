@@ -1,5 +1,7 @@
 # Student feedback fixes — local-only work, 18 Oct 2026
 
+**Subsequent work:** see `UPDATE-RELIABILITY.md` for the owner's confirmed in-app APK update complaint, read-only release endpoint checks, and local updater repairs. The results below describe the zero-hour implementation checkpoint; the updater report contains the newer cumulative test counts. Neither checkpoint has been released.
+
 ## Scope and source provenance
 
 This working directory is restored from the existing GitHub source, not rebuilt from the handover.
