@@ -1,5 +1,7 @@
 # In-app APK update reliability — local repair, 18 Oct 2026
 
+**Subsequent owner decision:** a one-time OTA-capable base APK is acceptable. See `TRUE-OTA-SETUP.md` for the later local `expo-updates` configuration and guarded release automation. It is disabled pending real project identity and device validation; nothing has been built/published/deployed. The source findings below describe the earlier pre-OTA inspection.
+
 ## User clarification and constraints
 
 The owner confirmed:

@@ -28,6 +28,7 @@
     "expo-screen-capture": "~57.0.2",
     "expo-secure-store": "~57.0.1",
     "expo-status-bar": "~57.0.1",
+    "expo-updates": "~57.0.24",
     "react": "19.2.3",
     "react-dom": "^19.2.3",
     "react-native": "0.86.2",
@@ -50,7 +51,9 @@
     "typecheck": "tsc --noEmit",
     "validate": "npm run typecheck && npx expo export --platform android --output-dir dist",
     "preview": "expo start --web --host lan",
-    "test": "node --test test/*.test.cjs"
+    "test": "node --test test/*.test.cjs",
+    "ota:inspect": "node tools/ota-preflight.cjs --inspect",
+    "ota:preflight": "node tools/ota-preflight.cjs --publish"
   },
   "private": true
 }

@@ -1,6 +1,6 @@
 # Student feedback fixes — local-only work, 18 Oct 2026
 
-**Subsequent work:** see `UPDATE-RELIABILITY.md` for the owner's confirmed in-app APK update complaint, read-only release endpoint checks, and local updater repairs. The results below describe the zero-hour implementation checkpoint; the updater report contains the newer cumulative test counts. Neither checkpoint has been released.
+**Subsequent work:** see `UPDATE-RELIABILITY.md` for the owner's confirmed in-app APK update complaint, read-only release endpoint checks, and local updater repairs. The results below describe the zero-hour implementation checkpoint; the updater report contains the newer cumulative test counts. Neither checkpoint has been released. The later, disabled-by-default true-OTA and automatic student-release foundation is documented in `TRUE-OTA-SETUP.md`; its cumulative checks supersede the counts below.
 
 ## Scope and source provenance
 

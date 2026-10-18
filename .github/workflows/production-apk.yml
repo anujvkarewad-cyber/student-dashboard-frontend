@@ -23,17 +23,17 @@ on:
         description: 'Release notes'
         required: false
         default: 'Moved to Google Cloud Run. Login and dashboard errors fixed. App is now Super 75 by Ujjwal.'
+      ota_baseline:
+        description: 'Enable OTA in this one-time native baseline (real Expo project and new versionCode required)'
+        type: boolean
+        required: true
+        default: false
       publish_live:
         description: 'Publish to the live release channel after build'
         type: boolean
         required: true
         default: false
-  push:
-    branches:
-      - main
-    paths:
-      - 'mobile/**'
-      - '.github/workflows/production-apk.yml'
+  # APKs are explicit native releases only. Routine main changes use OTA.
 
 permissions:
   contents: write
@@ -57,6 +57,9 @@ jobs:
       # Actions > Variables) when the host moves again.
       EXPO_PUBLIC_API_BASE_URL: ${{ vars.EXPO_PUBLIC_API_BASE_URL || 'https://student-dashboard-566076646952.asia-south1.run.app' }}
       NODE_ENV: production
+      UPM_OTA_ENABLED: ${{ inputs.ota_baseline && '1' || '0' }}
+      UPM_OTA_CHANNEL: production
+      EAS_PROJECT_ID: ${{ vars.EAS_PROJECT_ID }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -120,13 +123,22 @@ jobs:
           echo "Keystore decoded, password and alias verified."
           keytool -list -v -keystore mobile/upm-release-key.jks -storepass "${{ secrets.STORE_PASSWORD }}" -alias "${{ secrets.KEY_ALIAS }}" 2>/dev/null | grep -iE "alias|sha-?256" || true
 
-      - name: Install deps
+      - name: Install deps (include test/typecheck tools even with NODE_ENV=production)
         working-directory: mobile
-        run: npm ci
+        run: npm ci --include=dev --no-audit --no-fund
 
       - name: Typecheck
         working-directory: mobile
         run: npm run typecheck
+
+      - name: Regression tests
+        working-directory: mobile
+        run: npm test
+
+      - name: Verify new OTA baseline configuration (no publish)
+        if: inputs.ota_baseline == true
+        working-directory: mobile
+        run: node tools/ota-preflight.cjs --baseline-build
 
       - name: Prebuild Android
         working-directory: mobile
