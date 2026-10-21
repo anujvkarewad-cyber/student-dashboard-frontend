@@ -23,6 +23,7 @@ export type RootStackParamList = {
   DailyMcq: { group?: CaGroup } | undefined;
   McqPractice: undefined;
   WrittenAnswer: undefined;
+  Workbooks: undefined;
   Reports: undefined;
   Leaderboard: undefined;
   AddStudyLog: undefined;

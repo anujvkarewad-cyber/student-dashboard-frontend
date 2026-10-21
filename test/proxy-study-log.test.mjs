@@ -72,3 +72,34 @@ test("addStudyLog reports a write failure instead of calling the password Apps S
     });
   });
 });
+
+test("zero-hour submission reaches Mongo as numeric zero without attendance or proof calls", async () => {
+  let calls = 0;
+  await withFetch(async (url, init) => {
+    calls += 1;
+    assert.equal(url, "https://mentor.example.test/api/student-dashboard/write");
+    const sent = JSON.parse(init.body);
+    assert.equal(sent.action, "addStudyLog");
+    assert.equal(sent.payload.hours, 0);
+    assert.equal(typeof sent.payload.hours, "number");
+    assert.equal(sent.payload.studiedAsPlanned, "No");
+    assert.equal(sent.payload.reason, "Low Motivation");
+    assert.equal(sent.payload.proofUrl, "");
+    return new Response(JSON.stringify({ ok: true, success: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }, async () => {
+    const req = request();
+    req.body.payload = {
+      studentId: "UMP0001", date: "2026-10-18", hours: 0,
+      studiedAsPlanned: "No", reason: "Low Motivation", subjects: "",
+      targetCompleted: "", proofUrl: "",
+    };
+    const res = response();
+    await handler(req, res);
+    assert.equal(calls, 1);
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(res.body, { result: { success: true } });
+  });
+});

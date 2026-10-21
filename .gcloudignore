@@ -8,3 +8,8 @@ content-pipeline
 mobile
 test_reports
 *.gs
+
+# Never upload CI credentials or Android signing keys.
+gha-creds-*.json
+*.jks
+*.keystore

@@ -4,3 +4,12 @@ node_modules/
 dist/
 test_reports/
 .wrangler/
+
+# Never upload CI credentials or Android signing keys.
+gha-creds-*.json
+*.jks
+*.keystore
+
+# Regenerable Python verification caches are never candidate source.
+__pycache__/
+*.pyc

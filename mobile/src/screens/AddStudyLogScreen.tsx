@@ -121,9 +121,12 @@ export const AddStudyLogScreen = ({ navigation }: Props) => {
   };
 
   const validate = () => {
-    const parsedHours = Number(hours);
+    const hoursRaw = hours.trim().replace(',', '.');
+    const parsedHours = Number(hoursRaw);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(new Date(date).getTime())) return 'Enter a valid date in YYYY-MM-DD format.';
-    if (!parsedHours || parsedHours <= 0 || parsedHours > 24) return 'Study hours must be between 0 and 24.';
+    if (!hoursRaw) return 'Enter study hours. Enter 0 if you could not study today.';
+    if (!/^(?:\d+(?:\.\d*)?|\.\d+)$/.test(hoursRaw) || !Number.isFinite(parsedHours) || parsedHours < 0 || parsedHours > 24) return 'Study hours must be a number between 0 and 24.';
+    if (parsedHours === 0 && planned !== 'No') return 'For 0 hours, select No under studied as planned and choose a reason.';
     if (!planned) return 'Select whether you studied as planned.';
     if (planned === 'No' && !reason) return 'Select the main reason you could not study as planned.';
     if (planned === 'No' && reason === 'Other' && !otherReason.trim()) return 'Please specify the reason.';
@@ -140,7 +143,7 @@ export const AddStudyLogScreen = ({ navigation }: Props) => {
     setLoading(true);
     try {
       let proofUrl = '';
-      if (proof) {
+      if (proof && planned !== 'No') {
         const saved = await getSavedSession();
         if (!saved) throw new Error('Your saved session expired. Sign in again before uploading proof.');
         const uploaded = await api.uploadProof({
@@ -154,7 +157,7 @@ export const AddStudyLogScreen = ({ navigation }: Props) => {
       }
       await submitStudyLog({
         date,
-        hours: Number(hours),
+        hours: Number(hours.trim().replace(',', '.')),
         studiedAsPlanned: planned as StudyLogPayload['studiedAsPlanned'],
         reason: planned === 'No' ? (reason === 'Other' ? otherReason.trim() : reason) : '',
         subjects: planned === 'No' ? '' : subjects.join(', '),
@@ -180,7 +183,21 @@ export const AddStudyLogScreen = ({ navigation }: Props) => {
           {backendMode === 'live' ? <View style={styles.liveBanner}><Ionicons name="cloud-upload-outline" size={18} color={colors.success} /><Text style={styles.liveBannerText}>Full live sync is on. This entry and its proof will be submitted to your existing mentorship dashboard.</Text></View> : null}
 
           <FormInput label="Study date" value={date} onChangeText={setDate} placeholder="YYYY-MM-DD" autoCapitalize="none" />
-          <FormInput label="Total study hours" value={hours} onChangeText={setHours} placeholder="e.g. 5.5" keyboardType="decimal-pad" />
+          <FormInput label="Total study hours" value={hours} onChangeText={setHours} placeholder="0 if no study, e.g. 5.5 otherwise" keyboardType="decimal-pad" />
+          <View style={styles.field}>
+            <View style={styles.chips}>
+              <Chip label="Aaj padhai nahi hui (0 hrs)" selected={hours.trim() !== '' && Number(hours.replace(',', '.')) === 0 && planned === 'No'} onPress={() => {
+                setHours('0');
+                setPlanned('No');
+                setSubjects([]);
+                setTargetCompleted('');
+                setTomorrowTarget('');
+                setProof(null);
+                setError('');
+              }} />
+            </View>
+            <Text style={styles.introText}>0 hours is an honest tracker submission, not an Absent or Leave request. Choose a reason below; study proof is not needed.</Text>
+          </View>
 
           <Field title="Were you able to study as planned?" required>
             <View style={styles.chips}>{['Yes', 'No', 'Maybe'].map((value) => <Chip key={value} label={value} selected={planned === value} onPress={() => { setPlanned(value as Planned); setError(''); }} />)}</View>

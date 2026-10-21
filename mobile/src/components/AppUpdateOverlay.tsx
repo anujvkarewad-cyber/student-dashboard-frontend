@@ -117,7 +117,7 @@ const Body = ({ ui }: { ui: AppUpdateUi }) => {
   if (ui.phase === 'ready') {
     return (
       <Text style={styles.body}>
-        The new version is downloaded and verified. Tap Install — you may be asked to allow UPM to
+        The download is complete and its file size has been checked. Tap Install — you may be asked to allow UPM to
         install apps the first time.
       </Text>
     );

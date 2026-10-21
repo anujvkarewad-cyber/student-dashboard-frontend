@@ -29,7 +29,7 @@ const formatDuration = (seconds?: number) => {
 
 export const DailyMcqScreen = ({ navigation, route }: Props) => {
   const { student } = useAuth();
-  const { hydrated, todayAttempts, history, attemptForGroup, questionsForGroup, streakForGroup, startDaily, answerQuestion, submitDaily } = useDailyMcq();
+  const { syncStatus, retrySync, hydrated, todayAttempts, history, attemptForGroup, questionsForGroup, streakForGroup, startDaily, answerQuestion, submitDaily } = useDailyMcq();
   const allowedGroups = useMemo(() => groupsForStudent(student?.group), [student?.group]);
   const [selectedGroup, setSelectedGroup] = useState<CaGroup>(route.params?.group && allowedGroups.includes(route.params.group) ? route.params.group : allowedGroups[0]);
   const [index, setIndex] = useState(0);
@@ -69,7 +69,7 @@ export const DailyMcqScreen = ({ navigation, route }: Props) => {
   useEffect(() => {
     if (!active || timeLeft > 0 || autoSubmitted.current) return;
     autoSubmitted.current = true;
-    submitDaily(selectedGroup).then(() => Alert.alert('Time is up', `Your ${selectedGroup} answered questions have been submitted.`));
+    submitDaily(selectedGroup).then(() => Alert.alert('Time is up', `Your ${selectedGroup} answers are saved on this device. Check the cloud backup status below.`));
   }, [active, selectedGroup, submitDaily, timeLeft]);
 
   const subjectMix = useMemo(() => [...new Set(todayQuestions.map((item) => item.subject))], [todayQuestions]);
@@ -80,7 +80,7 @@ export const DailyMcqScreen = ({ navigation, route }: Props) => {
       await startDaily(selectedGroup);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
     } catch (error) {
-      Alert.alert('Another attempt is active', error instanceof Error ? error.message : 'Finish the active group attempt first.');
+      Alert.alert('Daily MCQ unavailable', error instanceof Error ? error.message : 'Finish the active group attempt first.');
     } finally { setStarting(false); }
   };
 
@@ -179,7 +179,7 @@ export const DailyMcqScreen = ({ navigation, route }: Props) => {
             <View style={styles.calendar}><Text style={styles.calendarDay}>{new Date().getDate()}</Text><Text style={styles.calendarMonth}>{new Date().toLocaleDateString('en-IN', { month: 'short' }).toUpperCase()}</Text></View>
             <Text style={styles.eyebrow}>{selectedGroup.toUpperCase()} · DAILY KNOWLEDGE CHECK</Text>
             <Text style={styles.title}>10 {selectedGroup} questions.{`\n`}One focused attempt.</Text>
-            <Text style={styles.subtitle}>Build recall consistency with a fresh mixed-subject challenge every day.</Text>
+            <Text style={styles.subtitle}>Complete all 10 questions in the official Daily set for accuracy-based ranking eligibility. Practice sets do not earn ranking credit.</Text>
             <View style={styles.heroStats}>
               <View style={styles.heroStat}><Text style={styles.heroStatValue}>7 + 3</Text><Text style={styles.heroStatLabel}>NORMAL + CASE</Text></View>
               <View style={styles.heroDivider} />
@@ -228,6 +228,9 @@ export const DailyMcqScreen = ({ navigation, route }: Props) => {
       <SafeAreaView style={styles.safe} edges={['bottom']}>
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           <Text style={styles.selectLabel}>GROUP CHALLENGES</Text>
+          <Text accessibilityLiveRegion="polite" style={styles.draftText}>{syncStatus === 'synced' ? 'Cloud backup confirmed.' : syncStatus === 'pending' ? 'Saved on this device · backing up…' : 'Saved on this device · cloud backup not confirmed.'}</Text>
+          {syncStatus === 'error' || syncStatus === 'local' ? <PrimaryButton label="Retry cloud backup" onPress={() => { void retrySync(); }} variant="secondary" /> : null}
+          <Text style={styles.draftText}>Ranking eligibility requires an official Daily set with all 10 questions answered. Points depend on accuracy; practice and incomplete sets earn no ranking credit.</Text>
           {groupSelector}
           <LinearGradient colors={percentage >= 70 ? ['#126B61', '#1A9B86'] : ['#344867', '#536B8E']} style={styles.resultHero}>
             <View style={styles.resultIcon}><Ionicons name={percentage >= 70 ? 'trophy' : 'flag'} size={29} color={percentage >= 70 ? colors.amber : colors.primary} /></View>
