@@ -1856,6 +1856,15 @@ const APP_VERSION = "2.8.0";
       const btn = e.target && e.target.closest ? e.target.closest("[data-hours]") : null;
       if (!btn) return;
       tlHours.value = btn.getAttribute("data-hours");
+      if (tlHours.value === "0") {
+        const noInput = document.querySelector('input[name="tl-planned"][value="No"]');
+        if (noInput) {
+          noInput.checked = true;
+          // Reuse the existing change handlers to update chips, reveal the
+          // reason, and clear hidden subjects/targets/proof from a previous choice.
+          noInput.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+      }
       clearModalError(tlError);
       clearFieldError();
     });
@@ -2035,7 +2044,7 @@ const APP_VERSION = "2.8.0";
     const date = tlDate.value;
     // "2,5" (comma wala keyboard) bhi chale — pehle wahan value hi blank ho jati thi.
     const hoursRaw = String(tlHours.value == null ? "" : tlHours.value).replace(",", ".").trim();
-    const hours = parseFloat(hoursRaw);
+    const hours = Number(hoursRaw);
     const planned = getRadioValue("tl-planned");
     const mentorSupport = tlMentorSupport.value;
 
@@ -2046,14 +2055,19 @@ const APP_VERSION = "2.8.0";
       highlightFieldError(tlDate);
       return;
     }
-    if (!hoursRaw || isNaN(hours) || hours <= 0) {
-      setModalError(tlError, "Total Study Hours khali hai — upar 'Total Study Hours' box me likho (jaise 2.5) ya neeche 1h / 2h chip par tap karo.");
+    if (!hoursRaw) {
+      setModalError(tlError, "Total Study Hours likho — aaj padhai nahi hui toh 0 likho ya 0 hrs option chuno.");
       highlightFieldError(tlHours);
       return;
     }
-    if (hours > 24) {
-      setModalError(tlError, "Hours 24 se zyada nahi ho sakte — dobara likho (jaise 3 ya 2.5).");
+    if (!/^(?:\d+(?:\.\d*)?|\.\d+)$/.test(hoursRaw) || !Number.isFinite(hours) || hours < 0 || hours > 24) {
+      setModalError(tlError, "Study hours 0 se 24 ke beech number hona chahiye (jaise 0, 0.5 ya 2.5).");
       highlightFieldError(tlHours);
+      return;
+    }
+    if (hours === 0 && planned !== "No") {
+      setModalError(tlError, "0 hours ke liye 'plan ke hisaab se padha?' mein No chuno aur reason batao.");
+      highlightFieldError(tlPlannedGroup);
       return;
     }
     if (!planned) {
@@ -2113,7 +2127,7 @@ const APP_VERSION = "2.8.0";
     const studentId = state.student.studentId;
 
     try {
-      proofFile = await readProofFile();
+      proofFile = planned === "No" ? null : await readProofFile();
 
       const result = await api.addStudyLog(studentId, {
         date,

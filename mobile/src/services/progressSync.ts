@@ -9,7 +9,7 @@
 // question text and per-question history NEVER leave the device.
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { config } from '../config';
-import { hmacSha256 } from './hmacSha256';
+import { getSavedSession } from '../storage/session';
 import type { EnrichedMcqQuestion } from '../data/mcqMetadata';
 
 export type ProgressSummary = {
@@ -53,7 +53,7 @@ export const storeShareChoice = async (studentId: string, on: boolean) => {
 export const setMentorSharing = async (studentId: string, sharing: boolean): Promise<void> => {
   const response = await fetch(`${config.mentorApiUrl}/api/consent`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: await studentSyncHeaders(studentId),
     body: JSON.stringify({ studentId, sharing, device: `android-v${config.appVersion || '1.10.2'}` }),
   });
   if (!response.ok) {
@@ -63,7 +63,22 @@ export const setMentorSharing = async (studentId: string, sharing: boolean): Pro
   await storeShareChoice(studentId, sharing);
 };
 
-export const syncToken = (studentId: string): string => hmacSha256(config.mentorSyncSecret, studentId);
+export async function studentSyncHeaders(studentId: string) {
+  const saved = await getSavedSession();
+  if (!saved || saved.studentId !== studentId || !saved.password) throw new Error('Student login required');
+  const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 20000);
+  try {
+    const response = await fetch(`${config.mentorApiUrl}/api/student-sync/session`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
+      body: JSON.stringify({ studentId, password: saved.password }),
+    });
+    if (!response.ok) throw new Error(`Student sync sign-in failed (${response.status})`);
+    const data = await response.json();
+    const current = await getSavedSession();
+    if (!data.token || data.studentId !== studentId || current?.studentId !== studentId || current?.password !== saved.password) throw new Error('Student sync identity changed');
+    return { 'Content-Type': 'application/json', 'X-Student-Sync-Token': String(data.token) };
+  } finally { clearTimeout(timer); }
+}
 
 // ── Aggregation ────────────────────────────────────────────────────────────
 
@@ -196,10 +211,7 @@ export const syncProgress = async (studentId: string, summaries: ProgressSummary
   if (!summaries.length) return { ok: true, accepted: 0 };
   const response = await fetch(`${config.mentorApiUrl}/api/progress-sync`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Sync-Token': syncToken(studentId),
-    },
+    headers: await studentSyncHeaders(studentId),
     body: JSON.stringify({ studentId, summaries, trend }),
   });
   if (!response.ok) {
@@ -208,5 +220,6 @@ export const syncProgress = async (studentId: string, summaries: ProgressSummary
     throw new Error(`Progress sync failed (${response.status}). ${body?.detail || ''}`.trim());
   }
   const result = await response.json();
-  return { ok: true, accepted: result?.accepted?.summaries ?? summaries.length };
+  if (result.ok !== true || result?.accepted?.summaries !== summaries.length) throw new Error('Progress acknowledgement incomplete');
+  return { ok: true, accepted: result.accepted.summaries };
 };

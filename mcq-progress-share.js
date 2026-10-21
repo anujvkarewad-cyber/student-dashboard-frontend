@@ -126,12 +126,26 @@
     return { summaries, trend };
   }
 
+  async function authenticatedHeaders(id) {
+    const saved = JSON.parse(localStorage.getItem('ump_student') || 'null');
+    if (!saved || saved.studentId !== id || !saved.password) throw new Error('Student login required');
+    const response = await fetch(apiBase() + '/api/student-sync/session', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ studentId: id, password: saved.password }),
+    });
+    if (!response.ok) throw new Error('Student sync sign-in failed (' + response.status + ')');
+    const data = await response.json();
+    const active = JSON.parse(localStorage.getItem('ump_student') || 'null');
+    if (!data.token || data.studentId !== id || !active || active.studentId !== id || active.password !== saved.password) throw new Error('Student sync identity changed');
+    return { 'Content-Type': 'application/json', 'X-Student-Sync-Token': String(data.token) };
+  }
+
   async function setSharing(on) {
     const id = studentId();
     if (!id) throw new Error("Login required");
     const res = await fetch(apiBase() + "/api/consent", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: await authenticatedHeaders(id),
       body: JSON.stringify({ studentId: id, sharing: on, device: "web" }),
     });
     if (!res.ok) throw new Error("Could not save sharing");
@@ -144,11 +158,14 @@
     if (!id || !isOn(id)) return;
     const payload = buildPayload(id);
     if (!payload.summaries.length) return;
-    await fetch(apiBase() + "/api/progress-sync", {
+    const response = await fetch(apiBase() + "/api/progress-sync", {
       method: "POST",
-      headers: { "Content-Type": "application/json", "X-Sync-Token": "web" },
+      headers: await authenticatedHeaders(id),
       body: JSON.stringify({ studentId: id, summaries: payload.summaries, trend: payload.trend }),
     });
+    if (!response.ok) throw new Error('Progress sync failed (' + response.status + ')');
+    const ack = await response.json();
+    if (ack.ok !== true || ack.accepted?.summaries !== payload.summaries.length) throw new Error('Progress acknowledgement incomplete');
   }
 
   function paint() {

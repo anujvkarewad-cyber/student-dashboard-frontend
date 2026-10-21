@@ -4,12 +4,12 @@
 //
 // Contract mirrors progressSync.ts:
 //   - only when the student has consented (Profile → share progress)
-//   - X-Sync-Token = HMAC-SHA256(studentId) when a sync secret is configured
+//   - short-lived student-bound credential-verified session
 //   - payload is the allowlisted TestHistoryEntry shape (no raw answers)
 // The backend upserts per student+test+entry, so re-sending the full local
 // history is safe and idempotent (paper-test marks updates replace in place).
 import { config } from '../config';
-import { getShareChoice, syncToken } from './progressSync';
+import { getShareChoice, studentSyncHeaders } from './progressSync';
 import { getTestHistory } from './testHistory';
 
 export type SyncableStudent = {
@@ -30,10 +30,7 @@ export const syncTestHistory = async (student: SyncableStudent | null | undefine
 
     const response = await fetch(`${config.mentorApiUrl}/api/test-history/sync`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Sync-Token': syncToken(student.studentId),
-      },
+      headers: await studentSyncHeaders(student.studentId),
       body: JSON.stringify({
         studentId: student.studentId,
         studentName: student.studentName || student.name || undefined,

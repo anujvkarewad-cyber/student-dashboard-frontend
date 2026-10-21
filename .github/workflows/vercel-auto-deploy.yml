@@ -1,11 +1,9 @@
 name: Auto Deploy to Vercel
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 jobs:
   deploy:
+    if: vars.UPM_LEGACY_VERCEL_DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
