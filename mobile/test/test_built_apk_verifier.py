@@ -26,6 +26,18 @@ class CompiledManifestTests(unittest.TestCase):
     def test_symbolic_raw_hex_and_literal_resource_forms(self):
         for value in ('@string/expo_runtime_version','@0x7f110080',self.runtime):
             with self.subTest(value=value):self.set_meta('EXPO_RUNTIME_VERSION',value);self.assertTrue(self.verify()['otaEnabled'])
+    def test_sdk57_file_fingerprint_resolver(self):
+        self.resources='resource 0x7f110080 string/expo_runtime_version\n () (string8) "file:fingerprint"\n'
+        self.set_meta('EXPO_RUNTIME_VERSION','@7F110080')
+        value=checker.check_manifest(ET.tostring(self.root).decode(),self.resources,self.cfg,self.runtime,'file:fingerprint')
+        self.assertEqual(value['runtimeVersion'],self.runtime)
+    def test_invalid_fingerprint_asset_rejected(self):
+        self.resources='resource 0x7f110080 string/expo_runtime_version\n () (string8) "file:fingerprint"\n'
+        with self.assertRaises(AssertionError):
+            checker.check_manifest(ET.tostring(self.root).decode(),self.resources,self.cfg,'not-a-fingerprint','file:fingerprint')
+    def test_unrecognized_file_runtime_resolver_rejected(self):
+        with self.assertRaises(AssertionError):
+            checker.check_manifest(ET.tostring(self.root).decode(),self.resources,self.cfg,self.runtime,'file:other')
     def test_other_resource_id_rejected(self):
         self.set_meta('EXPO_RUNTIME_VERSION','@ref/0x7f110081')
         with self.assertRaises(AssertionError):self.verify()
