@@ -50,6 +50,8 @@ const MIME = {
   ".html": "text/html; charset=utf-8",
   ".js": "application/javascript; charset=utf-8",
   ".mjs": "application/javascript; charset=utf-8",
+  ".wasm": "application/wasm",
+  ".mjs": "application/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".json": "application/json; charset=utf-8",
   ".png": "image/png",
@@ -358,7 +360,7 @@ async function handleMentor(req, res, url) {
   const hasBody = req.method !== "GET" && req.method !== "HEAD";
   let body;
   if (hasBody) {
-    const raw = await readBody(req, 12 * 1024 * 1024);
+    const raw = await readBody(req, (suffix.startsWith("/api/practice/") ? 3 : 12) * 1024 * 1024);
     body = raw.length ? raw : undefined;
   }
 
@@ -479,7 +481,7 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(204, {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, POST, PUT, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, X-Student-Id, X-Session-Password, X-File-Name",
+        "Access-Control-Allow-Headers": "Content-Type, X-Student-Id, X-Session-Password, X-File-Name, X-Practice-Token",
         "Access-Control-Max-Age": "86400",
       });
       res.end();

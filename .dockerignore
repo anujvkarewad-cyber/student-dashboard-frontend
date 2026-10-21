@@ -13,3 +13,8 @@ vercel.json
 .gitignore
 Dockerfile
 .dockerignore
+
+# Never upload CI credentials or Android signing keys.
+gha-creds-*.json
+*.jks
+*.keystore

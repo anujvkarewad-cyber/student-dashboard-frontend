@@ -133,7 +133,7 @@ export const McqPracticeProvider = ({ children }: PropsWithChildren) => {
           const merged = mergePracticeAttempts(localAttempts, practice as McqPracticeSession[]);
           setHistory(merged);
           await AsyncStorage.setItem(storageKey(student.studentId), JSON.stringify(merged));
-          await syncCompletedMcqAttempts([], merged);
+          await syncCompletedMcqAttempts([], merged, student.studentId);
         }).catch(() => undefined);
       }
     });
@@ -201,7 +201,7 @@ export const McqPracticeProvider = ({ children }: PropsWithChildren) => {
       })),
     };
     await persist(history.map((session) => session.id === activeSession.id ? updated : session));
-    if (backendMode !== 'mock') syncCompletedMcqAttempts([], [updated]).catch(() => undefined);
+    if (backendMode !== 'mock') syncCompletedMcqAttempts([], [updated], student?.studentId).catch(() => undefined);
     return updated;
   }, [activeSession, backendMode, history, persist, questionsForSession]);
 

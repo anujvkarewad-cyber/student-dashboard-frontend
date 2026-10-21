@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "minimumNewBaselineVersionCode": 47,
+  "channels": {
+    "preview": null,
+    "production": null
+  }
+}

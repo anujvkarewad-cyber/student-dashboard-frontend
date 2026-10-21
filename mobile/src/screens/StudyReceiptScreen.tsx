@@ -2,9 +2,10 @@ import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useEffect, useMemo, useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Card, Chip, PrimaryButton, SectionHeader } from '../components/ui';
+import { ReceiptVoiceButton, clearAbandonedReceiptAudio } from '../components/ReceiptVoiceButton';
 import { useAuth } from '../context/AuthContext';
 import { useFocusTimer } from '../context/FocusTimerContext';
 import { RecallAnswer, RecallConfidence, useStudyReceipts } from '../context/StudyReceiptContext';
@@ -25,6 +26,7 @@ const formatDuration = (seconds: number) => {
 
 export const StudyReceiptScreen = ({ route, navigation }: Props) => {
   const { backendMode } = useAuth();
+  useEffect(() => { clearAbandonedReceiptAudio().catch(() => undefined); }, []);
   const { sessions } = useFocusTimer();
   const { buildQuestions, createReceipt, completeReview, receiptForSession } = useStudyReceipts();
   const session = sessions.find((item) => item.id === route.params.sessionId);
@@ -33,6 +35,7 @@ export const StudyReceiptScreen = ({ route, navigation }: Props) => {
   const [answers, setAnswers] = useState<RecallAnswer[]>([]);
   const [confidence, setConfidence] = useState<RecallConfidence>('Medium');
   const [saving, setSaving] = useState(false);
+  const [privateAi, setPrivateAi] = useState(false);
   const [error, setError] = useState('');
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewResponse, setReviewResponse] = useState('');
@@ -52,7 +55,7 @@ export const StudyReceiptScreen = ({ route, navigation }: Props) => {
     }
     setError('');
     setSaving(true);
-    try { await createReceipt(session, answers, confidence); }
+    try { await createReceipt(session, answers, confidence, privateAi); }
     catch (e) { setError(e instanceof Error ? e.message : 'Study receipt could not be saved.'); }
     finally { setSaving(false); }
   };
@@ -89,6 +92,7 @@ export const StudyReceiptScreen = ({ route, navigation }: Props) => {
 
           <View style={styles.disclaimer}><Ionicons name="information-circle" size={19} color={colors.primary} /><Text style={styles.disclaimerText}>This score measures recall completeness, not academic correctness. “Verified learning” will require a mentor-approved answer source.</Text></View>
 
+          <ReceiptVoiceButton disabled={saving} />
           <SectionHeader title="Session proof" />
           <Card style={styles.detailCard}>
             <View style={styles.detailRow}><Text style={styles.detailLabel}>Target</Text><Text style={styles.detailValue}>{receipt.target}</Text></View>
@@ -137,6 +141,7 @@ export const StudyReceiptScreen = ({ route, navigation }: Props) => {
               <View style={styles.reviewForm}>
                 <Text style={styles.reviewPrompt}>Without opening notes, what can you still recall about “{receipt.target}”?</Text>
                 <TextInput value={reviewResponse} onChangeText={setReviewResponse} multiline placeholder="Write from memory…" placeholderTextColor={colors.muted} style={styles.textArea} />
+                <ReceiptVoiceButton disabled={saving} onInsert={text => setReviewResponse(old => [old.trim(), text].filter(Boolean).join('\n'))} />
                 <Text style={styles.confidenceLabel}>How confident are you now?</Text>
                 <View style={styles.chips}>{confidenceOptions.map((item) => <Chip key={item} label={item} selected={reviewConfidence === item} onPress={() => setReviewConfidence(item)} />)}</View>
                 <PrimaryButton label="Complete memory check" loading={saving} onPress={saveReview} />
@@ -181,6 +186,7 @@ export const StudyReceiptScreen = ({ route, navigation }: Props) => {
                 placeholderTextColor={colors.muted}
                 style={styles.textArea}
               />
+              <ReceiptVoiceButton disabled={saving} onInsert={text => setAnswers(current => current.map(item => item.id === answer.id ? { ...item, response: [item.response.trim(), text].filter(Boolean).join('\n') } : item))} />
             </View>
           ))}
 
@@ -190,8 +196,12 @@ export const StudyReceiptScreen = ({ route, navigation }: Props) => {
           </View>
 
           {error ? <View style={styles.error}><Ionicons name="alert-circle" size={19} color={colors.red} /><Text style={styles.errorText}>{error}</Text></View> : null}
+          <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: privateAi }} disabled={backendMode !== 'live' || saving} onPress={() => setPrivateAi(value => !value)} style={{ paddingVertical: 12 }}>
+            <Text>{privateAi ? '☑' : '☐'} Get private AI feedback (optional)</Text>
+          </Pressable>
+          <Text style={styles.honesty}>Receipt stays on this device, not the mentor dashboard. Optional AI feedback temporarily sends answer text to our server/Groq without saving a receipt or score there. Groq has its own processing policy.</Text>
           <PrimaryButton label="Create Study Receipt" icon="receipt-outline" loading={saving} onPress={save} />
-          <Text style={styles.honesty}>Your answers stay on this device in the current preview build.</Text>
+          <Text style={styles.honesty}>Clearing app data or uninstalling removes local receipts. AI feedback is provisional.</Text>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

@@ -4,3 +4,8 @@ node_modules/
 dist/
 test_reports/
 .wrangler/
+
+# Never upload CI credentials or Android signing keys.
+gha-creds-*.json
+*.jks
+*.keystore

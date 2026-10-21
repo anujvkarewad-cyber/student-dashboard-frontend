@@ -1,0 +1,90 @@
+name: Tested student web and OTA release
+
+# Inert until the owner activates the repository variable and supplies the real
+# project identities, WIF trust, Expo secret and device-validated baseline.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: student-production-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: >-
+      vars.UPM_AUTO_RELEASE_ENABLED == 'true' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    environment: student-production
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      UPM_RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+      UPM_OTA_ENABLED: '1'
+      UPM_OTA_CHANNEL: production
+      EAS_PROJECT_ID: ${{ vars.EAS_PROJECT_ID }}
+      EXPO_PUBLIC_API_BASE_URL: ${{ vars.EXPO_PUBLIC_API_BASE_URL }}
+      EXPO_PUBLIC_BACKEND_MODE: live
+      EXPO_PUBLIC_ALLOW_MODE_SWITCH: 'false'
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      GCP_REGION: ${{ vars.GCP_REGION }}
+      GCP_WEB_SERVICE: ${{ vars.GCP_WEB_SERVICE }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - name: Require configured identities (no defaults or secrets in logs)
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          WIF_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          DEPLOY_ACCOUNT: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+        run: |
+          for name in EAS_PROJECT_ID EXPO_PUBLIC_API_BASE_URL GCP_PROJECT_ID GCP_REGION GCP_WEB_SERVICE EXPO_TOKEN WIF_PROVIDER DEPLOY_ACCOUNT; do
+            test -n "${!name}" || { echo "::error::Missing $name; release blocked."; exit 1; }
+          done
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$UPM_RELEASE_SHA" || { echo 'Superseded commit; release blocked.'; exit 1; }
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+        working-directory: mobile
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: 25.2.0
+          token: ${{ secrets.EXPO_TOKEN }}
+      - name: Check approved runtime using the actual production EAS environment
+        working-directory: mobile
+        run: eas env:exec --environment production 'node tools/ota-preflight.cjs --publish'
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Deploy student web candidate, verify, then promote (preserve environment)
+        env:
+          UPM_WEB_DEPLOY_ENABLED: '1'
+        run: bash scripts/auto-deploy-student-web.sh
+      - name: Publish compatible JS/assets only (never APK or latest.json)
+        working-directory: mobile
+        env:
+          UPM_OTA_PUBLISH_ENABLED: '1'
+        run: eas env:exec --environment production 'node tools/publish-ota.cjs'
+      - name: Record release checkpoint
+        if: always()
+        run: |
+          echo "Tested source: $UPM_RELEASE_SHA" >> "$GITHUB_STEP_SUMMARY"
+          echo 'Web and OTA are separate services, not an atomic deployment. Inspect both steps on any failure.' >> "$GITHUB_STEP_SUMMARY"

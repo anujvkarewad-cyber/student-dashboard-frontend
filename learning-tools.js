@@ -125,6 +125,7 @@
   }
 
   function cleanup() {
+    window.UMP_RECEIPT_VOICE?.close();
     setClockUpdater(null);
     activeRoot = null;
     activeFeature = null;
@@ -531,6 +532,7 @@
         <section class="lt-card lt-receipt-details">
           <div><span>Subject</span><b>${escapeHtml(receipt.subject)}</b></div><div><span>Session target</span><b>${escapeHtml(receipt.target)}</b></div><div><span>Focused time</span><b>${formatDuration(receipt.focusedSeconds)}</b></div><div><span>Confidence</span><b>${escapeHtml(receipt.confidence)}</b></div><div><span>Verification</span><b class="lt-soft-badge">SELF-RECALL</b></div>
         </section>
+        <button type="button" class="lt-wide-button secondary" data-receipt-library>My private recordings</button>
         <h3 class="lt-section-title">Your recall answers</h3>
         ${receipt.answers.map((answer, index) => `<article class="lt-card lt-answer-card"><span>RECALL ${index + 1}</span><h3>${escapeHtml(answer.prompt)}</h3><p>${escapeHtml(answer.response)}</p></article>`).join("")}
         <h3 class="lt-section-title">24-hour memory check</h3>
@@ -545,6 +547,7 @@
   }
 
   function bindReceiptEvents(session, receipt) {
+    window.UMP_RECEIPT_VOICE?.attach(activeRoot);
     activeRoot.onclick = (event) => {
       const button = event.target.closest("[data-receipt-action]");
       if (button?.dataset.receiptAction === "back") renderFocusRoom();
@@ -617,6 +620,8 @@
     };
   }
 
+  const mcqDateKey = () => new Date(Date.now() + 330 * 60000).toISOString().slice(0, 10);
+
   function dailyQuestionIds(date, id, group) {
     const random = seededRandom(hashDaily(`${date}:${id}:${group}`));
     const pool = questions.filter((question) => subjectGroup(question.subject) === group);
@@ -628,8 +633,8 @@
   function dailyHistory() {
     const raw = loadJson(dailyKey(), []);
     const parsed = Array.isArray(raw) ? raw : [];
-    const today = localDateKey();
-    const migrated = parsed.filter((attempt) => attempt.bankRevision === learningData.revision || Boolean(attempt.completedAt && attempt.date < today));
+    const today = mcqDateKey();
+    const migrated = parsed.filter((attempt) => Boolean(attempt.officialSetId) || attempt.bankRevision === learningData.revision || Boolean(attempt.completedAt && attempt.date < today));
     if (migrated.length !== parsed.length) saveJson(dailyKey(), migrated);
     return migrated;
   }
@@ -641,13 +646,13 @@
   }
 
   function attemptForGroup(group) {
-    return dailyHistory().find((attempt) => attempt.date === localDateKey() && attempt.group === group);
+    return dailyHistory().find((attempt) => attempt.date === mcqDateKey() && attempt.group === group);
   }
 
   function dailyQuestionsForGroup(group) {
     const attempt = attemptForGroup(group);
-    const ids = attempt?.questionIds || dailyQuestionIds(localDateKey(), studentId(), group);
-    return ids.map((id) => QUESTION_BY_ID.get(id)).filter(Boolean);
+    const ids = attempt?.questionIds || dailyQuestionIds(mcqDateKey(), studentId(), group);
+    return ids.map((id) => attempt?.officialQuestions?.find(q => q.id === id) || QUESTION_BY_ID.get(id)).filter(Boolean);
   }
 
   function dailyStreak(group) {
@@ -801,7 +806,7 @@
         <h3 class="lt-section-title">Challenge rules</h3><section class="lt-card lt-rules"><div>${icon("stopwatch")}<span><b>10-minute timer</b><small>The attempt auto-submits when time runs out.</small></span></div><div>${icon("calendar-day")}<span><b>One attempt per group per day</b><small>Group I and Group II maintain separate results and streaks.</small></span></div><div>${icon("list-check")}<span><b>7 normal + 3 case-study MCQs</b><small>Questions are mixed across your selected group's subjects.</small></span></div></section>
         <button class="lt-wide-button" data-mcq-action="start-daily">${icon("play")} Start ${group} challenge</button>
         <p class="lt-honesty">Today's question order is fixed for your Student ID and device date.</p>
-        ${dailyHistory().filter((item) => item.group === group && item.completedAt && item.date !== localDateKey()).slice(0, 8).map((item) => `<button class="lt-wide-button secondary" data-daily-open-result="${escapeAttr(item.date)}">${icon("clipboard")} ${escapeHtml(item.date)} · ${item.score}/${item.total} · view wrong answers</button>`).join("")}
+        ${dailyHistory().filter((item) => item.group === group && item.completedAt && item.date !== mcqDateKey()).slice(0, 8).map((item) => `<button class="lt-wide-button secondary" data-daily-open-result="${escapeAttr(item.date)}">${icon("clipboard")} ${escapeHtml(item.date)} · ${item.score}/${item.total} · view wrong answers</button>`).join("")}
       </div>`;
     bindMcqEvents();
   }
@@ -824,7 +829,7 @@
   }
 
   function renderDailyQuiz(group, attempt) {
-    const dailyQuestions = attempt.questionIds.map((id) => QUESTION_BY_ID.get(id)).filter(Boolean);
+    const dailyQuestions = attempt.questionIds.map((id) => attempt.officialQuestions?.find(q => q.id === id) || QUESTION_BY_ID.get(id)).filter(Boolean);
     mcqUi.dailyIndex = Math.min(mcqUi.dailyIndex, dailyQuestions.length - 1);
     const question = dailyQuestions[mcqUi.dailyIndex];
     const answered = Object.keys(attempt.answers || {}).length;
@@ -853,17 +858,24 @@
     }
   }
 
-  function startDaily(group) {
+  async function startDaily(group) {
     const history = dailyHistory();
     const existing = attemptForGroup(group);
     if (existing) return;
-    const other = history.find((attempt) => attempt.date === localDateKey() && attempt.group !== group && !attempt.completedAt);
+    const other = history.find((attempt) => attempt.date === mcqDateKey() && attempt.group !== group && !attempt.completedAt);
     if (other) {
       alert(`Finish the ${other.group} attempt before starting ${group}.`);
       return;
     }
-    const attempt = { bankRevision: learningData.revision, date: localDateKey(), group, questionIds: dailyQuestionIds(localDateKey(), studentId(), group), answers: {}, startedAt: Date.now() };
-    saveDaily([attempt, ...history]);
+    const owner = studentId();
+    if (!window.UMP_MCQ_CLOUD?.officialDaily) throw new Error('Official Daily MCQ service unavailable; local attempts are safe.');
+    const official = await window.UMP_MCQ_CLOUD.officialDaily(group);
+    if (studentId() !== owner || official.group !== group || official.questionIds.length !== 10) throw new Error('Daily assignment changed; refresh before continuing.');
+    if (official.date !== mcqDateKey()) throw new Error('Daily assignment date differs; check the device clock.');
+    // Re-read after awaiting so concurrent starts cannot erase another local attempt.
+    if (attemptForGroup(group)) return;
+    const attempt = { officialSetId: official.officialSetId, officialQuestions: official.questions, bankRevision: official.bankRevision, date: official.date, group, questionIds: official.questionIds, answers: {}, startedAt: Date.now() };
+    saveDaily([attempt, ...dailyHistory()]);
     mcqUi.dailyIndex = 0;
     renderDaily();
   }
@@ -871,22 +883,22 @@
   function answerDaily(option) {
     const group = mcqUi.selectedGroup;
     const history = dailyHistory();
-    const attempt = history.find((item) => item.date === localDateKey() && item.group === group);
+    const attempt = history.find((item) => item.date === mcqDateKey() && item.group === group);
     if (!attempt || attempt.completedAt) return;
     const questionId = attempt.questionIds[mcqUi.dailyIndex];
     const updated = { ...attempt, answers: { ...attempt.answers, [questionId]: option } };
-    saveDaily(history.map((item) => item.date === localDateKey() && item.group === group ? updated : item));
+    saveDaily(history.map((item) => item.date === mcqDateKey() && item.group === group ? updated : item));
     renderDailyQuiz(group, updated);
   }
 
   function submitDaily(group) {
     const history = dailyHistory();
-    const attempt = history.find((item) => item.date === localDateKey() && item.group === group);
+    const attempt = history.find((item) => item.date === mcqDateKey() && item.group === group);
     if (!attempt || attempt.completedAt) return attempt;
-    const attemptQuestions = attempt.questionIds.map((id) => QUESTION_BY_ID.get(id)).filter(Boolean);
+    const attemptQuestions = attempt.questionIds.map((id) => attempt.officialQuestions?.find(q => q.id === id) || QUESTION_BY_ID.get(id)).filter(Boolean);
     const completedAt = Date.now();
     const updated = { ...attempt, completedAt, score: attemptQuestions.reduce((total, question) => total + (attempt.answers[question.id] === question.answer ? 1 : 0), 0), total: attemptQuestions.length, durationSeconds: Math.max(1, Math.floor((completedAt - attempt.startedAt) / 1000)), review: buildReview(attemptQuestions, attempt) };
-    saveDaily(history.map((item) => item.date === localDateKey() && item.group === group ? updated : item), true);
+    saveDaily(history.map((item) => item.date === mcqDateKey() && item.group === group ? updated : item), true);
     return updated;
   }
 
@@ -1123,7 +1135,7 @@
         const action = actionButton.dataset.mcqAction;
         if (action === "practice") { mcqUi.mode = "practice"; mcqUi.practiceResult = null; renderPractice(); }
         if (action === "daily") { mcqUi.mode = "daily"; renderDaily(); }
-        if (action === "start-daily") startDaily(mcqUi.selectedGroup);
+        if (action === "start-daily") startDaily(mcqUi.selectedGroup).catch(error => alert(error.message));
         return;
       }
 
