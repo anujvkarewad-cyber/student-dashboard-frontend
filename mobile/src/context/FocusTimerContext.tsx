@@ -1,7 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as KeepAwake from 'expo-keep-awake';
-import React, { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from './AuthContext';
+import type { SmartBinding } from '../services/smartTargets';
 
 export type FocusStatus = 'idle' | 'running' | 'paused';
 
@@ -9,6 +10,7 @@ export type FocusSession = {
   id: string;
   subject: string;
   target?: string;
+  smartTarget?: SmartBinding;
   startedAt: number;
   endedAt: number;
   durationSeconds: number;
@@ -18,6 +20,7 @@ type FocusTimerState = {
   status: FocusStatus;
   subject: string;
   target: string;
+  smartTarget?: SmartBinding;
   startedAt: number | null;
   sessionStartedAt: number | null;
   elapsedBeforeRun: number;
@@ -30,6 +33,8 @@ type FocusTimerValue = {
   target: string;
   elapsedSeconds: number;
   sessions: FocusSession[];
+  smartTarget?: SmartBinding;
+  bindTarget: (binding: SmartBinding) => Promise<void>;
   setSubject: (subject: string) => void;
   setTarget: (target: string) => void;
   start: () => Promise<void>;
@@ -65,14 +70,20 @@ export const FocusTimerProvider = ({ children }: PropsWithChildren) => {
   const [timer, setTimer] = useState<FocusTimerState>(idleTimer);
   const [sessions, setSessions] = useState<FocusSession[]>([]);
   const [hydrated, setHydrated] = useState(false);
+  const [loadedOwner, setLoadedOwner] = useState<string | null>(null);
+  const currentOwner = useRef(student?.studentId);
+  currentOwner.current = student?.studentId;
+  const ready = hydrated && loadedOwner === student?.studentId;
   const [clock, setClock] = useState(Date.now());
 
   const saveTimer = useCallback(async (next: FocusTimerState) => {
+    if (!student || currentOwner.current !== student.studentId) throw new Error('Account changed.');
     setTimer(next);
     if (student) await AsyncStorage.setItem(timerKey(student.studentId), JSON.stringify(next));
   }, [student]);
 
   const saveSessions = useCallback(async (next: FocusSession[]) => {
+    if (!student || currentOwner.current !== student.studentId) throw new Error('Account changed.');
     setSessions(next);
     if (student) await AsyncStorage.setItem(historyKey(student.studentId), JSON.stringify(next));
   }, [student]);
@@ -80,6 +91,9 @@ export const FocusTimerProvider = ({ children }: PropsWithChildren) => {
   useEffect(() => {
     let mounted = true;
     setHydrated(false);
+    setLoadedOwner(null);
+    setTimer(idleTimer);
+    setSessions([]);
     if (!student) {
       setTimer(idleTimer);
       setSessions([]);
@@ -97,6 +111,7 @@ export const FocusTimerProvider = ({ children }: PropsWithChildren) => {
         setTimer(idleTimer);
         setSessions([]);
       }
+      setLoadedOwner(student.studentId);
       setHydrated(true);
     });
     return () => { mounted = false; };
@@ -115,21 +130,30 @@ export const FocusTimerProvider = ({ children }: PropsWithChildren) => {
     };
   }, [timer.status]);
 
+  const bindTarget = useCallback(async (binding: SmartBinding) => {
+    if (!ready) throw new Error('Please wait for your timer to load.');
+    if (!student || binding.ownerId !== student.studentId) throw new Error('Account changed. Reload your targets.');
+    if (JSON.stringify(timer.smartTarget) === JSON.stringify(binding)) return;
+    if (timer.status !== 'idle') throw new Error('Finish or discard your current timer before starting another task.');
+    await saveTimer({ ...idleTimer, subject: binding.subject, target: binding.concept, smartTarget: binding });
+  }, [ready, saveTimer, student, timer]);
+
   const setSubject = useCallback((subject: string) => {
-    if (timer.status !== 'idle') return;
+    if (!ready || timer.status !== 'idle' || timer.smartTarget) return;
     saveTimer({ ...timer, subject }).catch(() => undefined);
-  }, [saveTimer, timer]);
+  }, [ready, saveTimer, timer]);
 
   const setTarget = useCallback((target: string) => {
-    if (timer.status !== 'idle') return;
+    if (!ready || timer.status !== 'idle' || timer.smartTarget) return;
     saveTimer({ ...timer, target }).catch(() => undefined);
-  }, [saveTimer, timer]);
+  }, [ready, saveTimer, timer]);
 
   const start = useCallback(async () => {
-    if (timer.status !== 'idle' || !timer.subject || !timer.target.trim()) return;
+    if (!ready || timer.status !== 'idle' || !timer.subject || !timer.target.trim()) return;
     const now = Date.now();
     await saveTimer({
       status: 'running',
+      smartTarget: timer.smartTarget,
       subject: timer.subject,
       target: timer.target.trim(),
       startedAt: now,
@@ -137,30 +161,31 @@ export const FocusTimerProvider = ({ children }: PropsWithChildren) => {
       elapsedBeforeRun: 0,
     });
     setClock(now);
-  }, [saveTimer, timer]);
+  }, [ready, saveTimer, timer]);
 
   const pause = useCallback(async () => {
-    if (timer.status !== 'running') return;
+    if (!ready || timer.status !== 'running') return;
     const elapsed = elapsedFor(timer);
     await saveTimer({ ...timer, status: 'paused', startedAt: null, elapsedBeforeRun: elapsed });
     setClock(Date.now());
-  }, [saveTimer, timer]);
+  }, [ready, saveTimer, timer]);
 
   const resume = useCallback(async () => {
-    if (timer.status !== 'paused') return;
+    if (!ready || timer.status !== 'paused') return;
     const now = Date.now();
     await saveTimer({ ...timer, status: 'running', startedAt: now });
     setClock(now);
-  }, [saveTimer, timer]);
+  }, [ready, saveTimer, timer]);
 
   const finish = useCallback(async () => {
-    if (timer.status === 'idle') return null;
+    if (!ready || timer.status === 'idle') return null;
     const now = Date.now();
     const durationSeconds = elapsedFor(timer, now);
     const completed: FocusSession = {
       id: `${now}-${Math.random().toString(36).slice(2, 8)}`,
       subject: timer.subject,
       target: timer.target.trim(),
+      smartTarget: timer.smartTarget,
       startedAt: timer.sessionStartedAt || now,
       endedAt: now,
       durationSeconds,
@@ -172,24 +197,28 @@ export const FocusTimerProvider = ({ children }: PropsWithChildren) => {
     ]);
     setClock(now);
     return durationSeconds > 0 ? completed : null;
-  }, [saveSessions, saveTimer, sessions, timer]);
+  }, [ready, saveSessions, saveTimer, sessions, timer]);
 
   const discard = useCallback(async () => {
+    if (!ready) return;
     await saveTimer({ ...idleTimer, subject: timer.subject || idleTimer.subject });
     setClock(Date.now());
-  }, [saveTimer, timer.subject]);
+  }, [ready, saveTimer, timer.subject]);
 
   const removeSession = useCallback(async (id: string) => {
+    if (!ready) return;
     await saveSessions(sessions.filter((session) => session.id !== id));
-  }, [saveSessions, sessions]);
+  }, [ready, saveSessions, sessions]);
 
   const value = useMemo<FocusTimerValue>(() => ({
-    hydrated,
-    status: timer.status,
-    subject: timer.subject,
-    target: timer.target,
-    elapsedSeconds: elapsedFor(timer, clock),
-    sessions,
+    hydrated: ready,
+    status: ready ? timer.status : 'idle',
+    subject: ready ? timer.subject : idleTimer.subject,
+    target: ready ? timer.target : '',
+    smartTarget: ready ? timer.smartTarget : undefined,
+    bindTarget,
+    elapsedSeconds: ready ? elapsedFor(timer, clock) : 0,
+    sessions: ready ? sessions : [],
     setSubject,
     setTarget,
     start,
@@ -198,7 +227,7 @@ export const FocusTimerProvider = ({ children }: PropsWithChildren) => {
     finish,
     discard,
     removeSession,
-  }), [clock, discard, finish, hydrated, pause, removeSession, resume, sessions, setSubject, setTarget, start, timer]);
+  }), [ready, bindTarget, clock, discard, finish, hydrated, pause, removeSession, resume, sessions, setSubject, setTarget, start, timer]);
 
   return <FocusTimerContext.Provider value={value}>{children}</FocusTimerContext.Provider>;
 };

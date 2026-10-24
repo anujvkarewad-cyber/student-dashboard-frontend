@@ -1,8 +1,9 @@
+import { uploadPrivateProof, retrievePrivateProof, checkPrivateProofDestination } from '../../lib/private-proof.js';
 const MAX_PROOF_BYTES = 10 * 1024 * 1024;
 const ALLOWED_PROOF_TYPES = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/webp']);
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'Content-Type, X-Student-Id, X-Session-Password, X-File-Name',
+  'Access-Control-Allow-Headers': 'Content-Type, X-Student-Id, X-Session-Password, X-File-Name, X-Proof-Protocol',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',
   'Cache-Control': 'no-store',
 };
@@ -32,10 +33,15 @@ async function proxyAppsScript(request, env) {
   if (request.method !== 'POST') return json({ error: 'POST required' }, 405);
   const body = await request.arrayBuffer();
   if (body.byteLength > 1024 * 1024) return json({ error: 'JSON request is too large' }, 413);
+  // Only the existing actor-proof headers cross this legacy-named proxy hop.
+  // Do not propagate cookies, bearer tokens, file metadata or unrelated secrets.
+  const headers = new Headers({ 'Content-Type': request.headers.get('Content-Type') || 'application/json' });
+  for (const name of ['X-Student-Id', 'X-Session-Password']) {
+    const value = request.headers.get(name);
+    if (value !== null) headers.set(name, value);
+  }
   const response = await upstreamRequest(required(env, 'APPS_SCRIPT_URL'), {
-    method: 'POST',
-    headers: { 'Content-Type': request.headers.get('Content-Type') || 'application/json' },
-    body,
+    method: 'POST', headers, body,
   });
   return new Response(response.body, {
     status: response.status,
@@ -51,8 +57,8 @@ async function proxyMentor(request, env, pathname, search) {
   headers.delete('host');
   headers.delete('cf-connecting-ip');
   headers.delete('x-forwarded-for');
-  const serviceToken = String(env.MENTOR_SERVICE_TOKEN || '').trim();
-  if (serviceToken) headers.set('Authorization', `Bearer ${serviceToken}`);
+  // Never turn a configured service credential into a caller's mentor role.
+  // The backend verifies the caller's original Authorization, if supplied.
   const response = await upstreamRequest(target, {
     method: request.method,
     headers,
@@ -99,14 +105,11 @@ async function googleAccessToken(env) {
 
 async function authenticateStudent(env, studentId, password) {
   if (!studentId || !password) return false;
-  const response = await upstreamRequest(required(env, 'APPS_SCRIPT_URL'), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'validateLogin', payload: { studentId, password } }),
-  }, 25000);
-  if (!response.ok) throw new Error('Authentication service unavailable');
-  const data = await response.json();
-  return data?.result?.success === true;
+  const url = new URL('/api/student-auth/login',required(env,'MENTOR_ORIGIN'));
+  const response = await upstreamRequest(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({studentId,password})},25000);
+  if (!response.ok) return false;
+  const data=await response.json(), result=data?.result||data;
+  return result?.success===true && data?.success!==false && data?.ok!==false && !data?.error && result?.ok!==false && !result?.error && typeof result.studentId==='string' && result.studentId.trim().toUpperCase()===studentId;
 }
 
 const safeFileName = (studentId, value) => {
@@ -118,6 +121,7 @@ async function uploadProof(request, env) {
   if (request.method !== 'PUT') return json({ error: 'PUT required' }, 405);
   const length = Number(request.headers.get('Content-Length') || 0);
   if (length > MAX_PROOF_BYTES) return json({ error: 'Proof must be 10 MB or smaller' }, 413);
+  if (request.headers.get('X-Proof-Protocol') !== 'private-v1') return json({error:'This upload requires a compatible private-proof client.'},409);
   const mimeType = (request.headers.get('Content-Type') || '').split(';')[0].toLowerCase();
   if (!ALLOWED_PROOF_TYPES.has(mimeType)) return json({ error: 'Only PDF, JPEG, PNG or WebP proof is accepted' }, 415);
   const studentId = String(request.headers.get('X-Student-Id') || '').trim().toUpperCase();
@@ -128,32 +132,7 @@ async function uploadProof(request, env) {
   const bytes = await request.arrayBuffer();
   if (!bytes.byteLength || bytes.byteLength > MAX_PROOF_BYTES) return json({ error: 'Proof must be between 1 byte and 10 MB' }, 413);
   const token = await googleAccessToken(env);
-  const boundary = `upm_${crypto.randomUUID().replace(/-/g, '')}`;
-  const metadata = JSON.stringify({
-    name: safeFileName(studentId, request.headers.get('X-File-Name')),
-    parents: [required(env, 'DRIVE_PROOF_FOLDER_ID')],
-  });
-  const prefix = new TextEncoder().encode(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n`);
-  const suffix = new TextEncoder().encode(`\r\n--${boundary}--`);
-  const multipart = new Uint8Array(prefix.length + bytes.byteLength + suffix.length);
-  multipart.set(prefix, 0); multipart.set(new Uint8Array(bytes), prefix.length); multipart.set(suffix, prefix.length + bytes.byteLength);
-  const driveResponse = await upstreamRequest('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': `multipart/related; boundary=${boundary}` },
-    body: multipart,
-  }, 55000);
-  const created = await driveResponse.json();
-  if (!driveResponse.ok || !created.id) throw new Error(`Drive upload failed (${driveResponse.status})`);
-  await upstreamRequest(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(created.id)}/permissions`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ role: 'reader', type: 'anyone' }),
-  }, 20000);
-  return json({
-    success: true,
-    fileId: created.id,
-    proofUrl: `https://drive.google.com/file/d/${created.id}/view?usp=sharing`,
-  });
+  return json(await uploadPrivateProof({studentId,fileName:safeFileName(studentId,request.headers.get('X-File-Name')),mimeType,bytes,folderId:required(env,'DRIVE_PROOF_FOLDER_ID'),principal:required(env,'GOOGLE_SERVICE_ACCOUNT_EMAIL'),token}));
 }
 
 export default {
@@ -163,11 +142,24 @@ export default {
     try {
       if (url.pathname === '/health') return json({ ok: true, service: 'upm-emergency-gateway' });
       if (url.pathname === '/api/proxy') return await proxyAppsScript(request, env);
+      if (url.pathname === '/api/proof-capabilities') {
+        if(request.method!=='GET')return json({error:'GET required'},405);
+        const studentId=String(request.headers.get('X-Student-Id')||'').trim().toUpperCase();
+        if(!/^[A-Z0-9_-]{3,40}$/.test(studentId) || !(await authenticateStudent(env,studentId,request.headers.get('X-Session-Password')||'')))return json({error:'Student authentication required.'},401);
+        return json(await checkPrivateProofDestination({folderId:required(env,'DRIVE_PROOF_FOLDER_ID'),principal:required(env,'GOOGLE_SERVICE_ACCOUNT_EMAIL'),token:await googleAccessToken(env)}));
+      }
+      if (url.pathname === '/api/proof-file') {
+        if(request.method!=='GET') return json({error:'GET required'},405);
+        const studentId=String(request.headers.get('X-Student-Id')||'').trim().toUpperCase();
+        if(!/^[A-Z0-9_-]{3,40}$/.test(studentId) || !(await authenticateStudent(env,studentId,request.headers.get('X-Session-Password')||''))) return json({error:'Student authentication required.'},401);
+        const result=await retrievePrivateProof({fileId:url.searchParams.getAll('fileId').length===1?url.searchParams.get('fileId'):'',studentId,principal:required(env,'GOOGLE_SERVICE_ACCOUNT_EMAIL'),token:await googleAccessToken(env)});
+        return result.bytes?new Response(result.bytes,{status:result.status,headers:{...CORS_HEADERS,...result.headers}}):json(result.body,result.status);
+      }
       if (url.pathname === '/api/proof-upload') return await uploadProof(request, env);
       if (url.pathname.startsWith('/api/mentor/')) return await proxyMentor(request, env, url.pathname, url.search);
       return json({ error: 'Not found' }, 404);
     } catch (error) {
-      console.error('gateway request failed', error);
+      console.error('gateway request failed');
       const unavailable = error instanceof Error && (error.name === 'AbortError' || /unavailable|timeout|configured/i.test(error.message));
       return json({ error: unavailable ? 'Upstream service is temporarily unavailable.' : 'Gateway request failed.' }, unavailable ? 503 : 502);
     }

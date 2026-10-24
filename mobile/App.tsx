@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useEffect } from 'react';
+import { clearAbandonedReceiptAudio } from './src/components/ReceiptVoiceButton';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -16,6 +17,7 @@ import { StudyReceiptsProvider } from './src/context/StudyReceiptContext';
 import { AppNavigator } from './src/navigation/AppNavigator';
 
 export default function App() {
+  useEffect(() => { clearAbandonedReceiptAudio().catch(() => undefined); }, []);
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>

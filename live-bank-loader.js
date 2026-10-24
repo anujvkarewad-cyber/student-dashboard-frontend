@@ -221,7 +221,7 @@
   }
   // The disk read is asynchronous so it lands just after this, replacing the
   // loading state. A warm connection usually wins the race anyway.
-  hydrateCache();
+  const cacheHydration = hydrateCache();
 
   let requestInFlight = null;
   async function fetchPublishedBank({ force = false } = {}) {
@@ -240,7 +240,7 @@
       try {
         const response = await fetch(BANK_URL, {
           signal: controller.signal,
-          cache: "no-store",
+          cache: "no-cache",
           headers: { Accept: "application/json" },
         });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -311,16 +311,27 @@
   }
 
   window.UMP_REFRESH_LIVE_BANK = function () {
-    return clearCache().then(() => fetchPublishedBank({ force: true }));
+    // A retry must not delete the last good published cache before success.
+    return fetchPublishedBank({ force: true });
   };
   window.UMP_CLEAR_LIVE_CACHE = function () {
     return clearCache().then(() => console.log("[Published Bank] Cache cleared"));
   };
 
+  async function loadInitialBank() {
+    // On a warm launch, validate the tiny release metadata first instead of
+    // downloading the whole bank on every page open. Bound a stuck IDB open.
+    let timer;
+    try {
+      await Promise.race([cacheHydration, new Promise(resolve => { timer = setTimeout(resolve, 2500); })]);
+    } finally { clearTimeout(timer); }
+    if (getCached()) return checkPublishedRevision();
+    return fetchPublishedBank();
+  }
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", () => fetchPublishedBank());
+    document.addEventListener("DOMContentLoaded", () => { void loadInitialBank(); });
   } else {
-    fetchPublishedBank();
+    void loadInitialBank();
   }
 
   let lastMcqRefresh = 0;

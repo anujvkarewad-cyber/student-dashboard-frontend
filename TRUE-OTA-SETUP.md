@@ -116,3 +116,15 @@ For initial validation, keep release flags off. Do not use a fake ID to get past
 - GitHub Actions integration: https://docs.expo.dev/eas-update/github-actions/
 
 Fingerprint runtime policy is intentionally conservative. Its real build/update/environment consistency must be validated on this project before activation; local fixture tests are not a substitute.
+
+
+## 20 October 2026 build-authorization update
+
+Owner has approved candidate APK build work, not OTA publication or production release. Superseding any earlier opt-in/non-OTA profile instructions: every existing EAS profile now requires UPM_APK_BUILD=1 and UPM_OTA_ENABLED=1 with an explicit channel; the signed workflow always runs baseline preflight and refuses ota_baseline=false. The old unsigned preview workflow is inert/manual-only. Direct Expo prebuild/run:android configuration also rejects disabled OTA. Local non-native inspection/JS export can remain offline; that is not an APK route. Targeted tests45/45 pass. No native build or remote workflow run has occurred.
+
+The real EAS project and original signing credentials are still unverified. Old Drive app.json/eas.json backups do not supply a project ID and must not overwrite the current gateway/version. Do not create a replacement signing key. Verify the original released/installed certificate before producing an upgrade candidate. All broader feature/integration gates in NEXT-APK-MASTER-CHECKLIST.md still apply.
+
+
+## 21 October candidate and signing reference
+
+Source candidate is1.15.3/code47. Current released46 APK checksum and signature were verified in full; `mobile/released-apk-reference.json` records its public certificate fingerprint. `tools/check-release-identity.cjs` checks the package, increasing versionCode, actual certificate and unchanged public reference; the signed workflow invokes it before native prebuild and after signing. A certificate fingerprint is NOT the private key. Existing Expo ID and original private signing access remain missing/unverified. No new project/link/key, native build, publication or live manifest edit. Older phone variants still require in-place upgrade acceptance. See `/home/user/apk-preparation/HANDOVER.md` for current tests and access steps.

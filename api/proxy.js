@@ -30,6 +30,16 @@ const MONGO_DASHBOARD_ACTIONS = new Set([
   "attendance.status"
 ]);
 
+const STUDENT_TOOLS = new Set(["messages.thread", "messages.send", "ai.ask", "ai.dailyTarget", "ai.evaluate", "revision.plan"]);
+const STUDENT_WRITES = new Set(["addStudyLog", "deleteStudyLog", "attendance.markAbsent", "attendance.requestLeave", "attendance.cancelLeave", "feedback.read"]);
+const BLOCKED_MENTOR_WRITES = new Set(["announcements.create", "notes.create", "notes.finalizeUpload", "notes.delete", "students.addNote", "feedback.send"]);
+function studentHeaders(req) {
+  return {
+    "X-Student-Id": String(req.headers?.["x-student-id"] || req.headers?.["X-Student-Id"] || "").trim(),
+    "X-Session-Password": String(req.headers?.["x-session-password"] || req.headers?.["X-Session-Password"] || "")
+  };
+}
+
 async function attemptOnce(url, body, timeoutMs) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -70,48 +80,10 @@ async function postAppsScript(url, body) {
   return first;
 }
 
-// Dashboard reads are the open-app storm: 200 students x 8 calls.
-// Shared reads (leaderboard, announcements) are identical, so one warm
-// instance serves them from memory. A Mongo miss must NOT fall through to
-// Apps Script — that is the 30-concurrent wall. Empty is correct for a
-// student who has not logged study yet.
-const READ_CACHE = new Map();
-const READ_INFLIGHT = new Map();
-// Leaderboard responses are student-specific; never share their cache/in-flight key.
-const SHARED_READS = new Set(["getAnnouncements"]);
-
+// Every protected dashboard read reaches the current-account boundary.
+// No private cache or ID-keyed in-flight sharing, and no legacy read fallback.
 function emptyReadResult(action) {
   return action === "getStats" ? {} : [];
-}
-
-function readCacheKey(action, req) {
-  if (SHARED_READS.has(action)) return "shared:" + action;
-  const payload = (req.body && req.body.payload) || {};
-  const id = String(payload.studentId || (req.body && req.body.studentId) || "").trim().toUpperCase();
-  return action + ":" + id;
-}
-
-function readTtlMs(action) {
-  return SHARED_READS.has(action) ? 5 * 60 * 1000 : 45 * 1000;
-}
-
-function readCacheGet(key) {
-  const hit = READ_CACHE.get(key);
-  if (!hit) return null;
-  if (Date.now() > hit.until) {
-    READ_CACHE.delete(key);
-    return null;
-  }
-  return hit.body;
-}
-
-function readCachePut(key, body, ttl) {
-  if (!body || body.error) return;
-  READ_CACHE.set(key, { until: Date.now() + ttl, body: body });
-  if (READ_CACHE.size > 500) {
-    const oldest = READ_CACHE.keys().next().value;
-    READ_CACHE.delete(oldest);
-  }
 }
 
 async function mongoDashboardRead(action, req) {
@@ -121,7 +93,7 @@ async function mongoDashboardRead(action, req) {
   try {
     const dashRes = await fetch(`${MENTOR_API_URL}/api/student-dashboard/get`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...studentHeaders(req) },
       body: JSON.stringify({
         action: action,
         payload: payload,
@@ -129,6 +101,11 @@ async function mongoDashboardRead(action, req) {
       }),
       signal: controller.signal
     });
+    if (!dashRes.ok) {
+      const error = new Error("Protected dashboard request failed.");
+      error.status = [401,403].includes(dashRes.status) ? dashRes.status : 502;
+      throw error;
+    }
     const dashData = await dashRes.json();
     if (dashData && dashData.found) return { result: dashData.result };
     return { result: emptyReadResult(action) };
@@ -183,7 +160,9 @@ async function serveMentorTool(req, res, action) {
       res.status(400).json({ error: "Unknown tool." });
       return;
     }
+    if (STUDENT_TOOLS.has(action)) init.headers = { ...(init.headers || {}), ...studentHeaders(req) };
     const response = await fetch(url, init);
+    if (STUDENT_TOOLS.has(action) && [401,403].includes(response.status)) return res.status(response.status).json({ error: "Student session unavailable. Sign in again." });
     const data = await response.json();
     res.status(200).json({ result: data });
   } catch (err) {
@@ -196,42 +175,14 @@ async function serveMentorTool(req, res, action) {
 
 async function serveScaledRead(req, res, action) {
   if (!MONGO_DASHBOARD_ACTIONS.has(action)) return false;
-  // A mentor deletion must be reflected on the very next student refresh.
-  // Do not serve announcement results from the old five-minute shared cache.
-  if (action === "getAnnouncements" || action === "notes.listForStudent") {
-    res.setHeader("Cache-Control", "no-store");
-    try {
-      res.status(200).json(await mongoDashboardRead(action, req));
-    } catch (err) {
-      console.error("Content read failed:", err && err.message);
-      res.status(200).json({ result: [] });
-    }
-    return true;
-  }
-  const key = readCacheKey(action, req);
-  const ttl = readTtlMs(action);
-  const cached = readCacheGet(key);
-  if (cached) {
-    res.status(200).json(cached);
-    return true;
-  }
-
-  let job = READ_INFLIGHT.get(key);
-  if (!job) {
-    job = mongoDashboardRead(action, req).then(function (body) {
-      readCachePut(key, body, ttl);
-      return body;
-    });
-    READ_INFLIGHT.set(key, job);
-    job.finally(function () { READ_INFLIGHT.delete(key); });
-  }
-
+  // These reads depend on current owner/membership/access; neither response
+  // caching nor ID-keyed in-flight sharing may bypass the backend check.
+  res.setHeader("Cache-Control", "no-store");
   try {
-    const body = await job;
-    res.status(200).json(body);
-  } catch (err) {
-    console.error("Scaled read failed:", action, err && err.message);
-    res.status(200).json({ result: emptyReadResult(action) });
+    res.status(200).json(await mongoDashboardRead(action, req));
+  } catch (error) {
+    res.status(error.status || 502).json({ error: [401,403].includes(error.status)
+      ? "Student session unavailable. Sign in again." : "Dashboard could not refresh." });
   }
   return true;
 }
@@ -299,7 +250,7 @@ async function tryMongoLogin(req) {
     // "Student ID not found" must reach the student. Previously it returned null,
     // which the caller turned into "Sept 2026 access is closed" - so a simple typo
     // in the ID looked like the exam cohort being shut down.
-    if (result && result.code === "not_found") return { result };
+    if (result && ["not_found", "removed", "access_blocked"].includes(result.code)) return { result };
     return null;
   }
   if (action === "changePassword") {
@@ -327,29 +278,65 @@ async function tryMongoLogin(req) {
   return null;
 }
 
-async function mirrorStudyLogToMongo(payload, gasResult) {
-  // Only the explicitly configured host; never fail over to retired providers.
-  const hosts = MENTOR_API_URL ? [MENTOR_API_URL] : [];
-  const body = JSON.stringify({ action: "addStudyLog", payload, result: gasResult || {} });
-  for (let i = 0; i < hosts.length; i++) {
-    const controller = new AbortController();
-    const timer = setTimeout(function () { controller.abort(); }, 12000);
-    try {
-      const response = await fetch(hosts[i] + "/api/student-dashboard/write", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body,
-        signal: controller.signal
-      });
-      if (response.ok) return true;
-      console.error("Mongo study-log write rejected:", hosts[i], response.status);
-    } catch (err) {
-      console.error("Mongo study-log mirror failed:", hosts[i], err && err.message);
-    } finally {
-      clearTimeout(timer);
+async function mirrorStudyLogToMongo(payload, gasResult, actorHeaders) {
+  // One authoritative write attempt only. A lost acknowledgement can follow a
+  // committed write; never resend here or fall through to another provider.
+  const unknown = "Save outcome is unknown. Keep this draft and check Study tracker before retrying.";
+  const failure = (message) => ({ status: 502, result: { success: false, message } });
+  if (!MENTOR_API_URL) return failure("Study log was not sent: the save service is unavailable. Keep this draft.");
+  const controller = new AbortController();
+  const timer = setTimeout(function () { controller.abort(); }, 12000);
+  try {
+    const response = await fetch(MENTOR_API_URL + "/api/student-dashboard/write", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...actorHeaders },
+      body: JSON.stringify({ action: "addStudyLog", payload, result: gasResult || {} }),
+      signal: controller.signal
+    });
+    if ([401,403].includes(response.status)) return { status: response.status,
+      result: { success: false, message: "Student session unavailable. Keep your draft and sign in again." } };
+    if (!response.ok) {
+      // A backend error may occur AFTER Mongo committed (e.g. leaderboard
+      // rebuild failure). Do not interpret every HTTP error as a failed write.
+      const rejected = response.status >= 400 && response.status < 500 && response.status !== 408;
+      return failure(rejected
+        ? "The server rejected this study log. Keep your draft and check Study tracker before retrying."
+        : unknown);
     }
+    if (response.status !== 200) return failure(unknown); // Accepted/queued is not saved.
+    const data = await response.json();
+    const object = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+    if (!object(data)) return failure(unknown);
+    const nested = object(data.result) ? data.result : null;
+    if (data.ok === false || data.success === false || data.error ||
+        (nested && (nested.ok === false || nested.success === false || nested.error))) {
+      return failure("The server rejected this study log. Keep your draft and check Study tracker before retrying.");
+    }
+    // Present status flags must be booleans; malformed values must not be
+    // ignored just because another part of the envelope says true.
+    for (const part of [data, nested]) {
+      if (!part) continue;
+      for (const flag of ["ok", "success"]) {
+        if (Object.prototype.hasOwnProperty.call(part, flag) && typeof part[flag] !== "boolean") return failure(unknown);
+      }
+    }
+    // Canonical backend acknowledgement. Preserve its existing proof/stats.
+    if (data.ok === true && nested && nested.success === true) {
+      return { status: 200, result: nested };
+    }
+    // Narrow compatibility with the existing top-level acknowledgement fixture;
+    // never use it to override a present, malformed or contradictory result.
+    if (data.ok === true && data.success === true &&
+        !Object.prototype.hasOwnProperty.call(data, "result")) {
+      return { status: 200, result: { success: true } };
+    }
+    return failure(unknown);
+  } catch {
+    // Do not log payloads, credentials, provider bodies or raw exception text.
+    return failure(unknown);
+  } finally {
+    clearTimeout(timer);
   }
-  return false;
 }
 
 export default async function handler(req, res) {
@@ -375,6 +362,16 @@ function stableApkDownloadUrl(req, canonicalUrl) {
 }
 
 const updateAction = req.body?.action || req.query?.action;
+    if (BLOCKED_MENTOR_WRITES.has(updateAction)) {
+      return res.status(403).json({ error: "Mentor action requires verified authorization." });
+    }
+    if (MONGO_DASHBOARD_ACTIONS.has(updateAction) || STUDENT_WRITES.has(updateAction) || updateAction === "saveDeviceToken" || STUDENT_TOOLS.has(updateAction)) {
+      res.setHeader("Cache-Control", "no-store");
+      const actor = studentHeaders(req);
+      if (!actor["X-Student-Id"] || !actor["X-Session-Password"]) {
+        return res.status(401).json({ error: "Student authentication required.", result: { success: false, message: "Student authentication required. Keep your draft and sign in again." } });
+      }
+    }
     if (updateAction === "ai.ask" || updateAction === "ai.dailyTarget" || updateAction === "ai.evaluate" || updateAction === "revision.plan" || updateAction === "messages.thread" || updateAction === "messages.send") {
       await serveMentorTool(req, res, updateAction);
       return;
@@ -461,9 +458,13 @@ const updateAction = req.body?.action || req.query?.action;
       try {
         const mongoHit = await tryMongoLogin(req);
         if (mongoHit) return res.status(200).json(mongoHit);
-      } catch (mongoErr) {
-        console.error("Mongo password change fallback to Apps Script:", mongoErr && mongoErr.message);
+      } catch {
+        // An unavailable/rejected account service is never permission to use
+        // the retired provider. This also protects the /api/sheets alias.
       }
+      return res.status(502).json({ result: {
+        success: false, message: "Password service unavailable. Please try again."
+      } });
     }
 
     if (updateAction === "saveDeviceToken") {
@@ -481,9 +482,10 @@ const updateAction = req.body?.action || req.query?.action;
       try {
         const response = await fetch(`${MENTOR_API_URL}/api/push/device-token`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...studentHeaders(req) },
           body: JSON.stringify({ studentId, token })
         });
+        if ([401,403].includes(response.status)) return res.status(response.status).json({ error: "Student session unavailable. Sign in again." });
         const data = await response.json().catch(() => ({}));
         const result = (data && data.result) || { success: response.ok };
         return res.status(200).json({ result });
@@ -495,24 +497,6 @@ const updateAction = req.body?.action || req.query?.action;
       }
     }
 
-    if (MONGO_DASHBOARD_ACTIONS.has(updateAction)) {
-      try {
-        const payload = studyLogPayload(req);
-        const dashRes = await fetch(`${MENTOR_API_URL}/api/student-dashboard/get`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: updateAction,
-            payload,
-            studentId: payload.studentId || ""
-          })
-        });
-        const dashData = await dashRes.json();
-        if (dashData && dashData.found) return res.status(200).json({ result: dashData.result });
-      } catch (dashErr) {
-        console.error("Mongo dashboard fallback:", dashErr && dashErr.message);
-      }
-    }
 
     if (updateAction === "addStudyLog") {
       // Mongo is the production source of truth. APPS_SCRIPT_URL now points to
@@ -520,62 +504,34 @@ const updateAction = req.body?.action || req.query?.action;
       // action there would save the row in Mongo and then misleadingly tell the
       // student "This option is not available." Return the authoritative write
       // result immediately instead.
-      const saved = await mirrorStudyLogToMongo(studyLogPayload(req), {});
-      if (saved) return res.status(200).json({ result: { success: true } });
-      return res.status(502).json({
-        result: { success: false, message: "Could not save your study log. Please try again." }
-      });
+      const saved = await mirrorStudyLogToMongo(studyLogPayload(req), {}, studentHeaders(req));
+      return res.status(saved.status).json({ result: saved.result });
     }
 
-    if (
-      updateAction === "attendance.markAbsent" ||
-      updateAction === "attendance.requestLeave" ||
-      updateAction === "attendance.cancelLeave"
-    ) {
-      // Student self-reported leave / absent. Mongo (via FastAPI) is the source of
-      // truth so the mentor tracker sees it immediately.
+    if (STUDENT_WRITES.has(updateAction)) {
       try {
-        const payload = studyLogPayload(req);
-        const attRes = await fetch(`${MENTOR_API_URL}/api/student-dashboard/write`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: updateAction, payload }),
+        const upstream = await fetch(`${MENTOR_API_URL}/api/student-dashboard/write`, {
+          method: "POST", headers: { "Content-Type": "application/json", ...studentHeaders(req) },
+          body: JSON.stringify({ action: updateAction, payload: studyLogPayload(req) })
         });
-        const attData = await attRes.json();
-        const result = (attData && attData.result) || attData || {};
-        return res.status(200).json({ result: { success: result.success !== false, ...result } });
-      } catch (err) {
-        console.error("attendance write failed:", err && err.message);
-        return res.status(502).json({
-          result: { success: false, message: "Save nahi hua. Internet check karke phir try karo." },
-        });
+        if ([401,403].includes(upstream.status)) return res.status(upstream.status).json({ error: "Student session unavailable. Sign in again." });
+        const body = await upstream.json();
+        if (!upstream.ok || body?.ok !== true || body?.result?.success !== true) {
+          return res.status(502).json({ result: { success: false, message: "The change could not be confirmed." } });
+        }
+        return res.status(200).json({ result: body.result });
+      } catch {
+        return res.status(502).json({ error: "The change could not be confirmed." });
       }
     }
 
-    if (updateAction === "deleteStudyLog") {
-      try {
-        const payload = studyLogPayload(req);
-        const delRes = await fetch(`${MENTOR_API_URL}/api/student-dashboard/write`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "deleteStudyLog", payload })
-        });
-        const delData = await delRes.json();
-        const result = (delData && delData.result) || delData || {};
-        return res.status(200).json({ result: { success: result.success !== false, ...result } });
-      } catch (err) {
-        return res.status(502).json({ error: "Delete failed. Try again." });
-      }
+    if (updateAction === "validateStudent") return res.status(503).json({ error: "Student lookup verification unavailable." });
+    if (!["forgotPassword", "verifyOTP", "resetPassword"].includes(updateAction)) {
+      return res.status(403).json({ error: "Unreviewed action denied." });
     }
-
     if (!process.env.APPS_SCRIPT_URL) {
-      // Cloud Run runs without Apps Script: the FastAPI backend is the source
-      // of truth. A study log must still be saved rather than failing the
-      // student with a misconfiguration error.
-      if (updateAction === "addStudyLog") {
-        await mirrorStudyLogToMongo(studyLogPayload(req), {});
-        return res.status(200).json({ result: { success: true } });
-      }
+      // Study Log writes have already returned through the authoritative
+      // acknowledgement handler above; only other legacy actions reach here.
       return res.status(503).json({
         error: `This action is not available right now (${updateAction || "unknown"}).`
       });
@@ -587,20 +543,12 @@ const updateAction = req.body?.action || req.query?.action;
     try {
       ({ response, rawText } = await postAppsScript(process.env.APPS_SCRIPT_URL, body));
     } catch (fetchErr) {
-      if (updateAction === "addStudyLog") {
-        await mirrorStudyLogToMongo(studyLogPayload(req), {});
-        return res.status(200).json({ result: { success: true, message: "Saved on Mongo. Sheet retry pending." } });
-      }
       return res.status(502).json({
         error: "Google server busy hai. 15 second wait karke ek baar phir try karo."
       });
     }
 
     if (!response.ok) {
-      if (updateAction === "addStudyLog") {
-        await mirrorStudyLogToMongo(studyLogPayload(req), {});
-        return res.status(200).json({ result: { success: true, message: "Saved on Mongo. Sheet retry pending." } });
-      }
       return res.status(502).json({
         error: "Google server busy hai. 15 second wait karke ek baar phir try karo."
       });
@@ -610,17 +558,9 @@ const updateAction = req.body?.action || req.query?.action;
     try {
       data = JSON.parse(rawText);
     } catch (parseErr) {
-      if (updateAction === "addStudyLog") {
-        await mirrorStudyLogToMongo(studyLogPayload(req), {});
-        return res.status(200).json({ result: { success: true } });
-      }
       return res.status(502).json({
         error: "Apps Script returned a non-JSON response."
       });
-    }
-
-    if (updateAction === "addStudyLog") {
-      await mirrorStudyLogToMongo(studyLogPayload(req), data && data.result);
     }
 
     if (updateAction === "validateLogin") {

@@ -5,12 +5,17 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "test": "node --test test/*.test.mjs && node scripts/test-web.js"
+    "test": "node --test test/*.test.mjs && node scripts/test-web.js",
+    "test:practice-browser": "playwright test --config=playwright.practice.config.mjs"
   },
   "engines": {
     "node": ">=20"
   },
   "optionalDependencies": {
     "googleapis": "^128.0.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "jsdom": "^26.1.0"
   }
 }

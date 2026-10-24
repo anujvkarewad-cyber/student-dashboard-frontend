@@ -19,6 +19,13 @@ type Planned = StudyLogPayload['studiedAsPlanned'] | '';
 
 type PickedProof = { uri: string; name: string; mimeType: string; size: number };
 
+// Auth rejection unmounts navigation. Retain only this user's authored draft
+// (and the existing local proof URI) in process memory, never a shared dashboard cache.
+type LocalDraft = { date: string; hours: string; planned: Planned; reason: string;
+  otherReason: string; subjects: string[]; targetCompleted: string;
+  tomorrowTarget: string; mentorSupport: string; proof: PickedProof | null };
+const ownDrafts = new Map<string, LocalDraft>();
+
 const subjectsList = ['Accounts', 'Law', 'Taxation', 'Costing', 'Audit', 'FM', 'SM', 'Revision', 'Mock Test', 'Question Bank Practice'];
 const reasons = ['Health Issue', 'Family Function', 'Office / Job', 'College', 'Travelling', 'Power / Internet Issue', 'Personal Work', 'Low Motivation', 'Other'];
 const supportOptions = ['No', 'Subject Doubt', 'Time Management', 'Motivation', 'Study Planning', 'Personal Discussion'];
@@ -54,20 +61,28 @@ const ChipList = ({ values, selected, toggle }: { values: string[]; selected: st
 );
 
 export const AddStudyLogScreen = ({ navigation }: Props) => {
-  const { backendMode } = useAuth();
+  const { backendMode, student } = useAuth();
+  const draftOwner = student?.studentId;
+  const previousDraft = draftOwner ? ownDrafts.get(draftOwner) : undefined;
   const { submitStudyLog } = useData();
-  const [date, setDate] = useState(localDateKey());
-  const [hours, setHours] = useState('');
-  const [planned, setPlanned] = useState<Planned>('');
-  const [reason, setReason] = useState('');
-  const [otherReason, setOtherReason] = useState('');
-  const [subjects, setSubjects] = useState<string[]>([]);
-  const [targetCompleted, setTargetCompleted] = useState('');
-  const [tomorrowTarget, setTomorrowTarget] = useState('');
-  const [mentorSupport, setMentorSupport] = useState('');
-  const [proof, setProof] = useState<PickedProof | null>(null);
+  const [date, setDate] = useState(previousDraft?.date || localDateKey());
+  const [hours, setHours] = useState(previousDraft?.hours || '');
+  const [planned, setPlanned] = useState<Planned>(previousDraft?.planned || '');
+  const [reason, setReason] = useState(previousDraft?.reason || '');
+  const [otherReason, setOtherReason] = useState(previousDraft?.otherReason || '');
+  const [subjects, setSubjects] = useState<string[]>(previousDraft?.subjects || []);
+  const [targetCompleted, setTargetCompleted] = useState(previousDraft?.targetCompleted || '');
+  const [tomorrowTarget, setTomorrowTarget] = useState(previousDraft?.tomorrowTarget || '');
+  const [mentorSupport, setMentorSupport] = useState(previousDraft?.mentorSupport || '');
+  const [proof, setProof] = useState<PickedProof | null>(previousDraft?.proof || null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [draftAcknowledged, setDraftAcknowledged] = useState(false);
+  if (draftOwner) {
+    if (draftAcknowledged) ownDrafts.delete(draftOwner);
+    else ownDrafts.set(draftOwner, { date, hours, planned, reason, otherReason,
+      subjects, targetCompleted, tomorrowTarget, mentorSupport, proof });
+  }
 
   const chooseProof = async () => {
     setError('');
@@ -145,6 +160,7 @@ export const AddStudyLogScreen = ({ navigation }: Props) => {
       let proofUrl = '';
       if (proof && planned !== 'No') {
         const saved = await getSavedSession();
+      if (draftOwner && saved?.studentId !== draftOwner) throw new Error('Student session changed. Keep this draft and sign in again.');
         if (!saved) throw new Error('Your saved session expired. Sign in again before uploading proof.');
         const uploaded = await api.uploadProof({
           studentId: saved.studentId,
@@ -166,6 +182,8 @@ export const AddStudyLogScreen = ({ navigation }: Props) => {
         mentorSupport,
         proofUrl,
       });
+      setDraftAcknowledged(true);
+      if (draftOwner) ownDrafts.delete(draftOwner);
       Alert.alert('Study log saved', 'Your progress has been added successfully.', [{ text: 'Done', onPress: () => navigation.goBack() }]);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not save the study log.');

@@ -1,0 +1,2 @@
+import { defineConfig } from '@playwright/test';
+export default defineConfig({ testDir: './test-browser', testMatch: 'workbook-receipt.spec.mjs', workers: 1, timeout: 60000, reporter: 'list', outputDir: '/home/user/workbook-receipts/browser-artifacts', use: { headless: true, viewport: { width: 1000, height: 900 }, launchOptions: { args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] } } });

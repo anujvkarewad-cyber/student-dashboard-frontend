@@ -27,7 +27,7 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { handleAndroidDownload, streamAndroidApk } from "./lib/android-download.js";
-import { handleProofUpload } from "./lib/proof-upload.js";
+import { handleProofUpload, handlePrivateProofRead, handlePrivateProofCapabilities } from "./lib/proof-upload.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -49,6 +49,8 @@ if (!MENTOR_API_URL) {
 const MIME = {
   ".html": "text/html; charset=utf-8",
   ".js": "application/javascript; charset=utf-8",
+  ".mjs": "application/javascript; charset=utf-8",
+  ".wasm": "application/wasm",
   ".mjs": "application/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".json": "application/json; charset=utf-8",
@@ -352,13 +354,13 @@ async function handleMentor(req, res, url) {
   for (const [key, value] of Object.entries(req.headers)) {
     if (!HOP_BY_HOP.has(key.toLowerCase())) headers[key] = value;
   }
-  const serviceToken = String(process.env.MENTOR_SERVICE_TOKEN || "").trim();
-  if (serviceToken) headers.authorization = `Bearer ${serviceToken}`;
+  // A gateway/provider credential is not a mentor login. Preserve only the
+  // caller's Authorization; absent caller proof must stay absent.
 
   const hasBody = req.method !== "GET" && req.method !== "HEAD";
   let body;
   if (hasBody) {
-    const raw = await readBody(req, 12 * 1024 * 1024);
+    const raw = await readBody(req, (suffix.startsWith("/api/practice/") ? 3 : 12) * 1024 * 1024);
     body = raw.length ? raw : undefined;
   }
 
@@ -414,8 +416,8 @@ async function handleProofUploadRoute(req, res) {
       sendJson(res, 413, { error: "Proof must be 10 MB or smaller" });
       return;
     }
-    console.error("[proof] upload failed:", err && err.message);
-    sendJson(res, 502, { error: "Proof upload failed. Please try again." });
+    console.error("[proof] upload failed.");
+    sendJson(res, 502, { error: "Proof upload was not confirmed. Keep your draft and check before retrying." });
   }
 }
 
@@ -479,7 +481,7 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(204, {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, POST, PUT, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, X-Student-Id, X-Session-Password, X-File-Name",
+        "Access-Control-Allow-Headers": "Content-Type, X-Student-Id, X-Session-Password, X-File-Name, X-Proof-Protocol, X-Practice-Token",
         "Access-Control-Max-Age": "86400",
       });
       res.end();
@@ -530,6 +532,19 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if(pathname === '/api/proof-capabilities') {
+      try { const result=await handlePrivateProofCapabilities({method:req.method,headers:req.headers,mentorApiUrl:MENTOR_API_URL,env:process.env});sendJson(res,result.status,result.body); }
+      catch {sendJson(res,503,{error:'Verified private proof storage is unavailable.'});}
+      return;
+    }
+    if (pathname === "/api/proof-file") {
+      try {
+        const result = await handlePrivateProofRead({method:req.method,headers:req.headers,fileId:url.searchParams.getAll('fileId').length===1?url.searchParams.get('fileId'):'',mentorApiUrl:MENTOR_API_URL,env:process.env});
+        if (result.bytes) { res.writeHead(result.status,{...result.headers,"Access-Control-Allow-Origin":"*"}); res.end(Buffer.from(result.bytes)); }
+        else sendJson(res,result.status,result.body);
+      } catch { sendJson(res,502,{error:'Private proof could not be retrieved.'}); }
+      return;
+    }
     if (pathname === "/api/proof-upload") {
       await handleProofUploadRoute(req, res);
       return;

@@ -9,3 +9,7 @@ test_reports/
 gha-creds-*.json
 *.jks
 *.keystore
+
+# Regenerable Python verification caches are never candidate source.
+__pycache__/
+*.pyc

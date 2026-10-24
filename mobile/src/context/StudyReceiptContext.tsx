@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import React, { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { evaluateAnswer } from '../services/answerEvaluator';
+import React, { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { evaluatePrivateReceipt } from '../services/privateReceipt';
 import { useAuth } from './AuthContext';
 import type { FocusSession } from './FocusTimerContext';
 
@@ -38,6 +38,7 @@ export type StudyReceipt = {
   source: 'self-recall';
   createdAt: number;
   nextReviewAt: number;
+  cloudSummaryShared?: boolean;
   review?: RetentionReview;
   /** Real mark from the answer evaluator. Absent on receipts made before grading. */
   recallScore?: number;
@@ -51,7 +52,8 @@ type StudyReceiptsValue = {
   receipts: StudyReceipt[];
   dueReceipts: StudyReceipt[];
   buildQuestions: (session: FocusSession) => RecallQuestion[];
-  createReceipt: (session: FocusSession, answers: RecallAnswer[], confidence: RecallConfidence) => Promise<StudyReceipt>;
+  createReceipt: (session: FocusSession, answers: RecallAnswer[], confidence: RecallConfidence, requestAi?: boolean) => Promise<StudyReceipt>;
+  markSummaryShared: (sessionId: string) => Promise<void>;
   completeReview: (receiptId: string, response: string, confidence: RecallConfidence) => Promise<StudyReceipt | null>;
   receiptForSession: (sessionId: string) => StudyReceipt | undefined;
 };
@@ -169,12 +171,15 @@ const reviewScore = (response: string, confidence: RecallConfidence) => {
 
 export const StudyReceiptsProvider = ({ children }: PropsWithChildren) => {
   const { student } = useAuth();
+  const currentOwner = useRef(student?.studentId);
+  currentOwner.current = student?.studentId;
   const [receipts, setReceipts] = useState<StudyReceipt[]>([]);
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
     let mounted = true;
     setHydrated(false);
+    setReceipts([]);
     if (!student) {
       setReceipts([]);
       return;
@@ -193,7 +198,7 @@ export const StudyReceiptsProvider = ({ children }: PropsWithChildren) => {
     if (student) await AsyncStorage.setItem(storageKey(student.studentId), JSON.stringify(next.slice(0, 250)));
   }, [student]);
 
-  const createReceipt = useCallback(async (session: FocusSession, answers: RecallAnswer[], confidence: RecallConfidence) => {
+  const createReceipt = useCallback(async (session: FocusSession, answers: RecallAnswer[], confidence: RecallConfidence, requestAi = false) => {
     const now = Date.now();
     const existing = receipts.find((item) => item.sessionId === session.id);
     if (existing) return existing;
@@ -216,14 +221,15 @@ export const StudyReceiptsProvider = ({ children }: PropsWithChildren) => {
     await persist([receipt, ...receipts]);
 
     // The receipt is saved first so the student never waits on the network.
-    // Grading then runs in the background and updates the stored receipt,
-    // turning a self-reported effort score into a real mark.
-    if (student) {
-      const recallText = [...answers]
-        .sort((a, b) => b.response.length - a.response.length)[0]?.response || '';
+    // Optional private feedback is transient server processing, never a shared
+    // score/revision record. Default is local-only, without network grading.
+    if (student && requestAi) {
+      const owner = student.studentId;
+      const selected = [...answers].sort((a, b) => b.response.length - a.response.length)[0];
+      const recallText = selected?.response || '';
       if (recallText.trim().length >= 40) {
-        const question = receipt.questions[0]?.prompt || `Recall everything about ${receipt.target}.`;
-        evaluateAnswer({
+        const question = selected?.prompt || `Recall everything about ${receipt.target}.`;
+        evaluatePrivateReceipt({
           studentId: student.studentId,
           question,
           studentAnswer: recallText,
@@ -231,8 +237,9 @@ export const StudyReceiptsProvider = ({ children }: PropsWithChildren) => {
           concept: receipt.target,
         })
           .then((outcome) => {
-            if (!outcome.ok) return;
+            if (!outcome.ok || currentOwner.current !== owner) return;
             setReceipts((current) => {
+              if (currentOwner.current !== owner) return current;
               const next = current.map((item) =>
                 item.id === receipt.id
                   ? {
@@ -244,7 +251,7 @@ export const StudyReceiptsProvider = ({ children }: PropsWithChildren) => {
                     }
                   : item,
               );
-              persist(next);
+              void AsyncStorage.setItem(storageKey(owner), JSON.stringify(next.slice(0, 250))).catch(() => undefined);
               return next;
             });
           })
@@ -254,6 +261,19 @@ export const StudyReceiptsProvider = ({ children }: PropsWithChildren) => {
 
     return receipt;
   }, [persist, receipts, student]);
+
+  const markSummaryShared = useCallback(async (sessionId: string) => {
+    const sid = student?.studentId;
+    if (!sid || currentOwner.current !== sid) return;
+    setReceipts(current => {
+      if (currentOwner.current !== sid || current.find(r => r.sessionId === sessionId)?.cloudSummaryShared) return current;
+      const next = current.map(r => r.sessionId === sessionId ? { ...r, cloudSummaryShared: true } : r);
+      // Local scheduling hint only; the summary itself is already durable on
+      // the backend. A storage error never deletes the private receipt.
+      void AsyncStorage.setItem(storageKey(sid), JSON.stringify(next.slice(0, 250))).catch(() => undefined);
+      return next;
+    });
+  }, [student?.studentId]);
 
   const completeReview = useCallback(async (receiptId: string, response: string, confidence: RecallConfidence) => {
     const current = receipts.find((item) => item.id === receiptId);
@@ -274,12 +294,13 @@ export const StudyReceiptsProvider = ({ children }: PropsWithChildren) => {
   const value = useMemo<StudyReceiptsValue>(() => ({
     hydrated,
     receipts,
-    dueReceipts: receipts.filter((item) => !item.review && item.nextReviewAt <= Date.now()),
+    dueReceipts: receipts.filter((item) => !item.cloudSummaryShared && !item.review && item.nextReviewAt <= Date.now()),
     buildQuestions: questionSet,
     createReceipt,
     completeReview,
+    markSummaryShared,
     receiptForSession: (sessionId) => receipts.find((item) => item.sessionId === sessionId),
-  }), [completeReview, createReceipt, hydrated, receipts]);
+  }), [markSummaryShared, completeReview, createReceipt, hydrated, receipts]);
 
   return <StudyReceiptsContext.Provider value={value}>{children}</StudyReceiptsContext.Provider>;
 };

@@ -1,12 +1,14 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import React, { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { EnrichedMcqQuestion } from '../data/mcqMetadata';
 import { CaGroup, subjectGroup } from '../utils/caGroups';
-import { restoreMcqAttempts, syncCompletedMcqAttempts } from '../services/mcqCloudSync';
+import { restoreMcqAttempts, syncCompletedMcqAttempts, fetchOfficialDailySet } from '../services/mcqCloudSync';
 import { useAuth } from './AuthContext';
 import { useMcqBank } from './McqBankContext';
 
 export type DailyMcqAttempt = {
+  officialSetId?: string;
+  officialQuestions?: EnrichedMcqQuestion[];
   bankRevision?: string;
   date: string;
   group: CaGroup;
@@ -26,6 +28,8 @@ export type DailyMcqAttempt = {
 
 type DailyMcqValue = {
   hydrated: boolean;
+  syncStatus: "local" | "pending" | "synced" | "error";
+  retrySync: () => Promise<void>;
   dateKey: string;
   todayAttempts: DailyMcqAttempt[];
   history: DailyMcqAttempt[];
@@ -40,12 +44,7 @@ type DailyMcqValue = {
 const DailyMcqContext = createContext<DailyMcqValue | undefined>(undefined);
 const storageKey = (studentId: string) => `ump_daily_mcq_${studentId}`;
 
-const localDateKey = (date = new Date()) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
+const localDateKey = (date = new Date()) => new Date(date.getTime() + 330 * 60000).toISOString().slice(0, 10);
 
 const hash = (value: string) => {
   let result = 2166136261;
@@ -88,7 +87,12 @@ const mergeDailyAttempts = (local: DailyMcqAttempt[], remote: DailyMcqAttempt[])
     const current = merged.get(key);
     const timestamp = Number(attempt.completedAt || attempt.startedAt || 0);
     const currentTimestamp = Number(current?.completedAt || current?.startedAt || 0);
-    if (!current || timestamp >= currentTimestamp) merged.set(key, attempt);
+    if (!current || timestamp >= currentTimestamp) {
+      const sameSet = current?.officialSetId && current.officialSetId === attempt.officialSetId
+        && JSON.stringify(current.questionIds) === JSON.stringify(attempt.questionIds);
+      merged.set(key, sameSet && !attempt.officialQuestions?.length
+        ? { ...attempt, officialQuestions: current.officialQuestions } : attempt);
+    }
   });
   return [...merged.values()].sort((a, b) => Number(b.completedAt || b.startedAt) - Number(a.completedAt || a.startedAt)).slice(0, 180);
 };
@@ -107,9 +111,15 @@ const calculateStreak = (attempts: DailyMcqAttempt[], group: CaGroup) => {
 
 export const DailyMcqProvider = ({ children }: PropsWithChildren) => {
   const { student, backendMode } = useAuth();
-  const { hydrated: bankHydrated, revision: bankRevision, questions: mcqBank } = useMcqBank();
+  const activeOwner = useRef(student?.studentId);
+  activeOwner.current = student?.studentId;
+  const { revision: bankRevision, questions: mcqBank } = useMcqBank();
   const [history, setHistory] = useState<DailyMcqAttempt[]>([]);
   const [hydrated, setHydrated] = useState(false);
+  const historyRef = useRef<DailyMcqAttempt[]>([]);
+  historyRef.current = history;
+  const [syncStatus, setSyncStatus] = useState<"local" | "pending" | "synced" | "error">("local");
+  useEffect(() => { setSyncStatus("local"); }, [student?.studentId]);
   const dateKey = localDateKey();
   const todayAttempts = history.filter((attempt) => attempt.date === dateKey && (attempt.group === 'Group I' || attempt.group === 'Group II'));
 
@@ -121,36 +131,37 @@ export const DailyMcqProvider = ({ children }: PropsWithChildren) => {
       setHydrated(true);
       return;
     }
-    if (!bankHydrated) return;
     AsyncStorage.getItem(storageKey(student.studentId)).then(async (saved) => {
       if (!mounted) return;
       let localAttempts: DailyMcqAttempt[] = [];
       try {
         const parsed = saved ? JSON.parse(saved) as DailyMcqAttempt[] : [];
-        // Preserve prior completed scores for streaks, but never resume or review
-        // an attempt created against the superseded generic-topic question bank.
-        const migrated = parsed.filter((attempt) => attempt.bankRevision === bankRevision || Boolean(attempt.completedAt && attempt.date < localDateKey()));
-        if (migrated.length !== parsed.length) await AsyncStorage.setItem(storageKey(student.studentId), JSON.stringify(migrated));
-        if (!mounted) return;
-        localAttempts = migrated;
-        setHistory(migrated);
+        // Loading a new bank must never delete saved attempts or wait for 7MB.
+        localAttempts = Array.isArray(parsed) ? parsed : [];
+        historyRef.current = localAttempts;
+        setHistory(localAttempts);
       } catch { if (mounted) setHistory([]); }
       if (mounted) setHydrated(true);
 
       if (backendMode !== 'mock') {
         restoreMcqAttempts().then(async ({ daily }) => {
           if (!mounted) return;
-          const merged = mergeDailyAttempts(localAttempts, daily as DailyMcqAttempt[]);
+          const merged = mergeDailyAttempts(historyRef.current, daily as DailyMcqAttempt[]);
+          historyRef.current = merged;
           setHistory(merged);
           await AsyncStorage.setItem(storageKey(student.studentId), JSON.stringify(merged));
-          await syncCompletedMcqAttempts(merged, []);
-        }).catch(() => undefined);
+          if (!merged.some(attempt => attempt.completedAt)) { if (mounted) setSyncStatus('local'); return; }
+          if (mounted) setSyncStatus('pending');
+          await syncCompletedMcqAttempts(merged, [], student.studentId);
+          if (mounted) setSyncStatus('synced');
+        }).catch(() => { if (mounted) setSyncStatus('error'); });
       }
-    });
+    }).catch(() => { if (mounted) { setHydrated(true); setSyncStatus('error'); } });
     return () => { mounted = false; };
-  }, [backendMode, bankHydrated, bankRevision, student]);
+  }, [backendMode, student?.studentId]);
 
   const persist = useCallback(async (next: DailyMcqAttempt[]) => {
+    historyRef.current = next;
     setHistory(next);
     if (student) await AsyncStorage.setItem(storageKey(student.studentId), JSON.stringify(next.slice(0, 180)));
   }, [student]);
@@ -160,27 +171,31 @@ export const DailyMcqProvider = ({ children }: PropsWithChildren) => {
   const questionsForGroup = useCallback((group: CaGroup) => {
     const attempt = attemptForGroup(group);
     const ids = attempt?.questionIds || dailyQuestionIds(mcqBank, dateKey, student?.studentId || 'student', group);
-    return ids.map((id) => mcqBank.find((question) => question.id === id)).filter((question): question is EnrichedMcqQuestion => Boolean(question));
+    return ids.map((id) => (attempt?.officialQuestions || mcqBank).find((question) => question.id === id)).filter((question): question is EnrichedMcqQuestion => Boolean(question));
   }, [attemptForGroup, dateKey, mcqBank, student?.studentId]);
 
   const startDaily = useCallback(async (group: CaGroup) => {
     if (!student) throw new Error('Please sign in again.');
-    if (!mcqBank.length) throw new Error('No mentor-published MCQs are available yet.');
+    if (backendMode === 'mock' && !mcqBank.length) throw new Error('No mentor-published MCQs are available yet.');
     const existing = history.find((attempt) => attempt.date === dateKey && attempt.group === group);
     if (existing) return existing;
     const runningOtherGroup = history.find((attempt) => attempt.date === dateKey && attempt.group !== group && !attempt.completedAt);
     if (runningOtherGroup) throw new Error(`Finish the ${runningOtherGroup.group} attempt before starting ${group}.`);
+    const official = backendMode === 'mock' ? null : await fetchOfficialDailySet(group, student.studentId);
+    if (activeOwner.current !== student.studentId) throw new Error('Account changed; local attempts are retained.');
+    if (official && (official.date !== dateKey || official.group !== group || official.questionIds.length !== 10)) throw new Error('Daily assignment changed; refresh the app and check the device clock.');
     const attempt: DailyMcqAttempt = {
-      bankRevision,
+      ...(official ? { officialSetId: official.officialSetId, officialQuestions: official.questions } : {}),
+      bankRevision: official?.bankRevision || bankRevision,
       date: dateKey,
       group,
-      questionIds: dailyQuestionIds(mcqBank, dateKey, student.studentId, group),
+      questionIds: official?.questionIds || dailyQuestionIds(mcqBank, dateKey, student.studentId, group),
       answers: {},
       startedAt: Date.now(),
     };
     await persist([attempt, ...history]);
     return attempt;
-  }, [bankRevision, dateKey, history, mcqBank, persist, student]);
+  }, [backendMode, bankRevision, dateKey, history, mcqBank, persist, student]);
 
   const answerQuestion = useCallback(async (group: CaGroup, questionId: string, option: number) => {
     const current = history.find((attempt) => attempt.date === dateKey && attempt.group === group);
@@ -192,7 +207,7 @@ export const DailyMcqProvider = ({ children }: PropsWithChildren) => {
   const submitDaily = useCallback(async (group: CaGroup) => {
     const current = history.find((attempt) => attempt.date === dateKey && attempt.group === group);
     if (!current || current.completedAt) return current || null;
-    const questions = current.questionIds.map((id) => mcqBank.find((question) => question.id === id)).filter((question): question is EnrichedMcqQuestion => Boolean(question));
+    const questions = current.questionIds.map((id) => (current.officialQuestions || mcqBank).find((question) => question.id === id)).filter((question): question is EnrichedMcqQuestion => Boolean(question));
     const score = questions.reduce((total, question) => total + (current.answers[question.id] === question.answer ? 1 : 0), 0);
     const completedAt = Date.now();
     const updated: DailyMcqAttempt = {
@@ -216,11 +231,27 @@ export const DailyMcqProvider = ({ children }: PropsWithChildren) => {
       })),
     };
     await persist(history.map((attempt) => attempt.date === dateKey && attempt.group === group ? updated : attempt));
-    if (backendMode !== 'mock') syncCompletedMcqAttempts([updated], []).catch(() => undefined);
+    if (backendMode !== 'mock') {
+      const owner = student?.studentId; setSyncStatus('pending');
+      syncCompletedMcqAttempts([updated], [], owner).then(() => {
+        if (activeOwner.current === owner) setSyncStatus('synced');
+      }).catch(() => { if (activeOwner.current === owner) setSyncStatus('error'); });
+    }
     return updated;
-  }, [backendMode, dateKey, history, mcqBank, persist]);
+  }, [backendMode, dateKey, history, mcqBank, persist, student]);
+
+  const retrySync = useCallback(async () => {
+    const owner = student?.studentId;
+    if (!owner || backendMode === 'mock') return;
+    setSyncStatus('pending');
+    try {
+      await syncCompletedMcqAttempts(history, [], owner);
+      if (activeOwner.current === owner) setSyncStatus('synced');
+    } catch { if (activeOwner.current === owner) setSyncStatus('error'); }
+  }, [backendMode, history, student?.studentId]);
 
   const value = useMemo<DailyMcqValue>(() => ({
+    syncStatus, retrySync,
     hydrated,
     dateKey,
     todayAttempts,
@@ -231,7 +262,7 @@ export const DailyMcqProvider = ({ children }: PropsWithChildren) => {
     startDaily,
     answerQuestion,
     submitDaily,
-  }), [answerQuestion, attemptForGroup, dateKey, history, hydrated, questionsForGroup, startDaily, submitDaily, todayAttempts]);
+  }), [syncStatus, retrySync, answerQuestion, attemptForGroup, dateKey, history, hydrated, questionsForGroup, startDaily, submitDaily, todayAttempts]);
 
   return <DailyMcqContext.Provider value={value}>{children}</DailyMcqContext.Provider>;
 };

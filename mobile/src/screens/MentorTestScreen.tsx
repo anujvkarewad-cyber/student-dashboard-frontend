@@ -30,19 +30,13 @@ import {
   uploadAnswerSheet,
   type PaperMeta,
 } from '../services/mentorTests';
+import { drivePreviewUrl, testDocumentPreviewUrl } from '../services/testDocumentLinks';
 import { PDF_VIEWER_HTML } from '../services/pdfViewerBundle';
 import { colors, radius, spacing } from '../theme';
 
 // react-native-webview has no web implementation - load it lazily like NotePreviewScreen.
 const NativeWebView: any =
   Platform.OS === 'web' ? null : (require('react-native-webview').WebView as any);
-
-/** Same helper as NotePreviewScreen - notes aur papers dono Drive files hain. */
-const getDriveFileId = (url?: string | null) => {
-  if (!url) return '';
-  const match = url.match(/\/d\/([a-zA-Z0-9_-]+)/) || url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
-  return match?.[1] || '';
-};
 
 /** Proven in NotePreviewScreen: hide Drive's download/print/export controls. */
 const hideDownloadControls = `
@@ -90,6 +84,9 @@ export const MentorTestScreen = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  const [viewerError, setViewerError] = useState('');
+  const [viewerAttempt, setViewerAttempt] = useState(0);
+
   const [answerUrl, setAnswerUrl] = useState('');
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
@@ -111,12 +108,22 @@ export const MentorTestScreen = () => {
 
   useEffect(() => {
     let alive = true;
+    // Never carry one test's unlocked/evaluated state into another test.
+    setLoading(true);
+    setAnswerUrl('');
+    setEvaluated(null);
+    setViewer(null);
+    setTextDoc(null);
+    setMarksInput('');
+    setRemarks('');
+    setAnswers({});
     (async () => {
       try {
         const m = await getPaperMeta(testId);
         if (!alive) return;
         setMeta(m);
-        setError('');
+        setEvaluated(m.previousEvaluation || null);
+        setError(m.previousEvaluationUnavailable ? 'Previous submission status could not be checked. Reopen this test to retry; you do not need to upload again just to check its status.' : '');
       } catch (e) {
         if (alive) setError(e instanceof Error ? e.message : 'Could not load this test.');
       } finally {
@@ -135,9 +142,11 @@ export const MentorTestScreen = () => {
   const openProtected = async (url: string | null, label: string) => {
     if (!url) return;
     setError('');
+    setViewerError('');
+    try { testDocumentPreviewUrl(url); } catch { setError('Invalid document link. Please ask your mentor to check this attachment.'); return; }
     setZoomPercent(100);
     viewerReady.current = false;
-    const driveId = getDriveFileId(url);
+    const driveId = drivePreviewUrl(url);
     // Drive docs render through the /preview embed on BOTH platforms:
     // native -> WebView, web (sandbox preview) -> inline iframe. No popups,
     // because the sandboxed preview iframe blocks window.open().
@@ -154,7 +163,7 @@ export const MentorTestScreen = () => {
   };
 
   useEffect(() => {
-    if (viewer && getDriveFileId(viewer.url) && viewerRef.current) {
+    if (viewer && drivePreviewUrl(viewer.url) && viewerRef.current) {
       viewerRef.current.injectJavaScript(zoomScript(zoomPercent));
     }
   }, [zoomPercent, viewer]);
@@ -287,7 +296,9 @@ export const MentorTestScreen = () => {
               <Text style={styles.evalTitle}>✅ Test Evaluated</Text>
               <Text style={styles.evalScore}>{evaluated.score} / {evaluated.total ?? '?'}</Text>
               <Text style={styles.evalSub}>Your self-evaluation has been recorded and sent to your mentor.</Text>
+              {meta?.paperUrl ? <PrimaryButton label="📄 Open Question Paper" icon="document-text-outline" variant="secondary" onPress={() => void openProtected(meta.paperUrl, 'Question Paper')} /> : null}
               {hasAnswerDoc ? <PrimaryButton label="📝 Open Answer Sheet" icon="clipboard-outline" variant="secondary" onPress={openAnswerDoc} /> : null}
+              {hasMarkingDoc ? <PrimaryButton label="📊 Marking Scheme" icon="list-outline" variant="secondary" onPress={openMarkingDoc} /> : null}
             </Card>
           ) : isMcq ? (
             <>
@@ -423,7 +434,7 @@ export const MentorTestScreen = () => {
         <SafeAreaView style={styles.viewerPage} edges={['top', 'bottom']}>
           <View style={styles.viewerBar}>
             <Text style={styles.viewerTitle} numberOfLines={1}>{viewer?.label || 'Document'}</Text>
-            {getDriveFileId(viewer?.url) ? (
+            {(viewer ? drivePreviewUrl(viewer.url) : null) ? (
               <View style={styles.zoomBox}>
                 <Pressable style={styles.zoomBtn} onPress={() => setZoomPercent((z) => Math.max(60, z - 20))}><Ionicons name="remove" size={18} color="#fff" /></Pressable>
                 <Text style={styles.zoomLabel}>{zoomPercent}%</Text>
@@ -434,11 +445,26 @@ export const MentorTestScreen = () => {
               <Ionicons name="close" size={22} color="#fff" />
             </Pressable>
           </View>
+          {viewerError ? <View accessibilityRole="alert" style={styles.card}>
+            <Text style={styles.errorText}>{viewerError}</Text>
+            <PrimaryButton label="Retry document" onPress={() => { setViewerError(''); viewerReady.current = false; setViewerAttempt(n => n + 1); }} />
+          </View> : null}
           {viewer && NativeWebView ? (
-            getDriveFileId(viewer.url) ? (
+            drivePreviewUrl(viewer.url) ? (
               <NativeWebView
                 ref={viewerRef}
-                source={{ uri: `https://drive.google.com/file/d/${getDriveFileId(viewer.url)}/preview` }}
+                key={`${viewer.url}:${viewerAttempt}`}
+                source={{ uri: drivePreviewUrl(viewer.url)! }}
+                onError={() => setViewerError('The document could not load. Check your connection and retry. If it still fails, tell your mentor which test and document.')}
+                onHttpError={(event: any) => {
+                  // An unrelated Drive font/image error must not label the PDF
+                  // itself inaccessible. Handle the main preview request only.
+                  const failedUrl = event.nativeEvent?.url;
+                  const preview = drivePreviewUrl(viewer.url)!;
+                  if (!failedUrl || failedUrl.split('?')[0] === preview.split('?')[0]) {
+                    setViewerError('Document access failed. Retry once; if it still fails, ask your mentor to check the file access.');
+                  }
+                }}
                 javaScriptEnabled
                 domStorageEnabled
                 injectedJavaScript={hideDownloadControls}
@@ -447,14 +473,16 @@ export const MentorTestScreen = () => {
             ) : (
               <NativeWebView
                 ref={viewerRef}
+                key={`${viewer.url}:${viewerAttempt}`}
                 source={{ html: PDF_VIEWER_HTML }}
+                onError={() => setViewerError('The document viewer could not load. Please retry.')}
                 originWhitelist={['*']}
                 javaScriptEnabled
                 scrollEnabled
                 onLoadEnd={() => void feedViewer()}
                 onMessage={(e: any) => {
                   const d = e.nativeEvent.data;
-                  if (typeof d === 'string' && d.startsWith('error:')) setError(d.slice(6));
+                  if (typeof d === 'string' && d.startsWith('error:')) setViewerError('This document could not be displayed. Retry, or ask your mentor to check the file.');
                 }}
                 style={styles.viewerWeb}
               />
@@ -478,9 +506,7 @@ export const MentorTestScreen = () => {
           </View>
           {React.createElement('iframe', {
             key: viewer.url,
-            src: getDriveFileId(viewer.url)
-              ? `https://drive.google.com/file/d/${getDriveFileId(viewer.url)}/preview`
-              : viewer.url,
+            src: testDocumentPreviewUrl(viewer.url),
             title: viewer.label,
             style: { flex: 1, width: '100%', border: 'none', backgroundColor: '#525659' },
           })}

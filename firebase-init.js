@@ -38,13 +38,14 @@ window.UMP_PUSH = {
       const reg = await navigator.serviceWorker.ready;
       return reg;
     } catch (e) {
-      console.warn("[UMP_PUSH] serviceWorker.ready failed", e);
+      console.warn("[UMP_PUSH] Service worker unavailable.");
       return null;
     }
   },
 
   async requestAndSaveToken(studentId, opts = {}) {
-    const { force = false } = opts;
+    const epoch = window.UMP_PRIVATE_EPOCH?.();
+    const current = () => epoch === window.UMP_PRIVATE_EPOCH?.() && (() => { try { return JSON.parse(localStorage.getItem('ump_student') || 'null')?.studentId === studentId; } catch { return false; } })();
     try {
       if (!studentId) {
         console.warn("[UMP_PUSH] studentId missing");
@@ -95,30 +96,30 @@ window.UMP_PUSH = {
         return null;
       }
 
-      console.log("[UMP_PUSH] Token obtained:", token.slice(0, 24) + "...");
+      console.log("[UMP_PUSH] Notification registration available.");
 
       const storageKey = "ump_fcm_token_" + studentId;
-      const alreadySaved = localStorage.getItem(storageKey);
 
       // Save if force or token changed
-      if (force || alreadySaved !== token) {
+      if (!current()) return null;
+      {
         try {
           const res = await window.UMP_API.saveDeviceToken(studentId, token);
-          console.log("[UMP_PUSH] Token saved to backend:", res);
+          if (res?.success !== true) throw new Error("Notification registration not confirmed");
+          if (!current()) return null;
           localStorage.setItem(storageKey, token);
           localStorage.setItem("ump_fcm_token_last_saved", String(Date.now()));
         } catch (saveErr) {
-          console.error("[UMP_PUSH] Failed to save token to backend:", saveErr);
-          // Still keep token locally so we don't keep re-trying every second
-          localStorage.setItem(storageKey, token);
+          console.error("[UMP_PUSH] Notification registration not confirmed.");
+          // The API remembers possible bindings for logout cleanup; never
+          // report a failed registration as enabled or restore a stale cache.
+          return null;
         }
-      } else {
-        console.log("[UMP_PUSH] Token unchanged, skipping save");
       }
 
       return token;
     } catch (err) {
-      console.error("[UMP_PUSH] requestAndSaveToken error:", err);
+      console.error("[UMP_PUSH] Notification registration unavailable.");
       // Common error: failed to retrieve token because VAPID mismatch or SW failure
       // Try to give actionable hint
       if (String(err).includes("applicationServerKey") || String(err).includes("vapid")) {
@@ -136,7 +137,11 @@ window.UMP_PUSH = {
 
 // Foreground message handler — show our in-app toast instead of system notification if app is focused
 messaging.onMessage((payload) => {
-  console.log("[UMP_PUSH] Foreground push received:", payload);
+  // Owner-tagged remote messages only. Never display an old account's message
+  // or log private payloads; legacy ownerless payloads need a compatible rollout.
+  let actor;
+  try { actor = JSON.parse(localStorage.getItem('ump_student') || 'null'); } catch { return; }
+  if (!actor?.studentId || payload?.data?.studentId !== actor.studentId) return;
 
   const title =
     (payload.notification && payload.notification.title) ||
@@ -163,18 +168,5 @@ messaging.onMessage((payload) => {
   }
 });
 
-// Helper for debugging in console — window.UMP_PUSH.debugToken()
-window.UMP_PUSH.debugToken = async () => {
-  try {
-    const reg = await navigator.serviceWorker.ready;
-    const token = await messaging.getToken({
-      vapidKey: FCM_VAPID_KEY,
-      serviceWorkerRegistration: reg,
-    });
-    console.log("Current FCM token:", token);
-    return token;
-  } catch (e) {
-    console.error(e);
-    return null;
-  }
-};
+// Diagnostic intentionally reports state only, never a device token.
+window.UMP_PUSH.debugToken = async () => ({ supported: window.UMP_PUSH.isSupported() });

@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
 import { api } from '../api/client';
+import { getSessionGeneration } from '../storage/session';
 import type { DashboardData, StudyLogPayload } from '../types';
 import { useAuth } from './AuthContext';
 
@@ -33,7 +34,6 @@ type DataContextValue = {
 
 const DataContext = createContext<DataContextValue | undefined>(undefined);
 
-const cacheKey = (studentId: string) => `ump_mobile_cache_${api.getMode()}_${studentId}`;
 const messageOf = (error: unknown) => error instanceof Error ? error.message : 'Something went wrong.';
 type Settled<T> = { ok: true; value: T } | { ok: false; error: unknown };
 const settle = async <T,>(request: Promise<T>): Promise<Settled<T>> => {
@@ -43,19 +43,29 @@ const settle = async <T,>(request: Promise<T>): Promise<Settled<T>> => {
 
 export const DataProvider = ({ children }: PropsWithChildren) => {
   const { student } = useAuth();
-  const [data, setData] = useState<DashboardData>(emptyData);
+  const epoch = getSessionGeneration();
+  const identity = `${epoch}:${student?.studentId || ''}`;
+  const activeIdentity = useRef(identity);
+  activeIdentity.current = identity;
+  const isCurrent = useCallback(() => activeIdentity.current === identity && getSessionGeneration() === epoch, [identity, epoch]);
+  const [stored, setStored] = useState({ identity: '', data: emptyData });
+  const data = stored.identity === identity && student ? stored.data : emptyData;
+  const setData = useCallback((value: React.SetStateAction<DashboardData>) => {
+    if (!isCurrent()) return;
+    setStored(current => {
+      if (!isCurrent()) return current;
+      const previous = current.identity === identity ? current.data : emptyData;
+      return { identity, data: typeof value === 'function' ? value(previous) : value };
+    });
+  }, [identity, isCurrent]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const notesRefreshRef = useRef<Promise<void> | null>(null);
 
-  const persist = useCallback(async (next: DashboardData) => {
-    if (!student) return;
-    try { await AsyncStorage.setItem(cacheKey(student.studentId), JSON.stringify(next)); } catch { /* cache is best effort */ }
-  }, [student]);
-
   const fetchAll = useCallback(async (mode: 'initial' | 'refresh' | 'silent' = 'initial') => {
-    if (!student) return;
+    if (!student || !isCurrent()) return;
+    setData(emptyData);
     // 'silent' is used for background freshness pulls (app foreground / screen
     // focus) so no spinner flashes while the data is refreshed under the hood.
     if (mode === 'initial') setLoading(true);
@@ -70,6 +80,7 @@ export const DataProvider = ({ children }: PropsWithChildren) => {
         settle(api.getStudyLog(id)),
         settle(api.getAnnouncements()),
       ]);
+      if (!isCurrent()) return;
       setData((current) => {
         const next: DashboardData = {
           ...current,
@@ -77,10 +88,10 @@ export const DataProvider = ({ children }: PropsWithChildren) => {
           studyLog: first[1].ok ? first[1].value || [] : current.studyLog,
           announcements: first[2].ok ? first[2].value || [] : current.announcements,
         };
-        persist(next);
         return next;
       });
       await new Promise((resolve) => setTimeout(resolve, 700));
+      if (!isCurrent()) return;
       const rest = await Promise.all([
         settle(api.getLeaderboard()),
         settle(api.getWeeklyReports(id)),
@@ -91,6 +102,7 @@ export const DataProvider = ({ children }: PropsWithChildren) => {
       const values = [...first, rest[0], rest[1], rest[2], rest[3], rest[4]];
       const failures = values.filter((result) => !result.ok);
       if (failures.length === values.length) throw failures[0].error;
+      if (!isCurrent()) return;
       setData((current) => {
         const next: DashboardData = {
           stats: first[0].ok ? first[0].value || {} : current.stats,
@@ -102,18 +114,16 @@ export const DataProvider = ({ children }: PropsWithChildren) => {
           studyNotes: rest[3].ok ? rest[3].value || [] : current.studyNotes,
           feedback: rest[4].ok ? rest[4].value || [] : current.feedback,
         };
-        persist(next);
         return next;
       });
-      if (failures.length) setError(`${failures.length} dashboard section${failures.length === 1 ? '' : 's'} could not refresh. Cached data is shown where available.`);
+      if (failures.length) setError(`${failures.length} dashboard section${failures.length === 1 ? '' : 's'} could not refresh. Unavailable sections stay empty.`);
     } catch (e) {
-      setError(messageOf(e));
+      if (isCurrent()) setError(messageOf(e));
       throw e;
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (isCurrent()) { setLoading(false); setRefreshing(false); }
     }
-  }, [persist, student]);
+  }, [isCurrent, setData, student]);
 
   useEffect(() => {
     let mounted = true;
@@ -122,16 +132,14 @@ export const DataProvider = ({ children }: PropsWithChildren) => {
       setLoading(false);
       return;
     }
-    const start = async () => {
-      try {
-        const cached = await AsyncStorage.getItem(cacheKey(student.studentId));
-        if (mounted && cached) setData(JSON.parse(cached) as DashboardData);
-      } catch { /* fetch below remains the source of truth */ }
-      if (mounted) fetchAll('initial').catch(() => undefined);
-    };
-    start();
+    // Remove only legacy server dashboard caches, never authored drafts/audio.
+    for (const mode of ['live', 'live-readonly', 'mock']) {
+      AsyncStorage.removeItem(`ump_mobile_cache_${mode}_${student.studentId}`).catch(() => undefined);
+    }
+    notesRefreshRef.current = null;
+    if (mounted) fetchAll('initial').catch(() => undefined);
     return () => { mounted = false; };
-  }, [fetchAll, student]);
+  }, [fetchAll, student, setData]);
 
   // Systematic freshness: whenever the app returns to the foreground, silently
   // re-pull every dashboard section (stats, leaderboard, daily, reports, notes)
@@ -153,10 +161,9 @@ export const DataProvider = ({ children }: PropsWithChildren) => {
   const updateAndPersist = useCallback((updater: (current: DashboardData) => DashboardData) => {
     setData((current) => {
       const next = updater(current);
-      persist(next);
       return next;
     });
-  }, [persist]);
+  }, [setData]);
 
   const refreshTracker = useCallback(async (silent = false) => {
     if (!student) return;
@@ -208,8 +215,11 @@ export const DataProvider = ({ children }: PropsWithChildren) => {
   const submitStudyLog = useCallback(async (entry: StudyLogPayload) => {
     if (!student) throw new Error('Please log in again.');
     const result = await api.addStudyLog(student.studentId, entry);
-    if (!result?.success) throw new Error(result?.message || 'The study log could not be saved.');
-    await refreshTracker();
+    if (result?.success !== true) throw new Error(result?.message || 'Save outcome is unknown. Keep this draft and check Study tracker before retrying.');
+    try { await refreshTracker(); }
+    catch {
+      throw new Error('The server acknowledged your save, but the tracker could not refresh. Keep this draft and check Study tracker before submitting again.');
+    }
   }, [refreshTracker, student]);
 
   const deleteStudyLog = useCallback(async (entry: { date: string; hours: number; topic?: string }) => {

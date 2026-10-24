@@ -1,3 +1,4 @@
+import { SmartTargetHomeSummary } from '../components/SmartTargetsPanel';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { BlurTargetView, BlurView } from 'expo-blur';
@@ -224,6 +225,7 @@ export const DashboardScreen = () => {
           <View style={[styles.dailyArrow, allMcqComplete && styles.dailyArrowDone]}><Ionicons name="arrow-forward" size={18} color={allMcqComplete ? colors.success : colors.primary} /></View>
         </Pressable>
 
+        <SmartTargetHomeSummary />
         <SectionHeader title="Quick actions" />
         <Card style={styles.actionsCard}>
           <Action icon="infinite-outline" label="Unlimited MCQ practice" onPress={() => navigation.navigate('McqPractice')} />

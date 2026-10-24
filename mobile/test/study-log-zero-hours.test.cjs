@@ -47,7 +47,7 @@ function nativeHarness(input = {}) {
     '../api/client': { api: { uploadProof: async (payload) => { uploads.push(payload); return { proofUrl: 'mock-proof' }; } } },
     '../context/AuthContext': { useAuth: () => ({ backendMode: 'test' }) },
     '../context/DataContext': { useData: () => ({ submitStudyLog: async (payload) => {
-      if (input.failWrite) throw new Error('Mock write failed');
+      if (input.failWrite) throw new Error(input.writeError || 'Mock write failed');
       writes.push(payload);
     } }) },
     '../storage/session': { getSavedSession: async () => ({ studentId: 'TEST', password: 'test-only' }) },
@@ -108,6 +108,13 @@ function webHarness(input = {}) {
       assert.equal(id, 'TEST');
       if (input.failWrite) return { success: false, message: 'Mock write failed' };
       writes.push(payload); return { success: true };
+    },
+    // Existing tracker readback now runs in the submit callback, rather than an
+    // unexecuted timer. Model the server's serial legacy tuple deduplication.
+    getStudyLog: async () => [...new Map(writes.map(row => [JSON.stringify([row.date, row.subjects || row.reason, row.hours]), { date: row.date, topic: row.subjects || row.reason, hours: row.hours }])).values()],
+    getStats: async () => {
+      const rows = [...new Map(writes.map(row => [JSON.stringify([row.date, row.subjects || row.reason, row.hours]), row])).values()];
+      return { totalEntries: 1 + rows.length, totalHours: 5 + rows.reduce((sum, row) => sum + row.hours, 0) };
     } },
     state, closeTrackerModal: () => { closed = true; }, renderTracker: () => { renders += 1; },
     setTimeout: (fn) => { timers.push(fn); },

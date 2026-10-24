@@ -34,6 +34,8 @@ export type MentorTest = {
 };
 
 export type PaperMeta = {
+  previousEvaluation?: { score: number; total?: number } | null;
+  previousEvaluationUnavailable?: boolean;
   title?: string;
   subject?: string;
   kind: string;
@@ -63,14 +65,21 @@ async function creds(): Promise<{ studentId: string; password: string }> {
   return { studentId: s.studentId, password: s.password };
 }
 
-async function postJson(url: string, body: unknown): Promise<any> {
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error(`Server error (${res.status}). Try again.`);
-  return res.json();
+async function postJson(url: string, body: unknown, timeoutMs?: number): Promise<any> {
+  const controller = timeoutMs ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      ...(controller ? { signal: controller.signal } : {}),
+    });
+    if (!res.ok) throw new Error(`Server error (${res.status}). Try again.`);
+    return await res.json();
+  } finally {
+    if (timer !== null) clearTimeout(timer);
+  }
 }
 
 export async function listMentorTests(): Promise<MentorTest[]> {
@@ -107,7 +116,32 @@ export async function getPaperMeta(testId: string): Promise<PaperMeta> {
       : data?.meta && typeof data.meta === 'object'
         ? data.meta
         : data || {};
+  // The screen used to forget a confirmed paper submission after reopening:
+  // list showed Evaluated, but the detail screen locked the answer key again.
+  // Restore only a matching record from the authenticated server list, using
+  // the SAME captured credentials. Never infer submission from route params.
+  let previousEvaluation: PaperMeta['previousEvaluation'] = null;
+  let previousEvaluationUnavailable = false;
+  if (meta.kind === 'paper-test') {
+    try {
+      const listing = await postJson(`${PYTHON_BACKEND}/api/student-tests/list`, c, 8000);
+      const previous = Array.isArray(listing?.tests)
+        ? listing.tests.find((row: any) => String(row.testId || row.id || '') === testId)
+        : null;
+      if (previous?.attempted === true && typeof previous.lastScore === 'number' && Number.isFinite(previous.lastScore)) {
+        previousEvaluation = {
+          score: previous.lastScore,
+          total: typeof previous.lastTotal === 'number' && Number.isFinite(previous.lastTotal) ? previous.lastTotal : undefined,
+        };
+      }
+    } catch {
+      // A failed status read must never become a fake successful submission.
+      previousEvaluationUnavailable = true;
+    }
+  }
   return {
+    previousEvaluation,
+    previousEvaluationUnavailable,
     title: meta.title ? String(meta.title) : undefined,
     subject: meta.subject ? String(meta.subject) : undefined,
     kind: String(meta.kind || 'mcq-test'),
@@ -214,6 +248,9 @@ export async function fetchPdfBase64(url: string): Promise<string> {
   if (!res.ok) throw new Error(`Could not download the document (${res.status})`);
   const buf = await res.arrayBuffer();
   const bytes = new Uint8Array(buf);
+  // A 200 response can be a login page or HTML error, not the actual PDF.
+  const header = String.fromCharCode(...bytes.subarray(0, 1024));
+  if (!header.includes('%PDF-')) throw new Error('The attachment did not return a PDF. Ask your mentor to check the file link and access.');
   let bin = '';
   const CH = 32768;
   for (let i = 0; i < bytes.length; i += CH) {

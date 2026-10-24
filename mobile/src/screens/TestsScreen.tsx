@@ -73,6 +73,7 @@ export const TestsScreen = () => {
           </Card>
         </Pressable>
 
+<Pressable onPress={() => navigation.navigate('Workbooks')}><Card style={styles.testCard}><Text style={styles.title}>Audit & SM workbooks</Text><Text>Type or write in the app. Get meaning-based model-answer feedback.</Text></Card></Pressable>
         <SectionHeader title="Mentor tests" />
         {error ? (
           <ErrorBanner message={error} onRetry={() => void load()} />

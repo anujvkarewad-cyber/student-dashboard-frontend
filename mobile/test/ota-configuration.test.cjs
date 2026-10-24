@@ -6,7 +6,10 @@ const { spawnSync } = require('node:child_process');
 const YAML = require('yaml');
 const { configureOta, gatewayOrigin, assertBaselineBuild, assertApprovedRuntime } = require('../tools/ota-policy.cjs');
 const root = path.resolve(__dirname, '../..');
-const base = require('../app.json').expo;
+const actualBase = require('../app.json').expo;
+// Unlinked synthetic fixture for configuration-policy tests; never mutate real identity.
+const base = structuredClone(actualBase);
+delete base.extra?.eas?.projectId;
 // Synthetic fixtures only. These are never written into app config, the baseline
 // ledger or a publishing command, and never sent to an Expo endpoint.
 const fixture = {
@@ -51,13 +54,16 @@ for (const channel of ['preview', 'production']) {
     assert.deepEqual(config.runtimeVersion, { policy: 'fingerprint' });
   });
 }
-test('preview and production build profiles are separate; legacy profiles stay opt-in', () => {
+test('every EAS build profile requires OTA with an explicit channel', () => {
   const eas = require('../eas.json');
   for (const [name, channel] of [['ota-preview', 'preview'], ['ota-production', 'production']]) {
     assert.equal(eas.build[name].channel, channel); assert.equal(eas.build[name].env.UPM_OTA_ENABLED, '1');
     assert.equal(eas.build[name].env.UPM_OTA_CHANNEL, channel);
   }
-  assert.notEqual(eas.build.apk.env.UPM_OTA_ENABLED, '1');
+  for (const profile of Object.values(eas.build)) {
+    assert.equal(profile.env.UPM_OTA_ENABLED, '1'); assert.equal(profile.env.UPM_APK_BUILD, '1');
+    assert.ok(['preview', 'production'].includes(profile.channel)); assert.equal(profile.env.UPM_OTA_CHANNEL, profile.channel);
+  }
   assert.equal(eas.build.apk.env.EXPO_PUBLIC_APP_VERSION, undefined);
 });
 test('unvalidated or missing baseline blocks publication', () => {
@@ -82,7 +88,7 @@ for (const key of ['androidSigningCertificateSha256', 'baseApkSha256', 'testedBu
   });
 }
 test('the old code-46 binary cannot be republished as an OTA-enabled baseline', () => {
-  assert.throws(() => assertBaselineBuild(base, ledger()), /new approved Android versionCode/);
+  assert.throws(() => assertBaselineBuild({ ...base, android: { ...base.android, versionCode: 46 } }, ledger()), /new approved Android versionCode/);
   assert.doesNotThrow(() => assertBaselineBuild({ ...base, android: { ...base.android, versionCode: 47 } }, ledger()));
 });
 for (const url of ['', 'http://gateway.example.test', 'https://user:pass@gateway.example.test', 'https://gateway.example.test/?secret=x', 'https://gateway.example.test/arbitrary-path']) {
@@ -133,4 +139,79 @@ test('temporary CI credentials and signing files are excluded from source upload
 
 test('stale build-time display version is rejected instead of mislabeling OTA clients', () => {
   assert.throws(() => assertApprovedRuntime(summary, ledger(), { ...fixture, EXPO_PUBLIC_APP_VERSION: '1.14.6' }), /Stale EXPO_PUBLIC_APP_VERSION/);
+});
+
+
+test('native build context cannot silently fall back to disabled OTA', () => {
+  for (const context of [{ UPM_APK_BUILD: '1' }, { EAS_BUILD: 'true' }]) {
+    assert.throws(() => configureOta(base, context), /Every new APK requires true OTA/);
+    assert.throws(() => configureOta(base, { ...context, UPM_OTA_ENABLED: '0' }), /Every new APK requires true OTA/);
+    assert.throws(() => configureOta(base, { ...context, UPM_OTA_ENABLED: '1', UPM_OTA_CHANNEL: 'production' }), /real EAS_PROJECT_ID/);
+    assert.equal(configureOta(base, { ...fixture, ...context }).updates.enabled, true);
+  }
+});
+test('signed workflow requires OTA preflight before prebuild and keeps publish opt-in', () => {
+  const flow = readYaml('production-apk.yml'), job = flow.jobs['build-signed'];
+  assert.equal(flow.on.workflow_dispatch.inputs.ota_baseline.default, true);
+  assert.equal(flow.on.workflow_dispatch.inputs.publish_live.default, false);
+  assert.equal(job.env.UPM_APK_BUILD, '1'); assert.equal(job.env.UPM_OTA_ENABLED, '1');
+  const guard = job.steps.find(step => step.name === 'Refuse a non-OTA APK request');
+  assert.match(guard.if, /ota_baseline != true/); assert.match(guard.run, /exit 1/);
+  const preflight = job.steps.findIndex(step => step.run?.includes('node tools/ota-preflight.cjs --baseline-build'));
+  const prebuild = job.steps.findIndex(step => step.name === 'Prebuild Android');
+  assert.ok(preflight >= 0 && preflight < prebuild); assert.equal(job.steps[preflight].if, undefined);
+  assert.match(job.steps[preflight].run, /candidate-ota-preflight\.json/);
+  assert.match(job.steps[preflight].run, /UPM_PREFLIGHT_RUNTIME=.*GITHUB_ENV/);
+  for (const step of job.steps.filter(step => /Create GitHub Release|Publish APK to/.test(step.name))) assert.match(step.if, /publish_live == true/);
+});
+test('old unsigned/non-OTA preview pipeline no longer builds or runs on push', () => {
+  const flow = readYaml('mobile-preview-apk.yml');
+  assert.equal(flow.on.push, undefined); assert.ok(Object.hasOwn(flow.on, 'workflow_dispatch'));
+  const text = fs.readFileSync(path.join(root, '.github/workflows/mobile-preview-apk.yml'), 'utf8');
+  assert.doesNotMatch(text, /assembleRelease|expo prebuild|upload-artifact/);
+  assert.match(text, /exit 1/);
+});
+
+
+test('direct Expo native commands cannot bypass the mandatory OTA flag', () => {
+  for (const command of ['prebuild', 'run:android']) {
+    const result = spawnSync(process.execPath, ['-e', "require('./app.config.js')({config:require('./app.json').expo})", command], {
+      cwd: path.join(root, 'mobile'), env: { ...process.env, UPM_APK_BUILD: '', EAS_BUILD: '', UPM_OTA_ENABLED: '0' }, encoding: 'utf8',
+    });
+    assert.notEqual(result.status, 0); assert.match(result.stderr, /Every new APK requires true OTA/);
+  }
+});
+
+
+test('owner-supplied existing Expo project is pinned without changing Android identity', () => {
+  assert.equal(actualBase.owner, 'anujkarewad');
+  assert.equal(actualBase.extra.eas.projectId, 'fc2cb9eb-e3f0-40b2-9a74-7c996902602c');
+  assert.equal(actualBase.android.package, 'com.ujjwalpathak.mentorship');
+  const result=configureOta(actualBase, {...fixture, EAS_PROJECT_ID:actualBase.extra.eas.projectId});
+  assert.equal(result.updates.url, 'https://u.expo.dev/fc2cb9eb-e3f0-40b2-9a74-7c996902602c');
+});
+test('a different project cannot overwrite the now-pinned owner project', () => {
+  assert.throws(() => configureOta(actualBase, fixture), /conflicts/);
+});
+test('owner-test workflow cannot publish even if publication input is accidentally true', () => {
+  const flow=readYaml('production-apk.yml');
+  assert.equal(flow.permissions.contents,'read');
+  const steps=flow.jobs['build-signed'].steps;
+  const guard=steps.find(s=>s.name==='Refuse publication in owner-test workflow');
+  assert.match(guard.if,/publish_live == true/); assert.match(guard.run,/exit 1/);
+  assert.equal(steps.some(s=>/Create GitHub Release|Publish APK to|Validate live update/.test(s.name)),false);
+  assert.equal(steps.find(s=>s.name==='Upload artifact')['continue-on-error'],undefined);
+});
+
+
+test('private native build bounds memory without skipping lint or tests', () => {
+ const job=readYaml('production-apk.yml').jobs['build-signed'];
+ const tune=job.steps.findIndex(s=>s.name==='Bound Gradle memory after prebuild without changing signing');
+ const build=job.steps.findIndex(s=>s.name==='Build signed release APK');
+ assert.ok(tune>=0 && tune<build);
+ assert.match(job.steps[build].run,/--max-workers=2/);
+ assert.doesNotMatch(job.steps[build].run,/-x |exclude-task|lintVital.*false/);
+ const script=fs.readFileSync(path.join(root,'mobile/tools/configure-ci-gradle.py'),'utf8');
+ assert.match(script,/MaxMetaspaceSize=1536m/);assert.match(script,/ExitOnOutOfMemoryError/);
+ assert.match(script,/kotlin.compiler.execution.strategy/);
 });

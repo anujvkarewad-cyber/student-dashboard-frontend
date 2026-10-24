@@ -4,9 +4,11 @@ const CHANNELS = ['preview', 'production'];
 function configureOta(config, env = process.env) {
   const flag = String(env.UPM_OTA_ENABLED || '0');
   if (!['0', '1'].includes(flag)) throw new Error('UPM_OTA_ENABLED must be 0 or 1.');
+  const buildingApk = env.UPM_APK_BUILD === '1' || env.EAS_BUILD === 'true';
+  if (buildingApk && flag !== '1') throw new Error('Every new APK requires true OTA. Non-OTA native builds are blocked.');
   if (flag !== '1') {
-    // Existing non-OTA build profiles remain explicitly disabled. Nothing is
-    // enabled just by installing the package or checking out this source.
+    // Local non-build inspection can remain offline. All configured native
+    // build paths require OTA and must supply the real project identity.
     return { ...config, updates: { ...config.updates, enabled: false } };
   }
   const projectId = String(env.EAS_PROJECT_ID || '').trim();

@@ -1,3 +1,4 @@
+import { SmartTargetsPanel } from '../components/SmartTargetsPanel';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -98,6 +99,8 @@ export const DailyTargetScreen = () => {
 
   return (
     <ScrollView contentContainerStyle={styles.content}>
+      <SmartTargetsPanel />
+      <Text style={{ fontWeight: "700", marginTop: 16 }}>Calendar targets & daily checklist</Text>
       <Card style={styles.head}>
         <Text style={styles.headDate}>{new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}</Text>
         <Text style={styles.headSub}>{backendLive ? 'Set by your mentor. The revision line is only a reminder.' : 'Opens at 12:00 AM daily — finish it whenever you sit down'}</Text>

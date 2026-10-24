@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import React, { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import { config } from '../config';
 import { EnrichedMcqQuestion } from '../data/mcqMetadata';
@@ -9,8 +9,7 @@ const HOSTS = [config.mentorApiUrl].filter((host): host is string => typeof host
 
 // v2 cached whatever the dead hosts returned; bumping forces a clean refetch.
 const CACHE_KEY = 'ump_live_published_bank_v3';
-const HOST_KEY = 'ump_live_bank_host_v3';
-const REQUEST_TIMEOUT_MS = 90_000;
+const REQUEST_TIMEOUT_MS = 45_000;
 const REVISION_POLL_MS = 5 * 60 * 1000;
 
 type PublishedBankPayload = {
@@ -70,26 +69,10 @@ const fetchJson = async (url: string, ms: number) => {
   }
 };
 
+// Only the configured encrypted gateway is trusted. Do not probe metadata before
+// every full download or race a stale saved deployment against the current one.
 const pickHost = async (): Promise<string> => {
-  const saved = await AsyncStorage.getItem(HOST_KEY);
-  const ordered = [saved, ...HOSTS]
-    .filter((host): host is string => typeof host === 'string' && host.length > 0)
-    .filter((host, index, all) => all.indexOf(host) === index);
-  if (!ordered.length) throw new Error('Cloudflare gateway is not configured');
-  const results = await Promise.all(ordered.map(async (host) => {
-    try {
-      const meta = await fetchJson(`${host}/api/content/student/bank-meta.json`, 12_000);
-      return { host, count: Number(meta?.count || 0) };
-    } catch {
-      return { host, count: -1 };
-    }
-  }));
-  const best = results.reduce((win, row) => (row.count > win.count ? row : win), results[0]);
-  if (best && best.count > 0) {
-    await AsyncStorage.setItem(HOST_KEY, best.host);
-    return best.host;
-  }
-  // Nothing answered. Prefer the configured host over a stale saved one.
+  if (!HOSTS[0]) throw new Error('Cloudflare gateway is not configured');
   return HOSTS[0];
 };
 
@@ -103,29 +86,40 @@ export const McqBankProvider = ({ children }: PropsWithChildren) => {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string>();
 
-  const refresh = useCallback(async () => {
+  const payloadRef = useRef(payload);
+  payloadRef.current = payload;
+  const active = useRef(true);
+  const flight = useRef<Promise<void> | null>(null);
+  const refresh = useCallback((): Promise<void> => {
+    if (flight.current) return flight.current;
     setRefreshing(true);
-    try {
-      const host = await pickHost();
-      const raw = await fetchJson(`${host}/api/content/student/bank.json`, REQUEST_TIMEOUT_MS);
-      const next = normalizePayload(raw as PublishedBankPayload);
-      if (next.count === 0 && payload.count > 0) {
-        setError('Live bank came back empty — keeping last good questions.');
-        return;
+    const run = (async () => {
+      try {
+        const host = await pickHost();
+        const raw = await fetchJson(`${host}/api/content/student/bank.json`, REQUEST_TIMEOUT_MS);
+        const next = normalizePayload(raw as PublishedBankPayload);
+        if (next.count === 0) {
+          const meta = await fetchJson(`${host}/api/content/student/bank-meta.json`, 12_000);
+          if (Number(meta?.count) !== 0) throw new Error('Published bank response was incomplete. Saved questions retained.');
+        }
+        if (!active.current) return;
+        payloadRef.current = next;
+        setPayload(next);
+        setError(undefined);
+        await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(next));
+      } catch (reason) {
+        const message = reason instanceof Error && reason.name === 'AbortError'
+          ? 'Question bank download timed out. Retry when connected.'
+          : reason instanceof Error ? reason.message : 'Could not load published MCQs.';
+        if (active.current) setError(message);
+      } finally {
+        if (active.current) { setRefreshing(false); setHydrated(true); }
+        flight.current = null;
       }
-      setPayload(next);
-      await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(next));
-      setError(undefined);
-    } catch (reason) {
-      const message = reason instanceof Error && reason.name === 'AbortError'
-        ? 'The content server took too long to wake up.'
-        : reason instanceof Error ? reason.message : 'Could not load published MCQs.';
-      setError(message);
-    } finally {
-      setRefreshing(false);
-      setHydrated(true);
-    }
-  }, [payload.count]);
+    })();
+    flight.current = run;
+    return run;
+  }, []);
 
   const checkPublishedRevision = useCallback(async () => {
     if (AppState.currentState !== 'active') return;
@@ -141,18 +135,21 @@ export const McqBankProvider = ({ children }: PropsWithChildren) => {
   }, [payload.count, payload.revision, refresh, refreshing]);
 
   useEffect(() => {
+    active.current = true;
     let mounted = true;
     AsyncStorage.getItem(CACHE_KEY).then((saved) => {
       if (!mounted) return;
       if (saved) {
         try {
-          setPayload(normalizePayload(JSON.parse(saved) as PublishedBankPayload));
-          setHydrated(true);
-        } catch { /* refresh below */ }
+          const cached = normalizePayload(JSON.parse(saved) as PublishedBankPayload);
+          payloadRef.current = cached;
+          setPayload(cached);
+        } catch { /* invalid cached payload, never delete attempts */ }
       }
-      return refresh();
-    }).catch(() => refresh());
-    return () => { mounted = false; };
+    }).catch(() => undefined).finally(() => {
+      if (mounted) { setHydrated(true); void refresh(); }
+    });
+    return () => { mounted = false; active.current = false; };
   }, [refresh]);
 
   useEffect(() => {
