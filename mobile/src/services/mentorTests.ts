@@ -1,4 +1,4 @@
-import { getSavedSession } from '../storage/session';
+import { getSavedSession, getSessionGeneration } from '../storage/session';
 
 /**
  * Native Mentor Tests flow (v1.15.0).
@@ -191,15 +191,27 @@ export async function uploadAnswerSheet(opts: {
   mimeType: string;
   filename: string;
 }): Promise<string> {
+  const generation = getSessionGeneration();
+  const actor = await creds();
+  const stillOwner = async () => {
+    const current = await getSavedSession();
+    return generation === getSessionGeneration() && current?.studentId === actor.studentId && current?.password === actor.password;
+  };
+  if (!await stillOwner()) throw new Error('Session changed. Keep the original file.');
+  // This preserves the existing Script wire contract, NOT proof of Script-side
+  // authentication/private ACLs. Those require the authoritative source.
   const res = await fetch(APPS_SCRIPT_URL, {
-    method: 'POST',
-    body: JSON.stringify({ action: 'student.test.uploadSubmission', payload: opts }),
+    method: 'POST', body: JSON.stringify({ action: 'student.test.uploadSubmission', payload: opts }),
   });
   const data = await res.json().catch(() => null);
-  if (!data || data.error) throw new Error(data?.error ? String(data.error) : 'Upload failed. Try again.');
-  const url = data?.result?.url || (typeof data?.result === 'string' ? data.result : '');
-  if (!url) throw new Error('Upload finished but no file link came back. Try again.');
-  return String(url);
+  if (!await stillOwner()) throw new Error('Session changed. Keep the original file.');
+  const result = data?.result;
+  const url = typeof result === 'string' ? result : result?.url;
+  if (!res.ok || !data || data.error || data.ok === false || data.success === false || result?.error || result?.ok === false || result?.success === false || typeof url !== 'string' || !url.trim()) {
+    throw new Error('Upload could not be confirmed. Keep the original file and check before retrying.');
+  }
+  return url;
+
 }
 
 export async function submitSelfMarks(opts: {
