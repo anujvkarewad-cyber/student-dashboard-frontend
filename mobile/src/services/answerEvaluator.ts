@@ -10,6 +10,7 @@
  * would then drive the student's revision schedule.
  */
 import { config } from '../config';
+import { getSavedSession, getSessionGeneration, clearSavedSession } from '../storage/session';
 
 export type EvaluationResult = {
   ok: true;
@@ -55,10 +56,18 @@ const TIMEOUT_MS = 60_000;
 export const evaluateAnswer = async (input: EvaluateInput): Promise<EvaluationOutcome> => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const unavailable = (error: string): EvaluationFailure => ({ ok: false, mode: 'unavailable', error });
+  const epoch = getSessionGeneration();
   try {
+    const session = await getSavedSession();
+    if (!session?.studentId || !session.password) return unavailable('Sign in again before grading this answer.');
+    if (input.studentId.trim().toUpperCase() !== session.studentId.trim().toUpperCase()) return unavailable('Student scope denied. Your answer has not been graded.');
+    const unchanged = (active: typeof session | null) =>
+      epoch === getSessionGeneration() && active?.studentId === session.studentId && active.password === session.password;
+    if (!unchanged(await getSavedSession())) return unavailable('Student session changed. Your answer has not been graded.');
     const response = await fetch(`${config.mentorApiUrl}/api/ai/evaluate`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-Student-Id': session.studentId, 'X-Session-Password': session.password },
       signal: controller.signal,
       body: JSON.stringify({
         studentId: input.studentId,
@@ -70,6 +79,11 @@ export const evaluateAnswer = async (input: EvaluateInput): Promise<EvaluationOu
       }),
     });
 
+    if (!unchanged(await getSavedSession())) return unavailable('Student session changed. The grading result was discarded.');
+    if (response.status === 401 || response.status === 403) {
+      await clearSavedSession();
+      return unavailable('Student session unavailable. Sign in again before grading.');
+    }
     if (!response.ok) {
       return {
         ok: false,
@@ -79,7 +93,9 @@ export const evaluateAnswer = async (input: EvaluateInput): Promise<EvaluationOu
     }
 
     const data = await response.json();
-    if (!data || data.ok !== true) {
+    if (!unchanged(await getSavedSession())) return unavailable('Student session changed. The grading result was discarded.');
+    const numeric = (value: unknown) => (typeof value === 'number' || (typeof value === 'string' && value.trim() !== '')) && Number.isFinite(Number(value));
+    if (!data || data.ok !== true || data.error || !numeric(data.score) || !numeric(data.accuracyPct)) {
       return {
         ok: false,
         mode: 'unavailable',

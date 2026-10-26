@@ -1,5 +1,5 @@
 import { config } from '../config';
-import { getSavedSession } from '../storage/session';
+import { getSavedSession, getSessionGeneration } from '../storage/session';
 
 export type SmartBinding = {
   ownerId: string; subject: string; concept: string;
@@ -23,20 +23,35 @@ export type SmartDashboard = { today: string; studentId: string; targetAccessErr
 /** No silent null/success or offline tick: the server is authoritative. */
 export async function smartTargetRequest<T = any>(ownerId: string, action: string, payload: Record<string, unknown> = {}, allowWrite = false): Promise<T> {
   if (!['dashboard', 'session'].includes(action) && !allowWrite) throw new Error('Switch to Full Live before saving target progress.');
+  const generation = getSessionGeneration();
   const credentials = await getSavedSession();
-  if (!credentials?.password || credentials.studentId !== ownerId) throw new Error('Please sign in again.');
+  if (!credentials?.password || credentials.studentId !== ownerId || generation !== getSessionGeneration()) throw new Error('Please sign in again.');
   if (!config.mentorApiUrl) throw new Error('Target server is not configured.');
+  const stillOwner = async () => {
+    const current = await getSavedSession();
+    return generation === getSessionGeneration() && current?.studentId === ownerId && current.password === credentials.password;
+  };
+  const routeUnavailable = (status: number) => new Error(`Personal target service is unavailable on the configured server (HTTP ${status}). No successful result was confirmed.`);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 65000);
   try {
+    if (!await stillOwner()) throw new Error('Account changed. Reload your targets.');
     const response = await fetch(`${config.mentorApiUrl}/api/smart-targets/student/${action}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
       body: JSON.stringify({ ...payload, studentId: credentials.studentId, password: credentials.password }),
     });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Target request failed. Refresh and retry.');
-    const current = await getSavedSession();
-    if (current?.studentId !== ownerId) throw new Error('Account changed. Reload your targets.');
+    let data;
+    try { data = await response.json(); }
+    catch {
+      if (!await stillOwner()) throw new Error('Account changed. Reload your targets.');
+      if (response.status === 404 || response.status === 405) throw routeUnavailable(response.status);
+      throw new Error('Target server returned an unreadable response. No successful result was confirmed.');
+    }
+    if (!await stillOwner()) throw new Error('Account changed. Reload your targets.');
+    // A missing POST API can be shadowed by an older backend's GET-only route.
+    // Never retry as GET, switch providers, or turn this into an empty dashboard.
+    if (response.status === 404 || response.status === 405) throw routeUnavailable(response.status);
+    if (!response.ok) throw new Error(typeof data?.detail === 'string' ? data.detail : 'Target request failed. Refresh and retry.');
     return data as T;
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') throw new Error('Request timed out. Refresh to check what was saved before retrying.');

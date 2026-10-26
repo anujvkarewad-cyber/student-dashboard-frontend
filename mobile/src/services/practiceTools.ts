@@ -7,13 +7,13 @@ export const practiceUrl = (path: string) => {
   if (!config.mentorApiUrl) throw new Error('The study backend is not configured. You can still type.');
   return `${config.mentorApiUrl}/api/practice${path}`;
 };
-export async function practiceSession() {
+export async function practiceSession(scope: 'receipt' | 'workbook' = 'receipt') {
   const saved = await getSavedSession();
   if (!saved?.studentId || !saved.password) throw new Error('Please sign in to use practice tools.');
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 20000);
   try {
-    const r = await fetch(practiceUrl('/session'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ studentId: saved.studentId, password: saved.password }), signal: controller.signal });
+    const r = await fetch(practiceUrl(scope === 'workbook' ? '/workbooks/session' : '/session'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ studentId: saved.studentId, password: saved.password }), signal: controller.signal });
     const data = await r.json();
     if (!r.ok || !data.token) throw new Error(typeof data.detail === 'string' ? data.detail : 'Practice sign-in is unavailable. Your draft is safe.');
     return { token: String(data.token), studentId: String(data.studentId) };

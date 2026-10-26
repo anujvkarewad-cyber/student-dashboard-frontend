@@ -1,16 +1,12 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
-import { api } from '../api/client';
+import { getSavedSession, getSessionGeneration } from '../storage/session';
+import { bindPushToken } from '../storage/pushBinding';
 
 export type NativePushStatus = 'idle' | 'requesting' | 'enabled' | 'denied' | 'unsupported' | 'configuration-required' | 'error';
 
 const CHANNEL_ID = 'ump-updates';
-const TOKEN_KEY_PREFIX = 'ump_native_fcm_v1_';
-const TOKEN_REFRESH_MS = 7 * 24 * 60 * 60 * 1000;
-
-type StoredToken = { token: string; savedAt: number };
 
 if (Platform.OS !== 'web') {
   Notifications.setNotificationHandler({
@@ -40,6 +36,10 @@ const ensureAndroidChannel = async () => {
 export const registerNativePush = async (studentId: string, force = false): Promise<NativePushStatus> => {
   if (Platform.OS === 'web' || !Device.isDevice) return 'unsupported';
 
+  const epoch = getSessionGeneration();
+  const actor = await getSavedSession();
+  const current = () => epoch === getSessionGeneration();
+  if (!actor?.password || actor.studentId !== studentId || !current()) return 'error';
   try {
     await ensureAndroidChannel();
     let permission = await Notifications.getPermissionsAsync();
@@ -59,18 +59,9 @@ export const registerNativePush = async (studentId: string, force = false): Prom
     }
     if (!token) return 'configuration-required';
 
-    const key = `${TOKEN_KEY_PREFIX}${studentId}`;
-    let saved: StoredToken | null = null;
-    try {
-      const raw = await AsyncStorage.getItem(key);
-      saved = raw ? JSON.parse(raw) as StoredToken : null;
-    } catch { saved = null; }
-
-    if (force || saved?.token !== token || Date.now() - Number(saved?.savedAt || 0) >= TOKEN_REFRESH_MS) {
-      const result = await api.saveDeviceToken(studentId, token);
-      if (!result?.success) throw new Error(result?.message || 'The notification token could not be registered.');
-      await AsyncStorage.setItem(key, JSON.stringify({ token, savedAt: Date.now() } satisfies StoredToken));
-    }
+    // Re-register every authenticated session, including A -> B -> A. A
+    // per-student cache is not evidence of the server's current token owner.
+    if (!current() || !await bindPushToken(actor, token, current)) return 'error';
 
     return 'enabled';
   } catch {
@@ -78,15 +69,16 @@ export const registerNativePush = async (studentId: string, force = false): Prom
   }
 };
 
-export const subscribeToNativeTokenChanges = (studentId: string) => Notifications.addPushTokenListener(async (next) => {
-  if (Platform.OS === 'web' || typeof next.data !== 'string' || !next.data) return;
-  try {
-    const result = await api.saveDeviceToken(studentId, next.data);
-    if (result?.success) {
-      await AsyncStorage.setItem(`${TOKEN_KEY_PREFIX}${studentId}`, JSON.stringify({ token: next.data, savedAt: Date.now() } satisfies StoredToken));
-    }
-  } catch { /* the weekly refresh retries a failed rotation */ }
-});
+export const subscribeToNativeTokenChanges = (studentId: string) => {
+  const epoch = getSessionGeneration();
+  return Notifications.addPushTokenListener(async (next) => {
+    if (Platform.OS === 'web' || typeof next.data !== 'string' || !next.data || epoch !== getSessionGeneration()) return;
+    const actor = await getSavedSession();
+    if (!actor?.password || actor.studentId !== studentId || epoch !== getSessionGeneration()) return;
+    try { await bindPushToken(actor, next.data, () => epoch === getSessionGeneration()); }
+    catch { /* no successful binding claim; next authenticated session retries */ }
+  });
+};
 
 export const notificationLink = (notification: Notifications.Notification) => {
   const data = notification.request.content.data || {};
