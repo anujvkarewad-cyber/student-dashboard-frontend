@@ -149,8 +149,8 @@ function classifyError(raw: unknown): { title: string; message: string; transien
   if (/stall/.test(lower)) {
     return {
       title: 'Download stopped',
-      message: 'The download stopped receiving data (the network dropped mid-way). Retry, or use "Download in browser" — Chrome can resume a broken download.',
-      transient: false,
+      message: 'The download stopped receiving data. Retry, or use "Download in browser" if your connection remains unstable.',
+      transient: true,
     };
   }
   if (/enospc|no space|not enough (space|storage)|storage/.test(lower)) {
@@ -199,9 +199,12 @@ function classifyError(raw: unknown): { title: string; message: string; transien
 export const AppUpdateProvider = ({ children }: PropsWithChildren) => {
   const { booting, backendMode } = useAuth();
   const [ui, setUi] = useState<AppUpdateUi>(NO_UI);
+  const phaseRef = useRef<UpdatePhase>('idle');
 
   const checkingRef = useRef(false);
   const installingRef = useRef(false);
+  const updatingRef = useRef(false);
+  const activeDownloadRef = useRef<AbortController | null>(null);
   const attemptedRef = useRef<number>(0);
   const retryCountRef = useRef(0);
   const releaseRef = useRef<Release | null>(null);
@@ -213,11 +216,13 @@ export const AppUpdateProvider = ({ children }: PropsWithChildren) => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      activeDownloadRef.current?.abort();
     };
   }, []);
 
   const patch = useCallback((partial: Partial<AppUpdateUi>) => {
     if (!mountedRef.current) return;
+    if (partial.phase) phaseRef.current = partial.phase;
     setUi((prev) => ({ ...prev, ...partial }));
   }, []);
 
@@ -234,12 +239,14 @@ export const AppUpdateProvider = ({ children }: PropsWithChildren) => {
         type: APK_MIME,
         flags: FLAG_GRANT_READ_URI_PERMISSION | FLAG_ACTIVITY_NEW_TASK,
       });
-      // The installer is now in front of the user. Keep phase 'installing' so the
-      // UI can offer help (e.g. allow unknown sources) when they come back.
+      // Returning/cancelling is not proof of installation. Keep the downloaded
+      // file ready, and allow the student to reopen the system installer.
+      patch({ phase: 'ready' });
     } catch (installError) {
       console.warn('[update] install intent failed:', installError);
       const info = classifyError(installError);
       patch({ phase: 'error', errorTitle: info.title, errorMessage: info.message });
+    } finally {
       installingRef.current = false;
     }
   }, [patch]);
@@ -306,7 +313,7 @@ export const AppUpdateProvider = ({ children }: PropsWithChildren) => {
     } catch {
       freeBytes = -1; // API unavailable on this device - skip the check
     }
-    if (freeBytes > 0 && freeBytes < MIN_FREE_BYTES) {
+    if (Number.isFinite(freeBytes) && freeBytes >= 0 && freeBytes < MIN_FREE_BYTES) {
       throw new Error(`enospc: only ${Math.round(freeBytes / 1_048_576)} MB free`);
     }
 
@@ -322,114 +329,130 @@ export const AppUpdateProvider = ({ children }: PropsWithChildren) => {
     }
 
     let expectedBytes = -1;
-    // Stall watchdog: resumable downloads can go silent forever (dropped Wi-Fi /
-    // dead socket), which used to leave the blocking modal frozen at one number.
-    // We cannot cancel the native task, so we watch the progress clock and give up
-    // on this attempt; the next attempt uses a NEW file, so the zombie download
-    // can never corrupt it.
-    const apk = await new Promise<File>((resolve, reject) => {
-      let lastTick = Date.now();
-      let settled = false;
-      const watchdog = setInterval(() => {
-        if (settled) return;
-        if (Date.now() - lastTick > STALL_TIMEOUT_MS) {
-          settled = true;
-          clearInterval(watchdog);
-          reject(new Error(`download stalled: no data for ${STALL_TIMEOUT_MS / 1000}s`));
-        }
-      }, 5_000);
+    const controller = new AbortController();
+    activeDownloadRef.current = controller;
+    const removePartial = () => {
+      try { if (destination.exists) destination.delete(); } catch { /* native task may still be closing */ }
+    };
 
-      File.downloadFileAsync(url, destination, {
-        idempotent: true,
-        onProgress: ({ bytesWritten, totalBytes }) => {
-          if (settled) return; // watchdog already failed this attempt - don't revive the UI
-          lastTick = Date.now();
-          if (totalBytes > 0) expectedBytes = totalBytes;
-          patch({
-            phase: 'downloading',
-            bytesWritten,
-            totalBytes: totalBytes > 0 ? totalBytes : -1,
-            progress: totalBytes > 0 ? Math.min(1, bytesWritten / totalBytes) : -1,
-          });
-        },
-      })
-        .then((file) => {
-          if (settled) return; // watchdog already gave up on this attempt
-          settled = true;
+    try {
+      const apk = await new Promise<File>((resolve, reject) => {
+        let lastByteAt = Date.now();
+        let lastBytes = 0;
+        let settled = false;
+        const cleanWatchdog = () => {
           clearInterval(watchdog);
-          resolve(file);
-        })
-        .catch((error) => {
+          controller.signal.removeEventListener('abort', onAbort);
+        };
+        const fail = (error: Error) => {
           if (settled) return;
           settled = true;
-          clearInterval(watchdog);
+          cleanWatchdog();
           reject(error);
+        };
+        const onAbort = () => fail(new Error('Download cancelled'));
+        const watchdog = setInterval(() => {
+          if (!settled && Date.now() - lastByteAt > STALL_TIMEOUT_MS) {
+            // Settle with the useful stall reason before the abort event fires.
+            fail(new Error(`download stalled: no new bytes for ${STALL_TIMEOUT_MS / 1000}s`));
+            controller.abort();
+          }
+        }, 5_000);
+        controller.signal.addEventListener('abort', onAbort, { once: true });
+
+        // This pinned Expo file-system version supports AbortSignal. Cancel the
+        // native transfer, not just the JS waiter, before a retry starts.
+        File.downloadFileAsync(url, destination, {
+          idempotent: true,
+          signal: controller.signal,
+          onProgress: ({ bytesWritten, totalBytes }) => {
+            if (settled) return;
+            if (bytesWritten > lastBytes) {
+              lastBytes = bytesWritten;
+              lastByteAt = Date.now();
+            }
+            // Expo can emit a final synthetic size/size event. Never let a
+            // smaller final event erase a larger advertised Content-Length.
+            if (totalBytes > 0) expectedBytes = Math.max(expectedBytes, totalBytes);
+            const receivedAll = expectedBytes > 0 && bytesWritten >= expectedBytes;
+            patch({
+              phase: 'downloading',
+              bytesWritten,
+              totalBytes: expectedBytes > 0 ? expectedBytes : -1,
+              progress: expectedBytes > 0 ? Math.min(0.99, bytesWritten / expectedBytes) : -1,
+              statusNote: receivedAll ? 'Download received. Checking the file before installation…' : undefined,
+            });
+          },
+        }).then((file) => {
+          if (settled) { removePartial(); return; }
+          settled = true;
+          cleanWatchdog();
+          resolve(file);
+        }).catch((error) => {
+          removePartial();
+          fail(error);
         });
-    });
-
-    const size = Number((apk && apk.size) || 0);
-    if (!apk || !apk.exists || size < MIN_APK_BYTES) {
-      throw new Error('download incomplete: file missing or too small');
-    }
-    // If the server told us the total, the file must have fully arrived. A short
-    // file is the "stuck at 100%" symptom - treat it as a retryable truncation.
-    if (expectedBytes > 0 && size < expectedBytes) {
-      throw new Error(`download incomplete: got ${size} of ${expectedBytes} bytes`);
-    }
-    apkFileRef.current = apk;
-    return apk;
-  }, [patch]);
-
-  /** Full check -> download -> ready pipeline. */
-  const runUpdate = useCallback(
-    async (release: Release) => {
-      releaseRef.current = release;
-      const forceUpdate = Boolean(release.forceUpdate);
-      patch({
-        phase: 'downloading',
-        forceUpdate,
-        version: release.version,
-        versionCode: release.versionCode,
-        releaseNotes: release.releaseNotes,
-        progress: -1,
-        bytesWritten: 0,
-        totalBytes: -1,
-        errorTitle: undefined,
-        errorMessage: undefined,
-        statusNote: undefined,
-        dismissed: false,
-        canDismiss: !forceUpdate,
       });
 
+      const size = Number((apk && apk.size) || 0);
+      if (!apk || !apk.exists || !Number.isFinite(size) || size < MIN_APK_BYTES) {
+        throw new Error('download incomplete: file missing or too small');
+      }
+      if (expectedBytes > 0 && size !== expectedBytes) {
+        throw new Error(`download incomplete: size mismatch, got ${size} of ${expectedBytes} bytes`);
+      }
+      apkFileRef.current = apk;
+      return apk;
+    } catch (error) {
+      removePartial();
+      throw error;
+    } finally {
+      if (activeDownloadRef.current === controller) activeDownloadRef.current = null;
+    }
+  }, [patch]);
+
+  /** Full check -> download -> ready pipeline; one transfer/retry loop at a time. */
+  const runUpdate = useCallback(
+    async (release: Release) => {
+      if (updatingRef.current || !mountedRef.current) return;
+      updatingRef.current = true;
+      releaseRef.current = release;
+      const forceUpdate = Boolean(release.forceUpdate);
       try {
-        await downloadApk(release);
-        retryCountRef.current = 0;
-        patch({ phase: 'ready', progress: 1 });
-      } catch (downloadError) {
-        console.warn('[update] download failed:', downloadError);
-        const info = classifyError(downloadError);
-        // Auto-retry transient failures a couple of times before bothering the user.
-        if (info.transient && retryCountRef.current < MAX_AUTO_RETRY) {
-          retryCountRef.current += 1;
-          const wait = RETRY_BACKOFF_MS[Math.min(retryCountRef.current - 1, RETRY_BACKOFF_MS.length - 1)];
+        for (let attempt = 0; attempt <= MAX_AUTO_RETRY; attempt += 1) {
+          if (!mountedRef.current) return;
+          retryCountRef.current = attempt;
           patch({
-            phase: 'downloading',
-            progress: -1,
-            bytesWritten: 0,
-            totalBytes: -1,
-            statusNote: `Download interrupted. Retrying automatically (attempt ${
-              retryCountRef.current + 1
-            } of ${MAX_AUTO_RETRY + 1})…`,
+            phase: 'downloading', forceUpdate,
+            version: release.version, versionCode: release.versionCode,
+            releaseNotes: release.releaseNotes,
+            progress: -1, bytesWritten: 0, totalBytes: -1,
+            errorTitle: undefined, errorMessage: undefined,
+            statusNote: attempt ? `Retrying download (attempt ${attempt + 1} of ${MAX_AUTO_RETRY + 1})…` : undefined,
+            dismissed: false, canDismiss: !forceUpdate,
           });
-          await new Promise((resolve) => setTimeout(resolve, wait));
-          return runUpdate(release);
+          try {
+            await downloadApk(release);
+            if (!mountedRef.current) return;
+            retryCountRef.current = 0;
+            patch({ phase: 'ready', progress: 1, statusNote: undefined });
+            return;
+          } catch (downloadError) {
+            if (!mountedRef.current) return;
+            console.warn('[update] download failed:', downloadError);
+            const info = classifyError(downloadError);
+            if (info.transient && attempt < MAX_AUTO_RETRY) {
+              const wait = RETRY_BACKOFF_MS[Math.min(attempt, RETRY_BACKOFF_MS.length - 1)];
+              patch({ statusNote: `Download interrupted. Retrying automatically (attempt ${attempt + 2} of ${MAX_AUTO_RETRY + 1})…` });
+              await new Promise((resolve) => setTimeout(resolve, wait));
+              continue;
+            }
+            patch({ phase: 'error', errorTitle: info.title, errorMessage: info.message, statusNote: undefined });
+            return;
+          }
         }
-        patch({
-          phase: 'error',
-          errorTitle: info.title,
-          errorMessage: info.message,
-          statusNote: undefined,
-        });
+      } finally {
+        updatingRef.current = false;
       }
     },
     [downloadApk, patch],
@@ -438,9 +461,11 @@ export const AppUpdateProvider = ({ children }: PropsWithChildren) => {
   const autoUpdate = useCallback(
     async (force = false) => {
       if (Platform.OS !== 'android' || backendMode !== 'live') return;
-      if (checkingRef.current || installingRef.current) return;
-      // Don't restart a download/ready/error the user is already looking at.
-      if (ui.phase === 'downloading' || ui.phase === 'ready' || ui.phase === 'installing') return;
+      if (checkingRef.current || installingRef.current || updatingRef.current) return;
+      // Read the current phase through a ref: making autoUpdate depend on ui.phase
+      // retriggers its startup effect on phase changes, bypassing the retry budget.
+      const phase = phaseRef.current;
+      if (phase === 'downloading' || phase === 'ready' || phase === 'installing') return;
       try {
         if (!force) {
           const lastCheck = Number((await AsyncStorage.getItem(LAST_CHECK_KEY)) || 0);
@@ -482,7 +507,7 @@ export const AppUpdateProvider = ({ children }: PropsWithChildren) => {
         checkingRef.current = false;
       }
     },
-    [backendMode, patch, runUpdate, ui.phase],
+    [backendMode, patch, runUpdate],
   );
 
   // Explicit user-triggered retry (bypasses the once-per-session guard).

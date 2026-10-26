@@ -1,3 +1,5 @@
+import { chapterIdentity, type CloudChapter } from '../services/smartTargets';
+import { SmartRevisionPanel } from '../components/SmartTargetsPanel';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -60,6 +62,12 @@ export const RevisionDashboardScreen = () => {
   const { student } = useAuth();
   const navigation = useNavigation<any>();
   const [state, setState] = useState<AdaptiveState | null>(null);
+  const [cloudKeys, setCloudKeys] = useState<string[]>([]);
+  const onCloudChapters = useCallback((chapters: CloudChapter[]) => {
+    const next = chapters.map(c => chapterIdentity(c.subject, c.concept)).sort();
+    setCloudKeys(old => old.join('\n') === next.join('\n') ? old : next);
+  }, []);
+  useEffect(() => setCloudKeys([]), [student?.studentId]);
 
   const load = useCallback(async () => {
     if (!student) return;
@@ -73,7 +81,7 @@ export const RevisionDashboardScreen = () => {
   }, [load, navigation]);
 
   const concepts = useMemo(() => (state ? conceptList(state) : []), [state]);
-  const plan = useMemo(() => buildRevisionPlan(concepts), [concepts]);
+  const plan = useMemo(() => buildRevisionPlan(concepts.filter(c => !cloudKeys.includes(chapterIdentity(c.subject, c.concept)))), [concepts, cloudKeys]);
   const insights = useMemo(() => buildInsights(concepts), [concepts]);
 
   if (!student) return null;
@@ -96,9 +104,11 @@ export const RevisionDashboardScreen = () => {
           Built from what you actually got right and wrong, not from a timetable.
         </Text>
 
+        <SmartRevisionPanel onCloudChapters={onCloudChapters} />
+        <Text style={{ fontWeight: "700", marginTop: 12 }}>Practice insights — saved chapters are not repeated in these due lists</Text>
         {nothingYet ? (
           <Card>
-            <Text style={styles.emptyTitle}>Nothing to revise yet</Text>
+            <Text style={styles.emptyTitle}>No device practice yet</Text>
             <Text style={styles.emptyBody}>
               Answer a few practice questions and this screen fills itself in — your weak
               concepts, what is due today, and what keeps slipping.

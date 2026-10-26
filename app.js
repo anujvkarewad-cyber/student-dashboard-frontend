@@ -9,6 +9,26 @@ const APP_VERSION = "2.8.0";
   const $  = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 
+  function drivePreviewUrl(raw) {
+    let url;
+    try { url = new URL(raw); } catch { return null; }
+    if (url.protocol !== 'https:' || !['drive.google.com', 'www.drive.google.com'].includes(url.hostname)) return null;
+    const id = url.pathname.match(/^\/(?:file\/)?d\/([A-Za-z0-9_-]+)(?:\/|$)/)?.[1]
+      || (/^\/(?:uc|open)$/.test(url.pathname) ? url.searchParams.get('id') : '');
+    if (!id || !/^[A-Za-z0-9_-]+$/.test(id)) return null;
+    const key = url.searchParams.get('resourcekey');
+    return `https://drive.google.com/file/d/${id}/preview${key ? `?resourcekey=${encodeURIComponent(key)}` : ''}`;
+  }
+  
+  function testDocumentPreviewUrl(raw) {
+    const preview = drivePreviewUrl(raw);
+    if (preview) return preview;
+    const url = new URL(raw);
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new Error('Invalid document link. Please ask your mentor to check this attachment.');
+    return url.href;
+  }
+  
+
   // ----- state -----
   const state = {
     student: null,
@@ -66,6 +86,7 @@ const APP_VERSION = "2.8.0";
     const loader = $("#boot-loader");
     const loginScreen = $("#login-screen");
 
+    if (savedStudent?.studentId) localStorage.removeItem(`ump_cache_${savedStudent.studentId}`);
     if (!savedStudent) {
       if (loader) loader.hidden = true;
       loginScreen.hidden = false;
@@ -82,6 +103,7 @@ const APP_VERSION = "2.8.0";
         if (s.forcePasswordChange) {
           showChangePasswordScreen(s);
         } else {
+          localStorage.setItem('ump_student', JSON.stringify({ studentId: s.studentId || savedStudent.studentId, password: savedStudent.password }));
           await enterApp(s);
         }
       } else {
@@ -131,7 +153,7 @@ const APP_VERSION = "2.8.0";
 
     localStorage.setItem(
       "ump_student",
-      JSON.stringify({ studentId: id, password: password })
+      JSON.stringify({ studentId: result.studentId || id, password: password })
     );
 
     if (result.forcePasswordChange) {
@@ -142,14 +164,79 @@ const APP_VERSION = "2.8.0";
     enterApp(result);
   });
 
-  $("#logout-btn").addEventListener("click", () => {
-    localStorage.removeItem("ump_student");
+  $("#logout-btn").addEventListener("click", async () => {
+    await window.UMP_CLEAR_PRIVATE_SESSION();
     location.reload();
+  });
+
+  const privateFence = () => {
+    const owner = state.student?.studentId;
+    const epoch = window.UMP_PRIVATE_EPOCH();
+    const credential = localStorage.getItem('ump_student');
+    return () => state.student?.studentId === owner && window.UMP_PRIVATE_EPOCH() === epoch && localStorage.getItem('ump_student') === credential;
+  };
+  const clearDerivedPrivateUi = () => {
+    state.notifFeed = []; state.notifUnread = 0; state.notifCleared = new Set();
+    state.notifSeen = { announcements: new Set(), mentorNotes: new Set(), notes: new Set(), reports: new Set() };
+    Object.values(state.charts || {}).forEach(chart => { try { chart?.destroy(); } catch {} });
+    state.charts = {};
+    document.getElementById('mentor-feedback-popup')?.remove();
+    for (const id of ['notes-subject-modal', 'note-viewer-overlay']) {
+      const node = document.getElementById(id);
+      if (node) { node.hidden = true; if (id === 'note-viewer-overlay') node.style.display = 'none'; }
+    }
+    const privateFrame = document.getElementById('note-viewer-frame');
+    if (privateFrame) privateFrame.src = '';
+    const privateLink = document.getElementById('note-viewer-newtab');
+    if (privateLink) privateLink.removeAttribute('href');
+    updateNotifBadge();
+    renderNotifPanel();
+  };
+  const lockPrivateDashboard = () => {
+    if (typeof window.UMP_PRESERVE_TRACKER_DRAFT === 'function') window.UMP_PRESERVE_TRACKER_DRAFT();
+    state.stats = {}; state.log = []; state.leaderboard = []; state.reports = [];
+    state.announcements = []; state.mentorNotes = []; state.studyNotes = [];
+    state.student = null;
+    currentStudent = null;
+    clearDerivedPrivateUi();
+    $("#app-shell").hidden = true;
+    $("#login-screen").hidden = false;
+    const modal = document.getElementById('tracker-modal');
+    if (modal) modal.hidden = true;
+  };
+  window.addEventListener('ump:private-invalidated', lockPrivateDashboard);
+  window.addEventListener('storage', event => {
+    if (event.key === 'ump_student') {
+      window.UMP_CLEAR_PRIVATE_SESSION(false);
+      lockPrivateDashboard();
+    }
+  });
+
+  document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState !== 'visible' || !state.student) return;
+    let actor;
+    try { actor = JSON.parse(localStorage.getItem('ump_student') || 'null'); } catch { actor = null; }
+    if (!actor?.studentId || !actor.password) { lockPrivateDashboard(); return; }
+    window.UMP_CLEAR_PRIVATE_SESSION(false);
+    const epoch = window.UMP_PRIVATE_EPOCH();
+    lockPrivateDashboard();
+    try {
+      const result = await api.validateLogin(actor.studentId, actor.password);
+      const current = JSON.parse(localStorage.getItem('ump_student') || 'null');
+      if (epoch !== window.UMP_PRIVATE_EPOCH() || current?.studentId !== actor.studentId || current?.password !== actor.password) return;
+      if (result?.success === true) {
+        localStorage.setItem('ump_student', JSON.stringify({ studentId: result.studentId || actor.studentId, password: actor.password }));
+        await enterApp(result);
+      }
+      else if (['wrong_password','not_found','removed','access_blocked','group_closed'].includes(result?.code)) window.UMP_CLEAR_PRIVATE_SESSION();
+    } catch { /* Credentials remain retryable; private server data stays locked. */ }
   });
 
   async function enterApp(student) {
     currentStudent = student;
     state.student = student;
+    const active = privateFence();
+    clearDerivedPrivateUi();
     $("#login-screen").hidden = true;
     $("#app-shell").hidden = false;
 
@@ -165,30 +252,14 @@ const APP_VERSION = "2.8.0";
     $("#user-id").textContent = student.studentId;
 
     const studentId = student.studentId;
-    const cacheKey = `ump_cache_${studentId}`;
-    let cached = null;
-    try { cached = JSON.parse(localStorage.getItem(cacheKey) || "null"); } catch(e) { cached = null; }
-
-    // safe defaults
-    state.stats = (cached && cached.stats) || {};
-    state.log = [];
-    state.leaderboard = (cached && cached.leaderboard) || [];
-    state.reports = [];
-    state.announcements = (cached && cached.announcements) || [];
-    state.mentorNotes = (cached && cached.mentorNotes) || [];
-    state.studyNotes = [];
-
-    // Show dashboard instantly with cached data if available — fixes load lag
-    if (cached && cached.stats) {
-      $("#topbar-streak").textContent = cached.stats.streak ?? 0;
-      const initial = (location.hash || "#dashboard").slice(1);
-      navigate(VIEW_TITLES[initial] ? initial : "dashboard");
-    } else {
-      // No cache — show skeleton dashboard immediately, then fetch
-      $("#topbar-streak").textContent = "—";
-      const initial = (location.hash || "#dashboard").slice(1);
-      navigate(VIEW_TITLES[initial] ? initial : "dashboard");
-    }
+    // Server-derived private data is never restored from disk before fresh
+    // authorization. Keep authored receipts, recordings and drafts untouched.
+    localStorage.removeItem(`ump_cache_${studentId}`);
+    state.stats = {}; state.log = []; state.leaderboard = []; state.reports = [];
+    state.announcements = []; state.mentorNotes = []; state.studyNotes = [];
+    $("#topbar-streak").textContent = "—";
+    const initial = (location.hash || "#dashboard").slice(1);
+    navigate(VIEW_TITLES[initial] ? initial : "dashboard");
 
     // === OPTIMIZED: Critical data in parallel (not sequential) ===
     // This reduces dashboard load from ~7-10s sequential to ~2-3s parallel
@@ -199,19 +270,12 @@ const APP_VERSION = "2.8.0";
         safeFetch(() => api.getStudentMentorNotes(studentId), state.mentorNotes || []),
         safeFetch(() => api.getLeaderboard(), state.leaderboard || [])
       ]);
+      if (!active()) return;
       state.stats = stats;
       state.announcements = announcements;
       state.mentorNotes = mentorNotes;
       state.leaderboard = leaderboard;
       $("#topbar-streak").textContent = stats.streak ?? 0;
-
-      // Cache for next instant load
-      try {
-        localStorage.setItem(cacheKey, JSON.stringify({
-          stats, announcements, mentorNotes, leaderboard,
-          ts: Date.now()
-        }));
-      } catch(e) { console.warn("Cache save failed", e); }
 
       // Refresh dashboard if still on it
       if ((location.hash || "#dashboard").slice(1) === "dashboard") {
@@ -222,22 +286,27 @@ const APP_VERSION = "2.8.0";
       console.error("Critical data parallel fetch failed", e);
     }
 
+    if (!active()) return;
     // === Background non-critical data — also parallel, no artificial delays ===
     // Use allSettled so one failure doesn't block others
     Promise.allSettled([
       safeFetch(() => api.getStudyLog(studentId), []).then(v => {
+        if (!active()) return;
         state.log = v;
         if ((location.hash || "#dashboard").slice(1) === "tracker") renderTracker();
       }),
       safeFetch(() => api.getWeeklyReports(studentId), []).then(v => {
+        if (!active()) return;
         state.reports = v;
         if ((location.hash || "#dashboard").slice(1) === "reports") renderReports();
       }),
       safeFetch(() => api.getNotes(studentId), []).then(v => {
+        if (!active()) return;
         state.studyNotes = v;
         if ((location.hash || "#dashboard").slice(1) === "notes") renderNotes();
       }),
       safeFetch(() => api.getMentorFeedback(studentId), []).then(v => {
+        if (!active()) return;
         if (Array.isArray(v) && v.length > 0) showMentorFeedback(v[0]);
       })
     ]).then(() => {
@@ -631,10 +700,34 @@ const APP_VERSION = "2.8.0";
         <td><b>${dayShort(row.date)}</b></td>
         <td>${escapeHtml(row.topic || "")}</td>
         <td><b class="mono">${fmt(row.hours, 1)}</b></td>
-        <td>${row.proof && row.proof !== "#" ? `<a href="${row.proof}" target="_blank"><i class="fa-solid fa-arrow-up-right-from-square"></i> View</a>` : "—"}</td>
+        <td>${row.proof && row.proof !== "#" ? `<button type="button" class="btn btn-secondary" data-view-proof="${idx}"><i class="fa-solid fa-arrow-up-right-from-square"></i> View</button>` : "—"}</td>
         <td><button type="button" class="btn btn-secondary" data-del-log="${idx}" title="Delete this entry" style="padding:4px 10px;font-size:12px;color:#B91C1C">Delete</button></td>
       </tr>`).join("")
       : `<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:30px">No submissions yet — start logging your daily study!</td></tr>`;
+
+    $$('[data-view-proof]',tb).forEach(btn=>btn.addEventListener('click',async()=>{
+      const value=state.log[Number(btn.dataset.viewProof)]?.proof;
+      if(!value)return;
+      let overlay=null,objectUrl=null;
+      const dispose=()=>{overlay?.remove();if(objectUrl)URL.revokeObjectURL(objectUrl);window.removeEventListener('ump:private-invalidated',dispose);};
+      try {
+        const url=new URL(value,window.location.origin);
+        if(url.pathname!=='/api/proof-file'){
+          if(url.protocol!=='https:' || url.username || url.password)throw Error('Invalid proof link.');
+          window.open(url.href,'_blank','noopener,noreferrer');return;
+        }
+        const fence=privateFence();
+        const blob=await api.getPrivateProof(url.href);if(!fence())return;
+        objectUrl=URL.createObjectURL(blob);
+        overlay=document.createElement('div');overlay.setAttribute('role','dialog');overlay.setAttribute('aria-label','Private study proof');
+        Object.assign(overlay.style,{position:'fixed',inset:'0',background:'white',zIndex:'100000',display:'flex',flexDirection:'column',padding:'12px'});
+        const close=document.createElement('button');close.textContent='Close private proof';close.className='btn btn-secondary';close.onclick=dispose;
+        const view=document.createElement(blob.type==='application/pdf'?'iframe':'img');view.src=objectUrl;
+        if(blob.type==='application/pdf')view.setAttribute('sandbox','');
+        Object.assign(view.style,{flex:'1',minHeight:'0',objectFit:'contain',border:'0',width:'100%'});
+        overlay.append(close,view);document.body.append(overlay);window.addEventListener('ump:private-invalidated',dispose);
+      }catch{dispose();alert('Private proof could not be opened. Sign in again or ask your mentor to check access.');}
+    }));
 
     $$("[data-del-log]", tb).forEach((btn) => {
       btn.addEventListener("click", async () => {
@@ -900,7 +993,7 @@ const APP_VERSION = "2.8.0";
               <div style="background: #f1f5f9; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
                 <div style="font-weight:bold; margin-bottom:8px; font-size:16px;">Step 3: Self-Evaluation</div>
                 <p class="muted" style="margin-bottom:12px; font-size:13px;">Open the answer sheet below, check your uploaded answers, and enter your marks.</p>
-                ${meta.answerSheetUrl ? `<button class='btn-primary sm test-viewer-btn' data-url='${escapeHtml(meta.answerSheetUrl)}' data-label='Answer Sheet' style="background:#10b981; color:white; border:none; padding:8px 16px; border-radius:5px; cursor:pointer;">📝 Open Answer Sheet</button>` : `<span class="muted" style="color:red;">Mentor has not provided an answer sheet.</span>`}
+                ${meta.answerSheetUrl ? `<button class='btn-primary sm test-viewer-btn' data-url='${escapeHtml(meta.answerSheetUrl)}' data-label='Answer Sheet' style="background:#10b981; color:white; border:none; padding:8px 16px; border-radius:5px; cursor:pointer;">📝 Open Answer Sheet</button>` : meta.answerSheetText ? `<div class="test-answer-text">${escapeHtml(meta.answerSheetText).replace(/\n/g, '<br>')}</div>` : `<span class="muted" style="color:red;">Mentor has not provided an answer sheet.</span>`}
               </div>
 
               <div style="border: 1px solid #e2e8f0; padding: 15px; border-radius: 8px;">
@@ -927,7 +1020,9 @@ const APP_VERSION = "2.8.0";
              btn.onclick = () => {
                  let url = btn.getAttribute('data-url');
                  let label = btn.getAttribute('data-label');
-                 let preview = url.includes("drive.google.com") && !url.includes("preview") ? url.replace(/\/view.*/, "/preview") : url;
+                 let preview;
+                 try { preview = testDocumentPreviewUrl(url); }
+                 catch (_) { window.alert("This document link is invalid. Please ask your mentor to check the attachment."); return; }
                  if (typeof openNoteViewer === "function") {
                      openNoteViewer({ title: label, previewUrl: preview, viewUrl: url, fileId: "" });
                  } else {
@@ -1000,7 +1095,9 @@ const APP_VERSION = "2.8.0";
          btn.onclick = () => {
              let url = btn.getAttribute('data-url');
              let label = btn.getAttribute('data-label');
-             let preview = url.includes("drive.google.com") && !url.includes("preview") ? url.replace(/\/view.*/, "/preview") : url;
+             let preview;
+                 try { preview = testDocumentPreviewUrl(url); }
+                 catch (_) { window.alert("This document link is invalid. Please ask your mentor to check the attachment."); return; }
              if (typeof openNoteViewer === "function") {
                  openNoteViewer({ title: label, previewUrl: preview, viewUrl: url, fileId: "" });
              } else {
@@ -1024,8 +1121,11 @@ const APP_VERSION = "2.8.0";
           btn.style.display = "none";
           progDiv.style.display = "block";
           
+          const uploadCurrent = privateFence();
+          if (!state.student?.studentId) return;
           const reader = new FileReader();
           reader.onload = () => {
+              if (!uploadCurrent()) return;
               const base64 = reader.result.split(',')[1];
               const appsScriptUrl = "https://script.google.com/macros/s/AKfycbzyfWa8agayMB0XLjkbfhfj2MdIRElAiY2Wnd7-eQKd1zlMl099ky6Cif06TWydzr8D/exec";
               fetch(appsScriptUrl, {
@@ -1034,12 +1134,16 @@ const APP_VERSION = "2.8.0";
                   action: 'student.test.uploadSubmission',
                   payload: { base64, mimeType: file.type, filename: file.name }
                 })
-              }).then(res => res.json()).then(data => {
-                 if (data.error) throw new Error(data.error);
-                 state.answerUrl = data.result.url || data.result;
+              }).then(res => { if (!res.ok) throw new Error('Upload not confirmed. Keep the file.'); return res.json(); }).then(data => {
+                 if (!uploadCurrent()) return;
+                 const result = data?.result;
+                 const url = typeof result === 'string' ? result : result?.url;
+                 if (!data || data.error || data.ok === false || data.success === false || result?.error || result?.ok === false || result?.success === false || typeof url !== 'string' || !url.trim()) throw new Error('Upload not confirmed. Keep the file.');
+                 state.answerUrl = url;
                  state.phase = 2; // Move to evaluation phase
                  render();
               }).catch(err => {
+                 if (!uploadCurrent()) return;
                  btn.style.display = "block";
                  progDiv.style.display = "none";
                  errDiv.textContent = "Upload failed: " + err.message;
@@ -1440,8 +1544,9 @@ const APP_VERSION = "2.8.0";
 
     render(state.studyNotes);
 
+    const notesActive = privateFence();
     api.getNotes(state.student.studentId)
-      .then(list => { state.studyNotes = list || []; render(state.studyNotes); })
+      .then(list => { if (!notesActive()) return; state.studyNotes = list || []; render(state.studyNotes); })
       .catch(err => console.error("Failed to refresh notes:", err));
   }
   
@@ -1458,6 +1563,7 @@ const APP_VERSION = "2.8.0";
     frame.src = previewUrl;
     title.textContent = note.title;
     newTabLink.href = note.viewUrl || `https://drive.google.com/file/d/${note.fileId}/view`;
+    overlay.hidden = false;
     overlay.style.display = "flex";
   }
 
@@ -1856,6 +1962,15 @@ const APP_VERSION = "2.8.0";
       const btn = e.target && e.target.closest ? e.target.closest("[data-hours]") : null;
       if (!btn) return;
       tlHours.value = btn.getAttribute("data-hours");
+      if (tlHours.value === "0") {
+        const noInput = document.querySelector('input[name="tl-planned"][value="No"]');
+        if (noInput) {
+          noInput.checked = true;
+          // Reuse the existing change handlers to update chips, reveal the
+          // reason, and clear hidden subjects/targets/proof from a previous choice.
+          noInput.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+      }
       clearModalError(tlError);
       clearFieldError();
     });
@@ -1886,6 +2001,16 @@ const APP_VERSION = "2.8.0";
     }
   });
 
+  const ownTrackerDrafts = new Map();
+  let restoredTrackerProof = null;
+  window.UMP_PRESERVE_TRACKER_DRAFT = () => {
+    if (!state.student || !trackerModal || trackerModal.hidden) return;
+    const fields = [...trackerModal.querySelectorAll('input,textarea,select')]
+      .filter(field => field.type !== 'file')
+      .map(field => ({ id: field.id, name: field.name, value: field.value, checked: field.checked }));
+    ownTrackerDrafts.set(state.student.studentId, { fields, file: (tlProofFile.files && tlProofFile.files[0]) || restoredTrackerProof });
+  };
+
   function openTrackerModal() {
     if (!state.student) return;
 
@@ -1911,6 +2036,19 @@ const APP_VERSION = "2.8.0";
     clearModalError(tlError);
     clearFieldError();
 
+    restoredTrackerProof = null;
+    const draft = ownTrackerDrafts.get(state.student.studentId);
+    if (draft) {
+      const fields = [...trackerModal.querySelectorAll('input,textarea,select')];
+      for (const saved of draft.fields) {
+        const field = fields.find(item => (saved.id && item.id === saved.id) || (saved.name && item.name === saved.name && item.value === saved.value));
+        if (field) { field.value = saved.value; if ('checked' in field) field.checked = saved.checked; }
+      }
+      restoredTrackerProof = draft.file;
+      const planned = getRadioValue('tl-planned');
+      tlNoSection.hidden = planned !== 'No'; tlYesSection.hidden = planned !== 'Yes';
+      tlReasonOther.hidden = getRadioValue('tl-reason') !== 'Other';
+    }
     trackerModal.hidden = false;
   }
 
@@ -1966,7 +2104,7 @@ const APP_VERSION = "2.8.0";
 
   function readProofFile() {
     return new Promise((resolve, reject) => {
-      const file = tlProofFile.files && tlProofFile.files[0];
+      const file = (tlProofFile.files && tlProofFile.files[0]) || restoredTrackerProof;
       if (!file) return resolve(null);
 
       // Pehle compress karo, size check BAAD me — warna 20 MP ka normal phone
@@ -2035,7 +2173,7 @@ const APP_VERSION = "2.8.0";
     const date = tlDate.value;
     // "2,5" (comma wala keyboard) bhi chale — pehle wahan value hi blank ho jati thi.
     const hoursRaw = String(tlHours.value == null ? "" : tlHours.value).replace(",", ".").trim();
-    const hours = parseFloat(hoursRaw);
+    const hours = Number(hoursRaw);
     const planned = getRadioValue("tl-planned");
     const mentorSupport = tlMentorSupport.value;
 
@@ -2046,14 +2184,19 @@ const APP_VERSION = "2.8.0";
       highlightFieldError(tlDate);
       return;
     }
-    if (!hoursRaw || isNaN(hours) || hours <= 0) {
-      setModalError(tlError, "Total Study Hours khali hai — upar 'Total Study Hours' box me likho (jaise 2.5) ya neeche 1h / 2h chip par tap karo.");
+    if (!hoursRaw) {
+      setModalError(tlError, "Total Study Hours likho — aaj padhai nahi hui toh 0 likho ya 0 hrs option chuno.");
       highlightFieldError(tlHours);
       return;
     }
-    if (hours > 24) {
-      setModalError(tlError, "Hours 24 se zyada nahi ho sakte — dobara likho (jaise 3 ya 2.5).");
+    if (!/^(?:\d+(?:\.\d*)?|\.\d+)$/.test(hoursRaw) || !Number.isFinite(hours) || hours < 0 || hours > 24) {
+      setModalError(tlError, "Study hours 0 se 24 ke beech number hona chahiye (jaise 0, 0.5 ya 2.5).");
       highlightFieldError(tlHours);
+      return;
+    }
+    if (hours === 0 && planned !== "No") {
+      setModalError(tlError, "0 hours ke liye 'plan ke hisaab se padha?' mein No chuno aur reason batao.");
+      highlightFieldError(tlPlannedGroup);
       return;
     }
     if (!planned) {
@@ -2113,7 +2256,7 @@ const APP_VERSION = "2.8.0";
     const studentId = state.student.studentId;
 
     try {
-      proofFile = await readProofFile();
+      proofFile = planned === "No" ? null : await readProofFile();
 
       const result = await api.addStudyLog(studentId, {
         date,
@@ -2127,34 +2270,33 @@ const APP_VERSION = "2.8.0";
         proofFile
       });
 
-      if (!result || !result.success) {
+      if (!result || result.success !== true) {
         setModalError(tlError, (result && result.message) || "Server didn't save the entry — please try again.");
         return;
       }
 
-      state.log = [{ date, topic: subjects || reason, hours, proof: result.proofUrl ? "#" : "" }, ...(state.log || [])];
-      state.stats = state.stats || {};
-      state.stats.totalEntries = (state.stats.totalEntries || 0) + 1;
-      state.stats.totalHours = (state.stats.totalHours || 0) + hours;
-      state.stats.averageHours = state.stats.totalHours / state.stats.totalEntries;
-
+      // The backend acknowledged the save. Never add optimistic hours: an
+      // identical retry may already exist under the backend's legacy identity.
+      // Retain the existing tracker read path, without adding an auth exception,
+      // new reconciliation endpoint, cache-policy change or automatic resend.
+      try {
+        const [stats, log] = await Promise.all([
+          api.getStats(studentId), api.getStudyLog(studentId)
+        ]);
+        if (!stats || typeof stats !== "object" || Array.isArray(stats) || !Array.isArray(log)) {
+          throw new Error("Tracker response unavailable");
+        }
+        if (state.student?.studentId !== studentId) return;
+        state.stats = stats;
+        state.log = log;
+      } catch {
+        setModalError(tlError, "The server acknowledged your save, but the tracker could not refresh. Keep this draft and check Study tracker before submitting again.");
+        return;
+      }
+      if (typeof ownTrackerDrafts !== 'undefined') ownTrackerDrafts.delete(studentId);
+      restoredTrackerProof = null;
       closeTrackerModal();
       renderTracker();
-
-      setTimeout(async () => {
-        try {
-          const [stats, log] = await Promise.all([
-            api.getStats(studentId),
-            api.getStudyLog(studentId)
-          ]);
-          state.stats = stats;
-          state.log = log;
-          const activeView = (location.hash || "#dashboard").slice(1);
-          if (activeView === "tracker") renderTracker();
-        } catch (err) {
-          console.error("Post-submit reconcile failed:", err);
-        }
-      }, 1500);
     } catch (err) {
       setModalError(tlError, err.message || "Something went wrong. Please try again.");
     } finally {
@@ -2456,6 +2598,7 @@ const APP_VERSION = "2.8.0";
       state.notifConsecutiveFailures = 0;
       return result;
     } catch (err) {
+      if (err?.privateSessionChanged) throw err;
       state.notifConsecutiveFailures++;
       if (state.notifConsecutiveFailures <= 2) {
         console.warn("Fetch failed (non-fatal):", err.message);
@@ -2468,6 +2611,7 @@ const APP_VERSION = "2.8.0";
     if (!state.student) return 0;
     if (isCheckingNotifications) return 0;
     if (state.notifConsecutiveFailures >= 3) return 0;
+    const active = privateFence();
     isCheckingNotifications = true;
     if (showLogs) console.log("🔄 Checking notifications (parallel, no artificial lag)...");
     try {
@@ -2477,6 +2621,7 @@ const APP_VERSION = "2.8.0";
         safeFetch(() => api.getNotes(state.student.studentId), state.studyNotes),
         safeFetch(() => api.getWeeklyReports(state.student.studentId), state.reports)
       ]);
+      if (!active()) return 0;
       let newCount = 0;
       (announcements || []).forEach(a => {
         const k = annKey(a);
@@ -2739,6 +2884,7 @@ const APP_VERSION = "2.8.0";
     const view = (location.hash || "#dashboard").slice(1);
     const studentId = state.student?.studentId;
     if (!studentId) return;
+    const active = privateFence();
     console.log("🔄 Pull refresh for view:", view);
     const indicator = document.getElementById("pull-refresh-indicator");
     const icon = document.getElementById("pull-refresh-icon");
@@ -2756,6 +2902,7 @@ const APP_VERSION = "2.8.0";
           safeFetch(() => api.getStudentMentorNotes(studentId), state.mentorNotes),
           safeFetch(() => api.getLeaderboard(), state.leaderboard)
         ]);
+        if (!active()) return;
         state.stats = stats;
         state.announcements = announcements;
         state.mentorNotes = mentorNotes;
@@ -2768,6 +2915,7 @@ const APP_VERSION = "2.8.0";
           api.getStats(studentId),
           api.getStudyLog(studentId)
         ]);
+        if (!active()) return;
         state.stats = stats;
         state.log = log;
         $("#topbar-streak").textContent = stats.streak ?? 0;
@@ -2775,19 +2923,23 @@ const APP_VERSION = "2.8.0";
         if (window.__umpShowPushToast) window.__umpShowPushToast("✅ Refreshed", "Tracker updated");
       } else if (view === "notes") {
         const notes = await safeFetch(() => api.getNotes(studentId), state.studyNotes);
+        if (!active()) return;
         state.studyNotes = notes;
         renderNotes();
         if (window.__umpShowPushToast) window.__umpShowPushToast("✅ Refreshed", "Notes updated");
       } else if (view === "reports") {
         const reports = await api.getWeeklyReports(studentId);
+        if (!active()) return;
         state.reports = reports;
         renderReports();
       } else if (view === "leaderboard") {
         const lb = await api.getLeaderboard();
+        if (!active()) return;
         state.leaderboard = lb;
         renderLeaderboard();
       } else {
         await checkForNewNotifications(false);
+        if (!active()) return;
         renderNotifPanel();
       }
     } catch (e) {
@@ -2900,37 +3052,7 @@ const APP_VERSION = "2.8.0";
   // ============ BOOT ============
   boot();
 
-  // ✅ FIX: Improved background refresh with request guard
-  document.addEventListener("visibilitychange", async () => {
-    if (document.visibilityState !== "visible") return;
-    if (!state.student) return;
-    if (isRefreshingData) return; // ✅ Prevent overlapping refreshes
-
-    isRefreshingData = true;
-
-    try {
-      const [stats, log] = await Promise.all([
-        api.getStats(state.student.studentId),
-        api.getStudyLog(state.student.studentId)
-      ]);
-      
-      state.stats = stats;
-      state.log = log;
-      $("#topbar-streak").textContent = stats.streak ?? 0;
-
-      const activeView = (location.hash || "#dashboard").slice(1);
-      if (activeView === "tracker") renderTracker();
-
-      checkForNewNotifications();
-      checkStreakReminder();
-      
-      console.log('🔄 Background refresh completed');
-    } catch (err) {
-      console.error("Background refresh failed:", err);
-    } finally {
-      isRefreshingData = false;
-    }
-  });
+  // Foreground private-data refresh uses the authorization-first listener above.
 
   // ---------- Developer Theme Panel ----------
   document.addEventListener("DOMContentLoaded", () => {

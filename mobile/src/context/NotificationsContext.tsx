@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform } from 'react-native';
+import { getSessionGeneration } from '../storage/session';
 import { fetchMessages } from '../api/reformApi';
 import { notifyNow, syncDailyNotifications } from '../services/dailyNotifications';
 import { NativePushStatus, registerNativePush, subscribeToNativeTokenChanges } from '../services/pushNotifications';
@@ -55,6 +56,7 @@ export const NotificationsProvider = ({ children }: PropsWithChildren) => {
   // here rather than being faked from other screens' state.
   const [mentorReplies, setMentorReplies] = useState<{ id: string; text: string }[]>([]);
   const [targetDoneToday, setTargetDoneToday] = useState(false);
+  const replyOwner = useRef('');
   const seenMentorIds = useRef<Set<string> | null>(null);
 
   useEffect(() => {
@@ -108,9 +110,13 @@ export const NotificationsProvider = ({ children }: PropsWithChildren) => {
     }
     let mounted = true;
 
+    setMentorReplies([]);
+    seenMentorIds.current = null;
+    replyOwner.current = student.studentId;
+    const epoch = getSessionGeneration();
     const poll = async () => {
       const res = await fetchMessages(student.studentId);
-      if (!mounted || !res?.messages) return;
+      if (!mounted || getSessionGeneration() !== epoch || !res?.messages) return;
       const fromMentor = res.messages.filter((m) => m.from === 'mentor');
       if (!fromMentor.length) return;
 
@@ -165,6 +171,7 @@ export const NotificationsProvider = ({ children }: PropsWithChildren) => {
 
   const notifications = useMemo<AppNotification[]>(() => {
     const items: AppNotification[] = [];
+    if (!student) return items;
     let order = 10_000;
 
     // Suppress duplicates: only add if ID not already present
@@ -221,7 +228,7 @@ export const NotificationsProvider = ({ children }: PropsWithChildren) => {
       }
     }
 
-    mentorReplies.forEach((reply) => addIfUnique({
+    (replyOwner.current === student?.studentId ? mentorReplies : []).forEach((reply) => addIfUnique({
       id: `mentorreply:${reply.id}`,
       type: 'mentor',
       title: 'Reply from your mentor',
@@ -288,7 +295,7 @@ export const NotificationsProvider = ({ children }: PropsWithChildren) => {
     }));
 
     return items.sort((a, b) => b.order - a.order).slice(0, 50).filter(i => !clearedIds.has(i.id));
-  }, [dailyMcqAttempts, dailyMcqDate, data.announcements, data.feedback, data.mentorNotes, data.reports, data.studyLog, data.studyNotes, dueReceipts, mentorReplies, student?.group, targetDoneToday, clearedIds]);
+  }, [dailyMcqAttempts, dailyMcqDate, data.announcements, data.feedback, data.mentorNotes, data.reports, data.studyLog, data.studyNotes, dueReceipts, mentorReplies, student?.group, student?.studentId, targetDoneToday, clearedIds]);
 
   const persist = useCallback(async (next: Set<string>) => {
     setReadIds(next);

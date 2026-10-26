@@ -12,9 +12,12 @@
       "env": {
         "EXPO_PUBLIC_BACKEND_MODE": "mock",
         "EXPO_PUBLIC_ALLOW_MODE_SWITCH": "true",
-        "EXPO_PUBLIC_APP_VERSION": "1.14.6"
+        "UPM_APK_BUILD": "1",
+        "UPM_OTA_ENABLED": "1",
+        "UPM_OTA_CHANNEL": "preview"
       },
-      "environment": "preview"
+      "environment": "preview",
+      "channel": "preview"
     },
     "apk-readonly": {
       "distribution": "internal",
@@ -24,9 +27,12 @@
       "env": {
         "EXPO_PUBLIC_BACKEND_MODE": "live-readonly",
         "EXPO_PUBLIC_ALLOW_MODE_SWITCH": "false",
-        "EXPO_PUBLIC_APP_VERSION": "1.14.6"
+        "UPM_APK_BUILD": "1",
+        "UPM_OTA_ENABLED": "1",
+        "UPM_OTA_CHANNEL": "preview"
       },
-      "environment": "preview"
+      "environment": "preview",
+      "channel": "preview"
     },
     "apk": {
       "distribution": "internal",
@@ -36,7 +42,32 @@
       "env": {
         "EXPO_PUBLIC_BACKEND_MODE": "live",
         "EXPO_PUBLIC_ALLOW_MODE_SWITCH": "false",
-        "EXPO_PUBLIC_APP_VERSION": "1.14.6"
+        "UPM_APK_BUILD": "1",
+        "UPM_OTA_ENABLED": "1",
+        "UPM_OTA_CHANNEL": "production",
+        "EAS_PROJECT_ID": "fc2cb9eb-e3f0-40b2-9a74-7c996902602c",
+        "EXPO_PUBLIC_API_BASE_URL": "https://student-dashboard-566076646952.asia-south1.run.app"
+      },
+      "environment": "production",
+      "channel": "production"
+    },
+    "ota-preview": {
+      "extends": "apk-readonly",
+      "channel": "preview",
+      "env": {
+        "UPM_OTA_ENABLED": "1",
+        "UPM_OTA_CHANNEL": "preview",
+        "UPM_APK_BUILD": "1"
+      },
+      "environment": "preview"
+    },
+    "ota-production": {
+      "extends": "apk",
+      "channel": "production",
+      "env": {
+        "UPM_OTA_ENABLED": "1",
+        "UPM_OTA_CHANNEL": "production",
+        "UPM_APK_BUILD": "1"
       },
       "environment": "production"
     }

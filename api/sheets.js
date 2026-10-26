@@ -14,6 +14,7 @@
  */
 
 import { google } from 'googleapis';
+import studentGateway from './proxy.js';
 
 const SHEET_ID = process.env.SHEET_ID || '1oYYodP_XcbJOjrP5c4PirQDCnl54NFyPUbf7lwM1Ycc';
 const ENROLLMENT_SHEET_ID = process.env.ENROLLMENT_SHEET_ID || '1eeJdeNHdTMWF2vLy65f1cCMhZ469Y_kJ3RnY32DbKA0';
@@ -558,23 +559,71 @@ async function handleAction(action, payload, sheets, drive) {
   }
 }
 
+// The legacy provider dispatcher is not an authorization boundary. Only these
+// reviewed student/public-auth actions may use this URL, via the same validated
+// gateway/backend as /api/proxy. No Sheets credential or legacy result fallback.
+const STUDENT_ACTIONS = new Set([
+  'getStats', 'getStudyLog', 'getWeeklyReports', 'getStudentMentorNotes',
+  'getStudentFeedback', 'attendance.status', 'getLeaderboard',
+  'getAnnouncements', 'notes.listForStudent', 'addStudyLog', 'deleteStudyLog',
+  'attendance.markAbsent', 'attendance.requestLeave', 'attendance.cancelLeave',
+  'feedback.read', 'saveDeviceToken', 'messages.thread', 'messages.send',
+  'ai.ask', 'ai.evaluate', 'ai.dailyTarget', 'revision.plan'
+]);
+const PUBLIC_GATEWAY_ACTIONS = new Set(['validateLogin', 'changePassword', 'app.version']);
+const UNVERIFIED_AUTH_ACTIONS = new Set(['validateStudent', 'forgotPassword', 'verifyOTP', 'resetPassword']);
+
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin','*');
-  res.setHeader('Access-Control-Allow-Methods','POST, GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers','Content-Type');
-  if(req.method==='OPTIONS') return res.status(200).end();
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Student-Id, X-Session-Password');
+  if (req.method === 'OPTIONS') return res.status(204).end();
+  if (req.method !== 'POST') return res.status(405).json({ error: 'POST required.' });
+  let body = req.body;
+  if (typeof body === 'string') {
+    try { body = JSON.parse(body); }
+    catch { return res.status(400).json({ error: 'Invalid request body.' }); }
+  }
+  if (!body || typeof body !== 'object' || Array.isArray(body) || typeof body.action !== 'string') {
+    return res.status(400).json({ error: 'A valid action is required.' });
+  }
+  const action = body.action;
+  if (UNVERIFIED_AUTH_ACTIONS.has(action)) {
+    return res.status(503).json({ error: 'Legacy authentication authority is unverified.' });
+  }
+  if (!STUDENT_ACTIONS.has(action) && !PUBLIC_GATEWAY_ACTIONS.has(action)) {
+    // Mentor/content/global operations need verified authority. Neither a
+    // student credential nor an arbitrary bearer token grants that policy.
+    return res.status(403).json({ error: 'Action requires verified authorization.' });
+  }
+  const headers = {
+    'x-student-id': String(req.headers?.['x-student-id'] || req.headers?.['X-Student-Id'] || ''),
+    'x-session-password': String(req.headers?.['x-session-password'] || req.headers?.['X-Session-Password'] || '')
+  };
+  if (STUDENT_ACTIONS.has(action)) {
+    if (!headers['x-student-id'] || !headers['x-session-password']) {
+      return res.status(401).json({ error: 'Student authentication required.' });
+    }
+    if (body.payload != null && (typeof body.payload !== 'object' || Array.isArray(body.payload))) {
+      return res.status(400).json({ error: 'Invalid payload.' });
+    }
+    // This is rejection-only input validation, not authentication. The backend
+    // still validates credentials/current access and derives the actual owner.
+    for (const target of [body.studentId, body.payload?.studentId]) {
+      if (target != null && target !== '' && normalizeId(target) !== normalizeId(headers['x-student-id'])) {
+        return res.status(403).json({ error: 'Student scope denied.' });
+      }
+    }
+    if (body.result != null && !(typeof body.result === 'object' && !Array.isArray(body.result) && Object.keys(body.result).length === 0)) {
+      return res.status(403).json({ error: 'Client result injection denied.' });
+    }
+  }
   try {
-    let body=req.body;
-    if(!body || typeof body==='string'){ try{ body=JSON.parse(body||'{}'); }catch{ body={}; } }
-    const action=body.action;
-    const payload=body.payload||{};
-    if(!action) return res.status(400).json({ error:'action required' });
-    const { sheets, drive } = await getClients();
-    const result = await handleAction(action, payload, sheets, drive);
-    return res.status(200).json({ result });
-  } catch(err){
-    console.error('sheets.js error', err);
-    return res.status(500).json({ error: err.message||String(err) });
+    return await studentGateway({ method: 'POST', headers, body, query: {} }, res);
+  } catch {
+    // Never expose provider messages/credentials or invoke the legacy writer.
+    return res.status(502).json({ error: 'Student service unavailable.' });
   }
 }
 

@@ -19,6 +19,13 @@ type Planned = StudyLogPayload['studiedAsPlanned'] | '';
 
 type PickedProof = { uri: string; name: string; mimeType: string; size: number };
 
+// Auth rejection unmounts navigation. Retain only this user's authored draft
+// (and the existing local proof URI) in process memory, never a shared dashboard cache.
+type LocalDraft = { date: string; hours: string; planned: Planned; reason: string;
+  otherReason: string; subjects: string[]; targetCompleted: string;
+  tomorrowTarget: string; mentorSupport: string; proof: PickedProof | null };
+const ownDrafts = new Map<string, LocalDraft>();
+
 const subjectsList = ['Accounts', 'Law', 'Taxation', 'Costing', 'Audit', 'FM', 'SM', 'Revision', 'Mock Test', 'Question Bank Practice'];
 const reasons = ['Health Issue', 'Family Function', 'Office / Job', 'College', 'Travelling', 'Power / Internet Issue', 'Personal Work', 'Low Motivation', 'Other'];
 const supportOptions = ['No', 'Subject Doubt', 'Time Management', 'Motivation', 'Study Planning', 'Personal Discussion'];
@@ -54,20 +61,28 @@ const ChipList = ({ values, selected, toggle }: { values: string[]; selected: st
 );
 
 export const AddStudyLogScreen = ({ navigation }: Props) => {
-  const { backendMode } = useAuth();
+  const { backendMode, student } = useAuth();
+  const draftOwner = student?.studentId;
+  const previousDraft = draftOwner ? ownDrafts.get(draftOwner) : undefined;
   const { submitStudyLog } = useData();
-  const [date, setDate] = useState(localDateKey());
-  const [hours, setHours] = useState('');
-  const [planned, setPlanned] = useState<Planned>('');
-  const [reason, setReason] = useState('');
-  const [otherReason, setOtherReason] = useState('');
-  const [subjects, setSubjects] = useState<string[]>([]);
-  const [targetCompleted, setTargetCompleted] = useState('');
-  const [tomorrowTarget, setTomorrowTarget] = useState('');
-  const [mentorSupport, setMentorSupport] = useState('');
-  const [proof, setProof] = useState<PickedProof | null>(null);
+  const [date, setDate] = useState(previousDraft?.date || localDateKey());
+  const [hours, setHours] = useState(previousDraft?.hours || '');
+  const [planned, setPlanned] = useState<Planned>(previousDraft?.planned || '');
+  const [reason, setReason] = useState(previousDraft?.reason || '');
+  const [otherReason, setOtherReason] = useState(previousDraft?.otherReason || '');
+  const [subjects, setSubjects] = useState<string[]>(previousDraft?.subjects || []);
+  const [targetCompleted, setTargetCompleted] = useState(previousDraft?.targetCompleted || '');
+  const [tomorrowTarget, setTomorrowTarget] = useState(previousDraft?.tomorrowTarget || '');
+  const [mentorSupport, setMentorSupport] = useState(previousDraft?.mentorSupport || '');
+  const [proof, setProof] = useState<PickedProof | null>(previousDraft?.proof || null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [draftAcknowledged, setDraftAcknowledged] = useState(false);
+  if (draftOwner) {
+    if (draftAcknowledged) ownDrafts.delete(draftOwner);
+    else ownDrafts.set(draftOwner, { date, hours, planned, reason, otherReason,
+      subjects, targetCompleted, tomorrowTarget, mentorSupport, proof });
+  }
 
   const chooseProof = async () => {
     setError('');
@@ -121,9 +136,12 @@ export const AddStudyLogScreen = ({ navigation }: Props) => {
   };
 
   const validate = () => {
-    const parsedHours = Number(hours);
+    const hoursRaw = hours.trim().replace(',', '.');
+    const parsedHours = Number(hoursRaw);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(new Date(date).getTime())) return 'Enter a valid date in YYYY-MM-DD format.';
-    if (!parsedHours || parsedHours <= 0 || parsedHours > 24) return 'Study hours must be between 0 and 24.';
+    if (!hoursRaw) return 'Enter study hours. Enter 0 if you could not study today.';
+    if (!/^(?:\d+(?:\.\d*)?|\.\d+)$/.test(hoursRaw) || !Number.isFinite(parsedHours) || parsedHours < 0 || parsedHours > 24) return 'Study hours must be a number between 0 and 24.';
+    if (parsedHours === 0 && planned !== 'No') return 'For 0 hours, select No under studied as planned and choose a reason.';
     if (!planned) return 'Select whether you studied as planned.';
     if (planned === 'No' && !reason) return 'Select the main reason you could not study as planned.';
     if (planned === 'No' && reason === 'Other' && !otherReason.trim()) return 'Please specify the reason.';
@@ -140,8 +158,9 @@ export const AddStudyLogScreen = ({ navigation }: Props) => {
     setLoading(true);
     try {
       let proofUrl = '';
-      if (proof) {
+      if (proof && planned !== 'No') {
         const saved = await getSavedSession();
+      if (draftOwner && saved?.studentId !== draftOwner) throw new Error('Student session changed. Keep this draft and sign in again.');
         if (!saved) throw new Error('Your saved session expired. Sign in again before uploading proof.');
         const uploaded = await api.uploadProof({
           studentId: saved.studentId,
@@ -154,7 +173,7 @@ export const AddStudyLogScreen = ({ navigation }: Props) => {
       }
       await submitStudyLog({
         date,
-        hours: Number(hours),
+        hours: Number(hours.trim().replace(',', '.')),
         studiedAsPlanned: planned as StudyLogPayload['studiedAsPlanned'],
         reason: planned === 'No' ? (reason === 'Other' ? otherReason.trim() : reason) : '',
         subjects: planned === 'No' ? '' : subjects.join(', '),
@@ -163,6 +182,8 @@ export const AddStudyLogScreen = ({ navigation }: Props) => {
         mentorSupport,
         proofUrl,
       });
+      setDraftAcknowledged(true);
+      if (draftOwner) ownDrafts.delete(draftOwner);
       Alert.alert('Study log saved', 'Your progress has been added successfully.', [{ text: 'Done', onPress: () => navigation.goBack() }]);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not save the study log.');
@@ -180,7 +201,21 @@ export const AddStudyLogScreen = ({ navigation }: Props) => {
           {backendMode === 'live' ? <View style={styles.liveBanner}><Ionicons name="cloud-upload-outline" size={18} color={colors.success} /><Text style={styles.liveBannerText}>Full live sync is on. This entry and its proof will be submitted to your existing mentorship dashboard.</Text></View> : null}
 
           <FormInput label="Study date" value={date} onChangeText={setDate} placeholder="YYYY-MM-DD" autoCapitalize="none" />
-          <FormInput label="Total study hours" value={hours} onChangeText={setHours} placeholder="e.g. 5.5" keyboardType="decimal-pad" />
+          <FormInput label="Total study hours" value={hours} onChangeText={setHours} placeholder="0 if no study, e.g. 5.5 otherwise" keyboardType="decimal-pad" />
+          <View style={styles.field}>
+            <View style={styles.chips}>
+              <Chip label="Aaj padhai nahi hui (0 hrs)" selected={hours.trim() !== '' && Number(hours.replace(',', '.')) === 0 && planned === 'No'} onPress={() => {
+                setHours('0');
+                setPlanned('No');
+                setSubjects([]);
+                setTargetCompleted('');
+                setTomorrowTarget('');
+                setProof(null);
+                setError('');
+              }} />
+            </View>
+            <Text style={styles.introText}>0 hours is an honest tracker submission, not an Absent or Leave request. Choose a reason below; study proof is not needed.</Text>
+          </View>
 
           <Field title="Were you able to study as planned?" required>
             <View style={styles.chips}>{['Yes', 'No', 'Maybe'].map((value) => <Chip key={value} label={value} selected={planned === value} onPress={() => { setPlanned(value as Planned); setError(''); }} />)}</View>

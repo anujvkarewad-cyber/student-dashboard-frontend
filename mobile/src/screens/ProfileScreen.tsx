@@ -49,6 +49,7 @@ export const ProfileScreen = () => {
   const { data } = useData();
   const { pushStatus, enablePush } = useNotifications();
   const { sharing: progressSharing, setSharing: setProgressSharing } = useProgressSync();
+  const ownerSyncTest = student?.studentId === 'UMP0000';
   const [progressBusy, setProgressBusy] = useState(false);
   const pushEnabled = pushStatus === 'enabled';
 
@@ -99,7 +100,7 @@ export const ProfileScreen = () => {
 
         {backendMode === 'live' ? <View style={[styles.pushCard, pushEnabled && styles.pushCardEnabled]}><View style={[styles.pushIcon, pushEnabled && styles.pushIconEnabled]}><Ionicons name={pushEnabled ? 'notifications' : 'notifications-outline'} size={20} color={pushEnabled ? colors.success : colors.primary} /></View><View style={{ flex: 1 }}><Text style={[styles.pushTitle, pushEnabled && { color: colors.success }]}>{pushEnabled ? 'Live notifications enabled' : 'Live notifications'}</Text><Text style={styles.pushText}>{pushMessage}</Text></View>{!pushEnabled && pushStatus !== 'requesting' ? <Pressable onPress={() => enablePush()} style={styles.pushButton}><Text style={styles.pushButtonText}>Enable</Text></Pressable> : null}</View> : null}
 
-        <View style={[styles.shareCard, progressSharing && styles.shareCardEnabled]}>
+        {!ownerSyncTest && <View style={[styles.shareCard, progressSharing && styles.shareCardEnabled]}>
           <View style={[styles.pushIcon, progressSharing && { backgroundColor: '#FFFFFF' }]}>
             <Ionicons name={progressSharing ? 'shield-checkmark' : 'shield-outline'} size={20} color={progressSharing ? colors.success : colors.primary} />
           </View>
@@ -114,7 +115,7 @@ export const ProfileScreen = () => {
           <Pressable disabled={progressBusy} onPress={() => confirmSharingToggle(!progressSharing)} style={[styles.pushButton, progressSharing && styles.shareButtonOff]}>
             <Text style={styles.pushButtonText}>{progressBusy ? 'Saving…' : progressSharing ? 'Turn off' : 'Turn on'}</Text>
           </Pressable>
-        </View>
+        </View>}
 
         <Text style={styles.sectionTitle}>Student details</Text>
         <Card style={styles.infoCard}>

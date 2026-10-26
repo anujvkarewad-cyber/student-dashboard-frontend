@@ -23,7 +23,7 @@
   var SYNC_PATH = "/api/student-attempts/sync";
   var RESTORE_PATH = "/api/student-attempts/restore";
   var MAX_ATTEMPTS = 300;
-  var INFLIGHT_RESTORE = null;
+  var INFLIGHT_RESTORES = new Map();
 
   function apiBase() {
     return String(
@@ -56,7 +56,11 @@
       body: JSON.stringify(Object.assign({ studentId: current.studentId, password: current.password }, payload)),
     }).then(function (response) {
       if (!response.ok) throw new Error("MCQ cloud request failed (" + response.status + ")");
-      return response.json();
+      return response.json().then(function(data) {
+        var active = session();
+        if (!active || active.studentId !== current.studentId || active.password !== current.password) throw new Error('Account changed during MCQ sync');
+        return data;
+      });
     });
   }
 
@@ -122,6 +126,7 @@
     };
     if (!payload.attemptId) return null;
     if (kind === "daily") {
+      if (attempt.officialSetId) payload.officialSetId = txt(attempt.officialSetId, 64, "");
       payload.date = txt(attempt.date, 16, "");
       payload.group = txt(attempt.group, 32, "");
     } else {
@@ -133,6 +138,8 @@
   }
 
   // ---------- public API ----------
+  function officialDaily(group) { return post('/api/student-attempts/daily-set', { group: group }); }
+
   function syncCompletedMcqAttempts(daily, practice) {
     var attempts = [];
     (Array.isArray(daily) ? daily : []).forEach(function (attempt) {
@@ -145,7 +152,11 @@
     });
     if (!attempts.length) return Promise.resolve({ ok: true, accepted: 0 });
     // Fire-and-forget callers: never reject, just log, so the UI can never break.
-    return post(SYNC_PATH, { attempts: attempts.slice(-MAX_ATTEMPTS) }).catch(function (error) {
+    var batch = attempts.slice(-MAX_ATTEMPTS);
+    return post(SYNC_PATH, { attempts: batch }).then(function (ack) {
+      if (!ack || ack.ok !== true || ack.accepted !== batch.length) throw new Error('MCQ backup acknowledgement incomplete');
+      return ack;
+    }).catch(function (error) {
       console.warn("[MCQ Cloud] Backup skipped:", error.message);
       return { ok: false, accepted: 0 };
     });
@@ -160,8 +171,10 @@
   }
 
   function restoreMcqAttempts() {
-    if (INFLIGHT_RESTORE) return INFLIGHT_RESTORE;
-    INFLIGHT_RESTORE = post(RESTORE_PATH, {}).then(function (data) {
+    var owner = (session() || {}).studentId;
+    if (!owner) return Promise.reject(new Error('Student login required'));
+    if (INFLIGHT_RESTORES.has(owner)) return INFLIGHT_RESTORES.get(owner);
+    var restoring = post(RESTORE_PATH, {}).then(function (data) {
       return {
         daily: ((data && data.daily) || []).map(strip),
         practice: ((data && data.practice) || []).map(function (item) {
@@ -171,12 +184,13 @@
         }),
       };
     });
-    var clear = function () { INFLIGHT_RESTORE = null; };
-    INFLIGHT_RESTORE.then(clear, clear);
-    return INFLIGHT_RESTORE;
+    INFLIGHT_RESTORES.set(owner, restoring);
+    var clear = function () { if (INFLIGHT_RESTORES.get(owner) === restoring) INFLIGHT_RESTORES.delete(owner); };
+    restoring.then(clear, clear);
+    return restoring;
   }
 
-  window.UMP_MCQ_CLOUD = {
+  window.UMP_MCQ_CLOUD = { officialDaily: officialDaily,
     queue: syncCompletedMcqAttempts,
     sync: syncCompletedMcqAttempts,
     restore: restoreMcqAttempts,

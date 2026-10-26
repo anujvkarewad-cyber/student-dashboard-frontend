@@ -1,10 +1,14 @@
+import { getSavedSession, clearSavedSession, getSessionGeneration } from '../storage/session';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system/legacy';
+import { readWorkspaceInbox } from '../services/workspaceInbox';
 import { config } from '../config';
 import type { Announcement, ApiSuccess, AppRelease, AttendanceStatus, LeaderboardEntry, MentorFeedback, MentorNote, Stats, Student, StudyLog, StudyLogPayload, StudyNote, WeeklyReport } from '../types';
 type ApiEnvelope<T> = { result?: T; error?: string };
 type NativeJsonResponse<T> = { status: number; data: ApiEnvelope<T> };
 export type ApiMode = 'mock' | 'live-readonly' | 'live';
+
+const PRIVATE_ACTIONS = new Set(['getStats','getStudyLog','getWeeklyReports','getStudentMentorNotes','getStudentFeedback','getAnnouncements','getLeaderboard','notes.listForStudent','attendance.status','addStudyLog','deleteStudyLog','attendance.markAbsent','attendance.requestLeave','attendance.cancelLeave','feedback.read','saveDeviceToken','messages.thread','messages.send','ai.ask','ai.dailyTarget','ai.evaluate','revision.plan']);
 
 const MODE_STORAGE_KEY = 'ump_api_mode_v2';
 
@@ -21,6 +25,9 @@ function postJsonNative<T>(
   url: string,
   body: Record<string, unknown>,
   timeoutMs: number,
+  studyLogWrite = false,
+  actorHeaders: Record<string,string> = {},
+  method: 'POST' | 'GET' = 'POST',
 ): Promise<NativeJsonResponse<T>> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -29,12 +36,15 @@ function postJsonNative<T>(
     const fail = (message: string) => {
       if (settled) return;
       settled = true;
-      reject(new Error(message));
+      reject(new Error(studyLogWrite
+        ? 'Save outcome is unknown. Keep this draft and check Study tracker before retrying.'
+        : message));
     };
 
-    xhr.open('POST', url, true);
+    xhr.open(method, url, true);
     xhr.timeout = timeoutMs;
     xhr.setRequestHeader('Content-Type', 'application/json');
+    Object.entries(actorHeaders).forEach(([name,value]) => xhr.setRequestHeader(name,value));
 
     xhr.onload = () => {
       if (settled) return;
@@ -54,7 +64,7 @@ function postJsonNative<T>(
     xhr.onabort = () => fail('The request was cancelled before completion. Please try again.');
 
     try {
-      xhr.send(JSON.stringify(body));
+      xhr.send(method === 'GET' ? null : JSON.stringify(body));
     } catch {
       fail('Unable to start the request. Please reopen the app and try again.');
     }
@@ -102,11 +112,36 @@ class ApiClient {
   private async call<T>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
     if (!config.apiUrl) throw new Error('Cloud gateway is not configured for this build.');
 
+    const protectedCall = PRIVATE_ACTIONS.has(action);
+    const epoch = getSessionGeneration();
+    const saved = protectedCall ? await getSavedSession() : null;
+    if (protectedCall && (!saved?.studentId || !saved.password)) throw new Error('Please sign in again.');
+    if (saved && payload.studentId && String(payload.studentId).trim().toUpperCase() !== saved.studentId.trim().toUpperCase()) throw new Error('Student scope denied.');
+    const actorHeaders: Record<string,string> = saved ? { 'X-Student-Id':saved.studentId, 'X-Session-Password':saved.password } : {};
+    if (protectedCall && epoch !== getSessionGeneration()) throw new Error('Student session changed.');
     const { status, data } = await postJsonNative<T>(
       config.apiUrl,
       { action, payload },
       config.requestTimeoutMs,
+      action === 'addStudyLog',
+      actorHeaders,
     );
+
+    if (protectedCall) {
+      const active = await getSavedSession();
+      if (epoch !== getSessionGeneration() || active?.studentId !== saved?.studentId || active?.password !== saved?.password) throw new Error('Student session changed.');
+      if (status === 401 || status === 403) {
+        await clearSavedSession();
+        throw new Error('Student session unavailable. Keep any draft and sign in again.');
+      }
+    }
+    if (action === 'addStudyLog') {
+      const result = data?.result as ApiSuccess | undefined;
+      if (status < 200 || status >= 300 || data?.error || result?.success !== true) {
+        throw new Error(result?.message || 'Save outcome is unknown. Keep this draft and check Study tracker before retrying.');
+      }
+      return data.result as T;
+    }
 
     if (status < 200 || status >= 300) {
       throw new Error(data.error || `Request failed (${status}).`);
@@ -163,6 +198,18 @@ class ApiClient {
   async uploadProof(input: { studentId: string; password: string; fileName: string; mimeType: string; fileUri: string }): Promise<{ proofUrl: string }> {
     this.blockBackendWrite('Proof upload');
     if (!config.proofUploadUrl) throw new Error('Proof upload is not configured for this build.');
+    const epoch = getSessionGeneration();
+    const actor = await getSavedSession();
+    if (!actor?.studentId || !actor.password || epoch !== getSessionGeneration()
+      || actor.studentId.trim().toUpperCase() !== input.studentId.trim().toUpperCase()
+      || actor.password !== input.password) throw new Error('Student session unavailable. Keep your draft and sign in again.');
+
+    // Negotiate BEFORE sending student bytes; old public upload servers fail closed.
+    const capability = await postJsonNative<never>(config.proofUploadUrl.replace(/\/proof-upload$/, '/proof-capabilities'), {}, config.requestTimeoutMs, false, {'X-Student-Id':actor.studentId,'X-Session-Password':actor.password}, 'GET');
+    const ready=await getSavedSession();
+    if(epoch!==getSessionGeneration() || ready?.studentId!==actor.studentId || ready?.password!==actor.password) throw new Error('Student session changed. Keep your draft.');
+    const support=capability.data as unknown as {protocol?:string;private?:boolean;maxBytes?:number};
+    if(capability.status!==200 || support.protocol!=='private-v1' || support.private!==true || support.maxBytes!==10*1024*1024) throw new Error('Private proof upload is unavailable. Keep your draft; no file was uploaded.');
 
     // Stream from the app cache in native code. Loading the whole proof into a
     // JavaScript ArrayBuffer made low-memory/older Android phones hang or lose
@@ -176,6 +223,7 @@ class ApiClient {
         'X-Student-Id': input.studentId,
         'X-Session-Password': input.password,
         'X-File-Name': encodeURIComponent(input.fileName),
+        'X-Proof-Protocol': 'private-v1',
       },
     });
     const upload = uploadTask.uploadAsync();
@@ -183,20 +231,28 @@ class ApiClient {
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
         void uploadTask.cancelAsync();
-        reject(new Error('Proof upload is taking too long. Check your connection and try once more.'));
+        reject(new Error('Proof upload outcome is unknown. Keep your draft and check before retrying.'));
       }, 90_000);
     });
 
     try {
       const response = await Promise.race([upload, timeout]);
       if (!response) throw new Error('Proof upload was cancelled. Please select the file again.');
-      let result: { proofUrl?: string; error?: string } = {};
+      const active = await getSavedSession();
+      if (epoch !== getSessionGeneration() || active?.studentId !== actor.studentId || active?.password !== actor.password) throw new Error('Student session changed. Keep your draft.');
+      if (response.status === 401 || response.status === 403) {
+        await clearSavedSession();
+        throw new Error('Student session unavailable. Keep your draft and sign in again.');
+      }
+      let result: { success?: boolean; ok?: boolean; proofUrl?: string; error?: string } = {};
       try { result = JSON.parse(response.body || '{}') as typeof result; }
-      catch { throw new Error('Proof server returned an unreadable response. Please try again.'); }
-      if (response.status < 200 || response.status >= 300 || !result.proofUrl) {
+      catch { throw new Error('Proof upload outcome is unknown. Keep your draft and check before retrying.'); }
+      if (response.status < 200 || response.status >= 300 || result.success !== true || result.ok === false || result.error || typeof result.proofUrl !== 'string' || !result.proofUrl.trim()) {
         throw new Error(result.error || `Proof upload failed (${response.status}).`);
       }
-      return { proofUrl: result.proofUrl };
+      const proof=new URL(result.proofUrl,config.proofUploadUrl);
+      if(proof.origin!==new URL(config.proofUploadUrl).origin || proof.pathname!=='/api/proof-file' || proof.username || proof.password || proof.hash || [...proof.searchParams.keys()].some(k=>k!=='fileId') || proof.searchParams.getAll('fileId').length!==1) throw new Error('Private proof was not acknowledged. Keep your draft.');
+      return { proofUrl: proof.pathname+proof.search };
     } finally {
       if (timer) clearTimeout(timer);
     }
@@ -216,7 +272,11 @@ class ApiClient {
   }
 
   async getAnnouncements(): Promise<Announcement[]> {
-    return this.call<Announcement[]>('getAnnouncements');
+    const epoch = getSessionGeneration();
+    const [legacy, privateInbox] = await Promise.all([this.call<Announcement[]>('getAnnouncements'), readWorkspaceInbox<{ announcements: Announcement[] }>('announcements')]);
+    if (epoch !== getSessionGeneration()) throw new Error('Student session changed.');
+    const rows = [...(privateInbox?.announcements || []), ...legacy];
+    return [...new Map(rows.map(row => [(row as Announcement & { id?: string }).id || JSON.stringify([row.title, row.message, row.body, row.date]), row])).values()];
   }
 
   async getStudentMentorNotes(studentId: string): Promise<MentorNote[]> {

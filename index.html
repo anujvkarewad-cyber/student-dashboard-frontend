@@ -579,6 +579,7 @@
   <div class="view" data-testid="view-tests">
     <div class="card">
       <div class="card-head"><h3>Tests</h3><span class="muted">Same mentor tests as the Android app</span></div>
+      <p><a href="/workbook.html" class="btn-primary">Audit &amp; SM workbook practice — type or write</a></p>
       <div id="tests-list"></div>
       <div id="tests-player" style="margin-top:16px;"></div>
     </div>
@@ -963,8 +964,12 @@
             <span class="field-label">Total Study Hours</span>
             <div class="field-control">
                 <i class="fa-regular fa-clock"></i>
-                <input type="number" id="tl-hours" placeholder="e.g. 2.5" step="0.5" min="0" max="24" autocomplete="off">
+                <input type="number" id="tl-hours" placeholder="0 if no study, e.g. 2.5 otherwise" step="0.5" min="0" max="24" autocomplete="off" aria-describedby="tl-hours-help">
             </div>
+            <div id="tl-hours-quick" style="margin-top:8px;">
+                <button type="button" class="btn btn-secondary" data-hours="0">Aaj padhai nahi hui (0 hrs)</button>
+            </div>
+            <small id="tl-hours-help" class="muted" style="display:block;margin-top:8px;">0 hours is an honest tracker submission, not an Absent or Leave request. Choose a reason below; study proof is not needed.</small>
         </div>
 
         <!-- ---------- Were you able to study today as planned? (Yes / No / Maybe) ---------- -->
@@ -1099,6 +1104,9 @@
 <script src="live-bank-loader.js"></script>
 <script src="mcq-cloud-sync.js"></script>
 <script src="mcq-progress-share.js"></script>
+<script src="practice-client.js"></script>
+<script src="receipt-audio-vault.js"></script>
+  <script src="receipt-voice.js"></script>
 <script src="learning-tools.js"></script>
 <script src="web-tests.js"></script>
 <script src="app.js"></script>

@@ -2,7 +2,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { EnrichedMcqQuestion } from '../data/mcqMetadata';
 import { buildProgressPayload, getShareChoice, setMentorSharing, syncProgress, ProgressSummary, ProgressTrendPoint } from '../services/progressSync';
-import { syncTestHistory } from '../services/testHistorySync';
 import { useAuth } from './AuthContext';
 import { useDailyMcq } from './DailyMcqContext';
 import { useMcqBank } from './McqBankContext';
@@ -29,18 +28,32 @@ export const ProgressSyncProvider = ({ children }: PropsWithChildren) => {
   const [loaded, setLoaded] = useState(false);
   const [status, setStatus] = useState<ProgressSyncStatus>('idle');
   const [lastSyncedAt, setLastSyncedAt] = useState<string>();
-  const syncingRef = useRef(false);
+  const syncingRef = useRef<number | null>(null);
+  const ownerRef = useRef(student?.studentId);
+  const ownerEpoch = useRef(0);
+  if (ownerRef.current !== student?.studentId) {
+    ownerRef.current = student?.studentId;
+    ownerEpoch.current += 1;
+  }
 
   // Build a lookup from every available question id to its chapter metadata.
   const questionLookup = useMemo<Map<string, EnrichedMcqQuestion>>(() => {
     const lookup = new Map<string, EnrichedMcqQuestion>();
     for (const question of liveQuestions) if (question?.id) lookup.set(question.id, question);
+    // Official Daily snapshots carry their own chapter metadata; progress must
+    // not wait for the 4,700-question practice bank to finish downloading.
+    for (const attempt of dailyHistory) {
+      for (const question of attempt.officialQuestions || []) {
+        if (question?.id) lookup.set(question.id, question);
+      }
+    }
     return lookup;
-  }, [liveQuestions]);
+  }, [liveQuestions, dailyHistory]);
 
   // Restore the student's saved sharing choice.
   useEffect(() => {
     let mounted = true;
+    setLoaded(false); setSharingState(false); setStatus('idle'); setLastSyncedAt(undefined);
     if (!student) {
       setLoaded(true);
       setSharingState(false);
@@ -54,11 +67,13 @@ export const ProgressSyncProvider = ({ children }: PropsWithChildren) => {
     return () => { mounted = false; };
   }, [student]);
 
-  const syncNow = useCallback(async () => {
+  const syncNow = useCallback(async (confirmedSharing = false) => {
     if (!student || backendMode === 'mock' || backendMode === 'live-readonly') return;
-    if (!sharing) { setStatus('off'); return; }
-    if (syncingRef.current) return;
-    syncingRef.current = true;
+    if (!sharing && !confirmedSharing) { setStatus('off'); return; }
+    const epoch = ownerEpoch.current;
+    const stillOwner = () => ownerEpoch.current === epoch && ownerRef.current === student.studentId;
+    if (syncingRef.current === epoch) return;
+    syncingRef.current = epoch;
     setStatus('syncing');
     try {
       const sessions = [
@@ -66,19 +81,21 @@ export const ProgressSyncProvider = ({ children }: PropsWithChildren) => {
         ...practiceHistory.filter((session) => session.completedAt),
       ];
       const { summaries, trend } = buildProgressPayload(student.studentId, sessions, questionLookup);
+      if (!summaries.length) { if (stillOwner()) setStatus('idle'); return; }
       const result = await syncProgress(student.studentId, summaries, trend);
-      await syncTestHistory({ studentId: student.studentId, studentName: (student as any).studentName, batch: (student as any).batch }).catch(() => undefined);
+      if (!stillOwner()) return;
+      // Progress sync must not upload unrelated mentor-test history.
       if (result.ok) {
         setStatus('ok');
         setLastSyncedAt(new Date().toISOString());
-        await AsyncStorage.setItem('ump_progress_synced_at', new Date().toISOString()).catch(() => undefined);
+        await AsyncStorage.setItem(`ump_progress_synced_at:${student.studentId}`, new Date().toISOString()).catch(() => undefined);
       } else {
         setStatus('off'); // 403 — sharing was revoked server-side
       }
     } catch {
-      setStatus('error');
+      if (stillOwner()) setStatus('error');
     } finally {
-      syncingRef.current = false;
+      if (syncingRef.current === epoch) syncingRef.current = null;
     }
   }, [backendMode, dailyHistory, practiceHistory, questionLookup, sharing, student]);
 
@@ -94,13 +111,17 @@ export const ProgressSyncProvider = ({ children }: PropsWithChildren) => {
 
   const setSharing = useCallback(async (on: boolean) => {
     if (!student) return;
-    setSharingState(on);
-    if (backendMode === 'mock' || backendMode === 'live-readonly') return;
+    const epoch = ownerEpoch.current;
+    const stillOwner = () => ownerEpoch.current === epoch && ownerRef.current === student.studentId;
+    if (backendMode === 'mock' || backendMode === 'live-readonly') { setSharingState(on); return; }
     try {
       await setMentorSharing(student.studentId, on);
-      if (on) await syncNow();
+      if (!stillOwner()) return;
+      setSharingState(on);
+      if (on) await syncNow(true);
+      else setStatus('off');
     } catch {
-      setStatus('error');
+      if (stillOwner()) setStatus('error');
     }
   }, [backendMode, student, syncNow]);
 

@@ -46,7 +46,7 @@ const TimerAction = ({ icon, label, onPress, tone = 'primary' }: { icon: keyof t
 
 export const FocusTimerScreen = () => {
   const navigation = useNavigation<any>();
-  const { hydrated, status, subject, target, elapsedSeconds, sessions, setSubject, setTarget, start, pause, resume, finish, discard, removeSession } = useFocusTimer();
+  const { hydrated, status, smartTarget, subject, target, elapsedSeconds, sessions, setSubject, setTarget, start, pause, resume, finish, discard, removeSession } = useFocusTimer();
   const { receiptForSession, dueReceipts } = useStudyReceipts();
 
   const todaySessions = useMemo(() => sessions.filter((session) => isToday(session.endedAt)), [sessions]);
@@ -168,13 +168,14 @@ export const FocusTimerScreen = () => {
 
         <SectionHeader title="Choose subject" />
         <Card style={styles.subjectCard}>
+          {smartTarget && <Card><Text>Linked chapter: {smartTarget.concept}</Text><Text>Timer completion does not auto-complete your target. Share only a question-score summary after your private receipt.</Text>{status === 'idle' && <Pressable onPress={() => discard()}><Text>Unlink target</Text></Pressable>}</Card>}
           <View style={styles.chips}>{subjects.map((item) => <Chip key={item} label={item} selected={subject === item} onPress={() => setSubject(item)} />)}</View>
           <View style={styles.targetDivider} />
           <Text style={styles.targetLabel}>WHAT ARE YOU STUDYING? (COMPULSORY)</Text>
           <TextInput
             value={target}
             onChangeText={(text) => { setTarget(text); if (targetError) setTargetError(''); }}
-            editable={status === 'idle'}
+            editable={status === 'idle' && !smartTarget}
             placeholder="e.g. Accounts — Chapter 3: Accounting Standards"
             placeholderTextColor={colors.muted}
             maxLength={140}

@@ -14,6 +14,7 @@ import { Card, Chip, FormInput, PrimaryButton } from './ui';
 import { useAuth } from '../context/AuthContext';
 import { colors, radius, spacing } from '../theme';
 import type { AttendanceStatus } from '../types';
+import { getSessionGeneration } from '../storage/session';
 
 /**
  * "On leave" / "Absent" self-reporting (owner spec, 14 Oct 2026).
@@ -78,9 +79,11 @@ export const LeaveAbsentCard = () => {
 
   const load = useCallback(async () => {
     if (!studentId || !canWrite) return;
+    const epoch = getSessionGeneration();
     setLoading(true);
     try {
-      setStatus(await api.getAttendanceStatus(studentId));
+      const result = await api.getAttendanceStatus(studentId);
+      if (epoch === getSessionGeneration() && result?.studentId === studentId) setStatus(result);
     } catch (err) {
       setError((err as Error)?.message || 'Could not load your leave status.');
     } finally {
@@ -89,6 +92,9 @@ export const LeaveAbsentCard = () => {
   }, [canWrite, studentId]);
 
   useEffect(() => {
+    setStatus(null);
+    setError('');
+    setNotice('');
     void load();
   }, [load]);
 
@@ -98,9 +104,10 @@ export const LeaveAbsentCard = () => {
   const absentOptions = ABSENT_OPTIONS.filter((option) => option.offset <= backfillDays);
   const lengths = LEAVE_LENGTHS.filter((value) => value <= maxLeaveDays);
 
-  const activeLeave = status?.leaves?.find((row) => row.active) || null;
+  const ownStatus = status?.studentId === studentId ? status : null;
+  const activeLeave = ownStatus?.leaves?.find((row) => row.active) || null;
   const upcomingLeave =
-    activeLeave || status?.leaves?.find((row) => row.from > (status?.today || '')) || null;
+    activeLeave || ownStatus?.leaves?.find((row) => row.from > (ownStatus?.today || '')) || null;
 
   const startIso = isoOf(addDays(today, leaveStart));
   const endIso = isoOf(addDays(today, leaveStart + Math.max(0, leaveDays - 1)));
@@ -172,7 +179,7 @@ export const LeaveAbsentCard = () => {
               activeLeave.days === 1 ? '' : 's'
             }`,
       }
-    : status?.status === 'absent'
+    : ownStatus?.status === 'absent'
       ? {
           icon: 'close-circle-outline' as const,
           tone: 'absent' as const,
@@ -222,6 +229,27 @@ export const LeaveAbsentCard = () => {
               <Text style={styles.cancelLink}>Cancel</Text>
             </Pressable>
           ) : null}
+        </View>
+      ) : null}
+
+      {ownStatus?.recentAbsent?.length ? (
+        <View style={styles.banner}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.bannerTitle}>Recent absent days</Text>
+            {[...ownStatus.recentAbsent].reverse().map(row => (
+              <Text key={row.date} style={styles.bannerBody}>{shortDate(row.date)} · Absent{row.reason ? ` — ${row.reason}` : ''}</Text>
+            ))}
+          </View>
+        </View>
+      ) : null}
+      {ownStatus?.leaves?.length ? (
+        <View style={styles.banner}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.bannerTitle}>Leave records</Text>
+            {ownStatus.leaves.map(row => (
+              <Text key={row.leaveId} style={styles.bannerBody}>{shortDate(row.from)} – {shortDate(row.to)} · Leave{row.reason ? ` — ${row.reason}` : ''}</Text>
+            ))}
+          </View>
         </View>
       ) : null}
 

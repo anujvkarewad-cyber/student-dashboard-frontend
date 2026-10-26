@@ -1,3 +1,5 @@
+import { getSavedSession, getSessionGeneration, clearSavedSession } from '../storage/session';
+import { readWorkspaceInbox } from '../services/workspaceInbox';
 import { config } from '../config';
 
 /**
@@ -45,15 +47,27 @@ type FetchOpts = { method?: 'GET' | 'POST'; body?: unknown };
 
 async function mentorFetch<T>(path: string, opts: FetchOpts = {}): Promise<T | null> {
   try {
+    const protectedCall = ['/api/messages/','/api/ai/','/api/revision/','/api/targets/complete','/api/student-auth/whatsapp','/api/student-auth/reminder-notify'].some(prefix => path.startsWith(prefix));
+    const epoch = getSessionGeneration();
+    const session = protectedCall ? await getSavedSession() : null;
+    if (protectedCall && (!session?.studentId || !session.password || epoch !== getSessionGeneration())) return null;
+    const queryOwner = /[?&]studentId=([^&]+)/.exec(path)?.[1];
+    if (session && queryOwner && decodeURIComponent(queryOwner).trim().toUpperCase() !== session.studentId.trim().toUpperCase()) return null;
+    const bodyOwner = (opts.body as { studentId?: string } | undefined)?.studentId;
+    if (session && bodyOwner && bodyOwner.trim().toUpperCase() !== session.studentId.trim().toUpperCase()) return null;
     const res = await fetch(`${config.mentorApiUrl}${path}`, {
       method: opts.method || 'GET',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(session ? {'X-Student-Id':session.studentId, 'X-Session-Password':session.password} : {}) },
       body: opts.body ? JSON.stringify(opts.body) : undefined,
       signal: AbortSignal.timeout(config.requestTimeoutMs),
     });
+    if (protectedCall && epoch !== getSessionGeneration()) return null;
+    if (protectedCall && [401,403].includes(res.status)) { await clearSavedSession(); return null; }
     if (res.status === 404) return null; // route not deployed yet
     if (!res.ok) return null;
-    return (await res.json()) as T;
+    const data = await res.json();
+    if (protectedCall && epoch !== getSessionGeneration()) return null;
+    return data as T;
   } catch {
     return null;
   }
@@ -124,8 +138,9 @@ export const askAi = (
   });
 
 /** Student ↔ mentor messenger thread. */
-export const fetchMessages = (studentId: string) =>
-  mentorFetch<{ messages: ChatMessage[] }>(`/api/messages/thread?studentId=${encodeURIComponent(studentId)}`);
+export const fetchMessages = async (studentId: string) =>
+  // A rejected/unavailable scoped reader must never fall back to an ID-only thread.
+  await readWorkspaceInbox<{ studentId: string; messages: ChatMessage[] }>('messages', studentId);
 
 export const sendMessage = (studentId: string, text: string, studentName?: string, batch?: string) =>
   mentorFetch<{ ok: boolean; message: ChatMessage }>(`/api/messages/send`, {

@@ -1,6 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { PrivateProofViewer } from '../components/PrivateProofViewer';
+import { isPrivateProofLink, loadPrivateProof, type PrivateProof } from '../services/privateProof';
 import { Alert, FlatList, Linking, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Card, EmptyState, ErrorBanner } from '../components/ui';
@@ -24,7 +26,7 @@ const Summary = ({ icon, label, value }: { icon: keyof typeof Ionicons.glyphMap;
   </View>
 );
 
-const LogRow = ({ item, canDelete, onDelete }: { item: StudyLog; canDelete: boolean; onDelete: () => void }) => (
+const LogRow = ({ item, canDelete, onDelete, onView }: { item: StudyLog; canDelete: boolean; onDelete: () => void; onView: () => void }) => (
   <Card style={styles.logCard}>
     <View style={styles.dateTile}>
       <Text style={styles.dateDay}>{new Date(item.date).getDate() || '—'}</Text>
@@ -36,7 +38,7 @@ const LogRow = ({ item, canDelete, onDelete }: { item: StudyLog; canDelete: bool
     </View>
     <View style={styles.hoursPill}><Text style={styles.hours}>{format(item.hours)}h</Text></View>
     {item.proof && item.proof !== '#' ? (
-      <Pressable onPress={() => Linking.openURL(item.proof!)} hitSlop={10}><Ionicons name="open-outline" size={20} color={colors.primary} /></Pressable>
+      <Pressable onPress={onView} hitSlop={10}><Ionicons name="open-outline" size={20} color={colors.primary} /></Pressable>
     ) : null}
     {canDelete ? (
       <Pressable onPress={onDelete} hitSlop={10} style={styles.deleteBtn}>
@@ -48,7 +50,16 @@ const LogRow = ({ item, canDelete, onDelete }: { item: StudyLog; canDelete: bool
 
 export const TrackerScreen = () => {
   const navigation = useNavigation<any>();
-  const { backendMode } = useAuth();
+  const { backendMode, student } = useAuth();
+  const [proof,setProof]=useState<PrivateProof|null>(null);
+  useEffect(()=>{setProof(null);},[student?.studentId]);
+  const viewProof=async(value:string)=>{
+    try {
+      if(isPrivateProofLink(value)){setProof(await loadPrivateProof(value));return;}
+      const url=new URL(value);if(url.protocol!=='https:' || url.username || url.password) throw Error('Invalid proof link.');
+      await Linking.openURL(url.toString()); // Legacy public records unchanged; no credentials sent.
+    }catch{Alert.alert('Proof unavailable','Sign in again or ask your mentor to check access.');}
+  };
   const { data, error, refreshing, refreshTracker, deleteStudyLog } = useData();
   const stats = data.stats;
   const canSubmit = backendMode !== 'live-readonly';
@@ -62,6 +73,7 @@ export const TrackerScreen = () => {
           <LogRow
             item={item}
             canDelete={canSubmit}
+            onView={()=>void viewProof(item.proof!)}
             onDelete={() => {
               Alert.alert('Delete this entry?', `${niceDate(item.date)} · ${format(item.hours)}h`, [
                 { text: 'Cancel', style: 'cancel' },

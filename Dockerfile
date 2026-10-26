@@ -20,6 +20,8 @@ COPY index.html manifest.json style.css ./
 COPY api.js app.js firebase-init.js firebase-messaging-sw.js learning-data.js \
      learning-tools.js live-bank-loader.js mcq-cloud-sync.js mcq-progress-share.js \
      mentor-host.js service-worker.js web-tests.js ./
+COPY practice-vendor ./practice-vendor
+COPY practice-client.js receipt-voice.js receipt-audio-vault.js workbook.html workbook-core.js workbook-objective.js workbook.js ./
 COPY assets ./assets
 COPY icon ./icon
 

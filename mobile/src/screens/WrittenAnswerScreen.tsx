@@ -1,3 +1,4 @@
+import { getSessionGeneration } from '../storage/session';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import React, { useMemo, useState } from 'react';
@@ -99,6 +100,7 @@ export const WrittenAnswerScreen = ({ navigation }: Props) => {
 
   const submit = async () => {
     if (!student || !question.trim() || !answer.trim() || !confidence) return;
+    const sessionGeneration = getSessionGeneration();
     setBusy(true);
     setError(undefined);
     const concept = primaryConcept({
@@ -117,6 +119,9 @@ export const WrittenAnswerScreen = ({ navigation }: Props) => {
       concept: concept.label,
     });
     setBusy(false);
+    // Fence the caller's continuation too: a logout/account switch can happen
+    // after the service resolves but before this screen records the mark.
+    if (sessionGeneration !== getSessionGeneration()) return;
 
     if (!outcome.ok) {
       setError(outcome.error);

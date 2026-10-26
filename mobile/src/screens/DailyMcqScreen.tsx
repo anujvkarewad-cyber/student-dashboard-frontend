@@ -8,6 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Card, PrimaryButton, SectionHeader } from '../components/ui';
 import { useAuth } from '../context/AuthContext';
 import { useDailyMcq } from '../context/DailyMcqContext';
+import { useMcqBank } from '../context/McqBankContext';
 import { icaiContentManifest } from '../data/icaiContentManifest';
 import { enrichMcqQuestion } from '../data/mcqMetadata';
 import type { RootStackParamList } from '../navigation/types';
@@ -28,8 +29,9 @@ const formatDuration = (seconds?: number) => {
 };
 
 export const DailyMcqScreen = ({ navigation, route }: Props) => {
-  const { student } = useAuth();
-  const { hydrated, todayAttempts, history, attemptForGroup, questionsForGroup, streakForGroup, startDaily, answerQuestion, submitDaily } = useDailyMcq();
+  const { student, backendMode } = useAuth();
+  const { refreshing: bankRefreshing, error: bankError, refresh: refreshBank } = useMcqBank();
+  const { syncStatus, retrySync, hydrated, todayAttempts, history, attemptForGroup, questionsForGroup, streakForGroup, startDaily, answerQuestion, submitDaily } = useDailyMcq();
   const allowedGroups = useMemo(() => groupsForStudent(student?.group), [student?.group]);
   const [selectedGroup, setSelectedGroup] = useState<CaGroup>(route.params?.group && allowedGroups.includes(route.params.group) ? route.params.group : allowedGroups[0]);
   const [index, setIndex] = useState(0);
@@ -69,7 +71,7 @@ export const DailyMcqScreen = ({ navigation, route }: Props) => {
   useEffect(() => {
     if (!active || timeLeft > 0 || autoSubmitted.current) return;
     autoSubmitted.current = true;
-    submitDaily(selectedGroup).then(() => Alert.alert('Time is up', `Your ${selectedGroup} answered questions have been submitted.`));
+    submitDaily(selectedGroup).then(() => Alert.alert('Time is up', `Your ${selectedGroup} answers are saved on this device. Check the cloud backup status below.`));
   }, [active, selectedGroup, submitDaily, timeLeft]);
 
   const subjectMix = useMemo(() => [...new Set(todayQuestions.map((item) => item.subject))], [todayQuestions]);
@@ -80,7 +82,7 @@ export const DailyMcqScreen = ({ navigation, route }: Props) => {
       await startDaily(selectedGroup);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
     } catch (error) {
-      Alert.alert('Another attempt is active', error instanceof Error ? error.message : 'Finish the active group attempt first.');
+      Alert.alert('Daily MCQ unavailable', error instanceof Error ? error.message : 'Finish the active group attempt first.');
     } finally { setStarting(false); }
   };
 
@@ -179,7 +181,7 @@ export const DailyMcqScreen = ({ navigation, route }: Props) => {
             <View style={styles.calendar}><Text style={styles.calendarDay}>{new Date().getDate()}</Text><Text style={styles.calendarMonth}>{new Date().toLocaleDateString('en-IN', { month: 'short' }).toUpperCase()}</Text></View>
             <Text style={styles.eyebrow}>{selectedGroup.toUpperCase()} · DAILY KNOWLEDGE CHECK</Text>
             <Text style={styles.title}>10 {selectedGroup} questions.{`\n`}One focused attempt.</Text>
-            <Text style={styles.subtitle}>Build recall consistency with a fresh mixed-subject challenge every day.</Text>
+            <Text style={styles.subtitle}>Complete all 10 questions in the official Daily set for accuracy-based ranking eligibility. Practice sets do not earn ranking credit.</Text>
             <View style={styles.heroStats}>
               <View style={styles.heroStat}><Text style={styles.heroStatValue}>7 + 3</Text><Text style={styles.heroStatLabel}>NORMAL + CASE</Text></View>
               <View style={styles.heroDivider} />
@@ -199,7 +201,7 @@ export const DailyMcqScreen = ({ navigation, route }: Props) => {
 
           <SectionHeader title="Today's mix" />
           <Card style={styles.mixCard}>
-            <View style={styles.subjects}>{subjectMix.map((subject) => <View key={subject} style={styles.subjectChip}><Text style={styles.subjectText}>{subject}</Text></View>)}</View>
+            <View style={styles.subjects}>{!subjectMix.length && <Text style={styles.draftText}>{backendMode === 'live' ? 'Your official 10-question set loads securely when you tap Start. The full practice bank is not required.' : bankRefreshing ? 'Loading published question bank…' : bankError ? 'Question bank could not load. Retry below.' : 'No question preview available yet.'}</Text>}{subjectMix.map((subject) => <View key={subject} style={styles.subjectChip}><Text style={styles.subjectText}>{subject}</Text></View>)}</View>
           </Card>
 
           <SectionHeader title="Challenge rules" />
@@ -211,7 +213,9 @@ export const DailyMcqScreen = ({ navigation, route }: Props) => {
             <View style={styles.rule}><View style={styles.ruleIcon}><Ionicons name="bulb-outline" size={19} color={colors.primary} /></View><View><Text style={styles.ruleTitle}>Explanations after submission</Text><Text style={styles.ruleText}>Review both correct and incorrect answers.</Text></View></View>
           </Card>
 
-          <PrimaryButton label={todayQuestions.length ? "Start today's MCQ" : 'No published MCQs available'} icon="play" loading={starting} disabled={!todayQuestions.length} onPress={start} />
+          {bankError && <Text accessibilityRole="alert" style={styles.draftText}>Practice-bank download: {bankError}. Your saved Daily attempts are retained.</Text>}
+          {bankError && <PrimaryButton label="Retry practice-bank download" variant="secondary" onPress={() => { void refreshBank(); }} />}
+          <PrimaryButton label={backendMode === 'live' || todayQuestions.length ? "Start today's MCQ" : bankRefreshing ? 'Loading question bank…' : 'Question bank unavailable — retry'} icon="play" loading={starting} disabled={backendMode === 'live-readonly' || (backendMode === 'mock' && !todayQuestions.length)} onPress={start} />
           {history.filter((item) => item.group === selectedGroup && item.completedAt).slice(0, 8).map((item) => (
             <Pressable key={`${item.date}-${item.group}`} onPress={() => setViewingPast(item)} style={styles.historyRow}>
               <Ionicons name="clipboard-outline" size={16} color={colors.primary} />
@@ -228,6 +232,9 @@ export const DailyMcqScreen = ({ navigation, route }: Props) => {
       <SafeAreaView style={styles.safe} edges={['bottom']}>
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
           <Text style={styles.selectLabel}>GROUP CHALLENGES</Text>
+          <Text accessibilityLiveRegion="polite" style={styles.draftText}>{syncStatus === 'synced' ? 'Cloud backup confirmed.' : syncStatus === 'pending' ? 'Saved on this device · backing up…' : 'Saved on this device · cloud backup not confirmed.'}</Text>
+          {syncStatus === 'error' || syncStatus === 'local' ? <PrimaryButton label="Retry cloud backup" onPress={() => { void retrySync(); }} variant="secondary" /> : null}
+          <Text style={styles.draftText}>Ranking eligibility requires an official Daily set with all 10 questions answered. Points depend on accuracy; practice and incomplete sets earn no ranking credit.</Text>
           {groupSelector}
           <LinearGradient colors={percentage >= 70 ? ['#126B61', '#1A9B86'] : ['#344867', '#536B8E']} style={styles.resultHero}>
             <View style={styles.resultIcon}><Ionicons name={percentage >= 70 ? 'trophy' : 'flag'} size={29} color={percentage >= 70 ? colors.amber : colors.primary} /></View>

@@ -1,6 +1,6 @@
 import React, { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { api, ApiMode } from '../api/client';
-import { clearSavedSession, getSavedSession, saveSession } from '../storage/session';
+import { clearSavedSession, getSavedSession, saveSession, subscribeSessionInvalidation, getSessionGeneration } from '../storage/session';
 import type { Student } from '../types';
 
 type AuthContextValue = {
@@ -21,6 +21,8 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
   const [booting, setBooting] = useState(true);
   const [backendMode, setBackendMode] = useState<ApiMode>(api.getMode());
 
+  useEffect(() => subscribeSessionInvalidation(() => setStudent(null)), []);
+
   useEffect(() => {
     let mounted = true;
     const restore = async () => {
@@ -31,24 +33,25 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
         if (mounted) setBooting(false);
         return;
       }
+      const epoch = getSessionGeneration();
       try {
         const result = await api.validateLogin(saved.studentId, saved.password);
+        if (!mounted || epoch !== getSessionGeneration()) return;
         if (result.success === false) {
           // Only a definitive credential/account response may erase a session.
-          // An outage response keeps both credentials and the cached profile.
-          const definitive = ['wrong_password', 'not_found', 'group_closed'].includes(String(result.code || ''));
+          // An outage keeps credentials, not private profile access.
+          const definitive = ['wrong_password', 'not_found', 'group_closed', 'access_blocked', 'removed'].includes(String(result.code || ''));
           if (definitive) await clearSavedSession();
-          else if (mounted && saved.student) setStudent(saved.student);
+          // No cached profile is proof of current server authorization.
         } else if (result.forcePasswordChange && mode === 'live-readonly') {
           await clearSavedSession();
-        } else {
-          await saveSession({ studentId: saved.studentId, password: saved.password, student: result });
+        } else if (result.success === true) {
+          await saveSession({ studentId: result.studentId || saved.studentId, password: saved.password, student: result });
           if (mounted) setStudent(result);
         }
       } catch {
-        // A validated encrypted session remains usable during a gateway/server
-        // outage. Network access will retry normally when each screen refreshes.
-        if (mounted && saved.student) setStudent(saved.student);
+        // Keep saved credentials for retry, but do not expose server-derived
+        // private dashboard data without online validation.
       } finally {
         if (mounted) setBooting(false);
       }
@@ -66,14 +69,16 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
 
   const login = useCallback(async (studentId: string, password: string) => {
     const normalizedId = studentId.trim().toUpperCase();
+    const epoch = getSessionGeneration();
     const result = await api.validateLogin(normalizedId, password);
-    if (result.success === false) {
+    if (epoch !== getSessionGeneration()) throw new Error('Student session changed.');
+    if (result.success !== true) {
       throw new Error(result.message || 'Student ID or password is incorrect.');
     }
     if (result.forcePasswordChange && backendMode === 'live-readonly') {
       throw new Error('Your account requires a password change. Select Full live to complete it securely.');
     }
-    await saveSession({ studentId: normalizedId, password, student: result });
+    await saveSession({ studentId: result.studentId || normalizedId, password, student: result });
     setStudent(result);
     return result;
   }, [backendMode]);
@@ -86,6 +91,7 @@ export const AuthProvider = ({ children }: PropsWithChildren) => {
   const updateSavedPassword = useCallback(async (newPassword: string) => {
     if (!student) return;
     await saveSession({ studentId: student.studentId, password: newPassword, student });
+    setStudent({ ...student });
   }, [student]);
 
   const completeRequiredPasswordChange = useCallback(() => {
