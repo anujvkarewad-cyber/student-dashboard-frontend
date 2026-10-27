@@ -3,6 +3,17 @@
   "minimumNewBaselineVersionCode": 47,
   "channels": {
     "preview": null,
-    "production": null
+    "production": {
+      "projectId": "fc2cb9eb-e3f0-40b2-9a74-7c996902602c",
+      "runtimeVersion": "31d36d8dea1b99e818124af6cb36678a6804fdee",
+      "gatewayOrigin": "https://student-dashboard-566076646952.asia-south1.run.app",
+      "version": "1.15.4",
+      "versionCode": 49,
+      "backendMode": "live",
+      "deviceValidated": true,
+      "androidSigningCertificateSha256": "e8854617b59d87d55e4da83031f15998b54622457de1912f930b0641aaf9074c",
+      "baseApkSha256": "08fb4d9ba2c8b841bba918fe0d9be867ec2e9c69c91a4d1a04fd54a53d4b47e7",
+      "testedBuildReference": "GitHub Actions run 40115021829, artifact 12569265853 (UPM-v1.15.4-49-release.apk, 61896878 bytes), build commit 7504f26e880a0994089e14b9cff543db818a63ba. Device acceptance: owner confirmed app shows version 1.15.4 on the OTA-enabled phone, 27 Oct 2026. Artifact APK sha256 re-verified locally against the recorded checksum 27 Oct 2026. Audience note: students' installed builds (code 46) contain no expo-updates and cannot receive channel updates; the production channel audience is the owner's OTA-capable install only."
+    }
   }
 }
