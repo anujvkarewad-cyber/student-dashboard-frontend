@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Modal,
   Pressable,
   ScrollView,
@@ -61,7 +62,7 @@ const LEAVE_START_OPTIONS = [
 
 const LEAVE_LENGTHS = [1, 2, 3, 4, 5, 6, 7, 10, 14];
 
-export const LeaveAbsentCard = () => {
+export const LeaveAbsentCard = ({ onChanged }: { onChanged?: () => void } = {}) => {
   const { student, backendMode } = useAuth();
   const studentId = student?.studentId || '';
   const [status, setStatus] = useState<AttendanceStatus | null>(null);
@@ -122,11 +123,18 @@ export const LeaveAbsentCard = () => {
     if (!studentId) return;
     setSaving(true);
     setError('');
+    const dateIso = isoOf(addDays(today, absentOffset));
     try {
-      await api.markAbsent(studentId, { date: isoOf(addDays(today, absentOffset)), reason: reason.trim() });
-      setNotice('Marked. Your mentor will see you were absent.');
+      await api.markAbsent(studentId, { date: dateIso, reason: reason.trim() });
+      setNotice(`Absent marked for ${shortDate(dateIso)}. Saved — your mentor can see it.`);
       close();
       await load();
+      onChanged?.();
+      // Explicit confirmation so the student knows the mark saved (owner feedback 28 Oct)
+      Alert.alert(
+        'Absent marked',
+        `Marked absent for ${shortDate(dateIso)}.\nYour mentor sees this day as "Absent" in the dashboard.`,
+      );
     } catch (err) {
       setError((err as Error)?.message || 'Could not save. Please try again.');
     } finally {
@@ -140,9 +148,14 @@ export const LeaveAbsentCard = () => {
     setError('');
     try {
       await api.requestLeave(studentId, { from: startIso, to: endIso, reason: reason.trim() });
-      setNotice(`Leave saved: ${shortDate(startIso)} – ${shortDate(endIso)}.`);
+      setNotice(`Leave saved: ${shortDate(startIso)} – ${shortDate(endIso)}. Your mentor can see it.`);
       close();
       await load();
+      onChanged?.();
+      Alert.alert(
+        'Leave saved',
+        `Leave saved: ${shortDate(startIso)} to ${shortDate(endIso)}.\nYour mentor sees these days as "Leave" in the dashboard.`,
+      );
     } catch (err) {
       setError((err as Error)?.message || 'Could not save. Please try again.');
     } finally {
@@ -158,6 +171,7 @@ export const LeaveAbsentCard = () => {
       await api.cancelLeave(studentId, upcomingLeave.leaveId);
       setNotice('Leave cancelled.');
       await load();
+      onChanged?.();
     } catch (err) {
       setError((err as Error)?.message || 'Could not cancel. Please try again.');
     } finally {

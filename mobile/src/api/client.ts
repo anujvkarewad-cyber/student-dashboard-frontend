@@ -209,9 +209,12 @@ class ApiClient {
     const ready=await getSavedSession();
     if(epoch!==getSessionGeneration() || ready?.studentId!==actor.studentId || ready?.password!==actor.password) throw new Error('Student session changed. Keep your draft.');
     const support=capability.data as unknown as {protocol?:string;private?:boolean;maxBytes?:number};
-    if(capability.status!==200 || support.protocol!=='private-v1' || support.private!==true || support.maxBytes!==10*1024*1024) throw new Error('Private proof upload is unavailable. Keep your draft; no file was uploaded.');
+      // file:// URIs that uploadAsync cannot stream must fail with student
+      // guidance, not the raw native "uploadTaskStartAsync" rejection.
+      const localFile = await FileSystem.getInfoAsync(input.fileUri);
+      if (!localFile.exists) throw new Error('The proof photo was cleared by your phone before upload. Attach it again, then submit once more.');
 
-    // Stream from the app cache in native code. Loading the whole proof into a
+    // Stream from app-owned storage in native code. Loading the whole proof into a
     // JavaScript ArrayBuffer made low-memory/older Android phones hang or lose
     // the picked file before the request ever reached Cloud Run.
     const uploadTask = FileSystem.createUploadTask(config.proofUploadUrl, input.fileUri, {
@@ -226,7 +229,7 @@ class ApiClient {
         'X-Proof-Protocol': 'private-v1',
       },
     });
-    const upload = uploadTask.uploadAsync();
+      const upload = uploadTask.uploadAsync();
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
@@ -236,7 +239,16 @@ class ApiClient {
     });
 
     try {
-      const response = await Promise.race([upload, timeout]);
+      let response;
+      try {
+        response = await Promise.race([upload, timeout]);
+      } catch (nativeErr) {
+        const raw = nativeErr instanceof Error ? nativeErr.message : String(nativeErr);
+        if (/doesn'?t exist|does not exist|ENOENT|uploadTaskStartAsync/i.test(raw)) {
+          throw new Error('The proof photo was cleared by your phone before upload. Attach it again, then submit once more.');
+        }
+        throw nativeErr;
+      }
       if (!response) throw new Error('Proof upload was cancelled. Please select the file again.');
       const active = await getSavedSession();
       if (epoch !== getSessionGeneration() || active?.studentId !== actor.studentId || active?.password !== actor.password) throw new Error('Student session changed. Keep your draft.');
@@ -323,6 +335,13 @@ class ApiClient {
 
   async cancelLeave(studentId: string, leaveId: string): Promise<ApiSuccess> {
     return this.call<ApiSuccess>('attendance.cancelLeave', { studentId, leaveId });
+  }
+
+  /** Remove a self-reported absent day (up to 3 days back). Backend
+   * attendance.cancelLeave accepts a plain date for absent rows — owner asked
+   * students to see and undo their absent marks in Recent sessions (28 Oct). */
+  async removeAbsent(studentId: string, date: string): Promise<ApiSuccess> {
+    return this.call<ApiSuccess>('attendance.cancelLeave', { studentId, date });
   }
 }
 

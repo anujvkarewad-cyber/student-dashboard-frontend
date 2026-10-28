@@ -51,22 +51,22 @@ export const NoteSubjectScreen = ({ route, navigation }: Props) => {
 
   // Teen level (owner, 14 Oct): Subject -> category (Super 75 / teacher) ->
   // CHAPTER folders ("Ch 2 — …", "Ch 11 — …") -> files. Chapter label mentor
-  // dashboard se aata hai; jo note bina chapter ke hai wo "Other material" me.
+  // dashboard; notes without a chapter go into "Other material".
   const chapterGroups = useMemo(() => {
     const groups: Record<string, typeof categoryNotes> = {};
     categoryNotes.forEach((note) => {
       const chapter = note.chapter?.trim() || 'Other material';
       (groups[chapter] ||= []).push(note);
     });
-    // "Ch 2" pehle, "Ch 10" baad me (plain alphabet ka ulta order nahi).
+    // "Ch 2" before "Ch 10" (plain alphabetical order would invert them).
     return Object.entries(groups).sort(([a], [b]) => {
       const diff = chapterNumber(a) - chapterNumber(b);
       return diff !== 0 ? diff : a.localeCompare(b);
     });
   }, [categoryNotes]);
 
-  // Sirf ek hi group aur wo bhi bina chapter wala ho to seedha files dikhao
-  // (warna har purane note ke liye faltu ek extra tap).
+  // If there is only one group and it is the chapter-less one, show files
+  // directly (otherwise every old note costs one extra tap for nothing).
   const hasChapterFolders = chapterGroups.length > 1 || (chapterGroups.length === 1 && chapterGroups[0][0] !== 'Other material');
 
   const fileNotes = useMemo(() => {

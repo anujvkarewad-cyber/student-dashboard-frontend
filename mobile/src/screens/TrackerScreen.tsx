@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import React, { useEffect, useState } from 'react';
 import { PrivateProofViewer } from '../components/PrivateProofViewer';
 import { isPrivateProofLink, loadPrivateProof, type PrivateProof } from '../services/privateProof';
@@ -10,7 +10,12 @@ import { LeaveAbsentCard } from '../components/LeaveAbsentCard';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import { colors, radius, spacing } from '../theme';
-import type { StudyLog } from '../types';
+import { api } from '../api/client';
+import type { AttendanceStatus, StudyLog } from '../types';
+
+/** A real study-log row, or a self-reported absent day (owner spec 28-Oct-2026: students
+ * must see their absent marks in Recent sessions and be able to remove them). */
+type TrackerRow = ({ kind: 'log' } & StudyLog) | { kind: 'absent'; date: string; reason: string };
 
 const format = (value?: number) => value == null ? '—' : Number(value).toFixed(1).replace('.0', '');
 const niceDate = (value: string) => {
@@ -48,6 +53,25 @@ const LogRow = ({ item, canDelete, onDelete, onView }: { item: StudyLog; canDele
   </Card>
 );
 
+/** Self-reported absent day as a Recent-sessions row. The trash button un-marks it
+ * (attendance.cancelLeave with a date) so a wrong tap can be undone by the student. */
+const AbsentRow = ({ date, reason, onRemove, removing }: { date: string; reason: string; onRemove: () => void; removing: boolean }) => (
+  <Card style={[styles.logCard, styles.absentCard]}>
+    <View style={[styles.dateTile, styles.absentTile]}>
+      <Text style={[styles.dateDay, styles.absentTileText]}>{new Date(`${date}T00:00:00`).getDate() || '—'}</Text>
+      <Text style={[styles.dateMonth, styles.absentTileText]}>{new Date(`${date}T00:00:00`).toLocaleDateString('en-IN', { month: 'short' }).toUpperCase()}</Text>
+    </View>
+    <View style={styles.logBody}>
+      <Text style={styles.absentLabel}>Absent</Text>
+      <Text style={styles.logDate}>{niceDate(date)}{reason ? ` · ${reason}` : ''}</Text>
+      <Text style={styles.absentHint}>Marked by you — your mentor sees this day as "Absent"</Text>
+    </View>
+    <Pressable onPress={onRemove} hitSlop={10} style={styles.deleteBtn} disabled={removing} accessibilityLabel="Remove absent mark">
+      <Ionicons name="trash-outline" size={18} color={colors.red} />
+    </Pressable>
+  </Card>
+);
+
 export const TrackerScreen = () => {
   const navigation = useNavigation<any>();
   const { backendMode, student } = useAuth();
@@ -64,12 +88,55 @@ export const TrackerScreen = () => {
   const stats = data.stats;
   const canSubmit = backendMode !== 'live-readonly';
 
+  // Self-reported absent marks also appear as rows in this list,
+  // and the student can remove them with the trash button (owner spec 28-Oct-2026).
+  const [attendance, setAttendance] = useState<AttendanceStatus | null>(null);
+  const [removingAbsent, setRemovingAbsent] = useState(false);
+  const loadAttendance = React.useCallback(async () => {
+    if (backendMode !== 'live' || !student?.studentId) { setAttendance(null); return; }
+    try { setAttendance(await api.getAttendanceStatus(student.studentId)); }
+    catch { /* status card handles its own error; list keeps showing logs */ }
+  }, [backendMode, student?.studentId]);
+  useEffect(() => { void loadAttendance(); }, [loadAttendance, data.studyLog.length]);
+  // Card se mark/remove karne ke turant baad bhi list sync rahe.
+  useFocusEffect(React.useCallback(() => { void loadAttendance(); }, [loadAttendance]));
+
+  const absentRows: TrackerRow[] = (attendance?.recentAbsent || [])
+    .map((row) => ({ kind: 'absent' as const, date: row.date, reason: row.reason }));
+  const rows: TrackerRow[] = [
+    ...data.studyLog.map((log) => ({ kind: 'log' as const, ...log })),
+    ...absentRows,
+  ].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+
+  const removeAbsent = (date: string) => {
+    if (!student?.studentId) return;
+    Alert.alert('Remove absent mark?', `The absent mark for ${niceDate(date)} will be removed — your mentor will see this day as normal again.`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Remove', style: 'destructive', onPress: async () => {
+        setRemovingAbsent(true);
+        try {
+          await api.removeAbsent(student.studentId, date);
+          await loadAttendance();
+        } catch (err) {
+          Alert.alert('Could not remove', err instanceof Error ? err.message : 'Try again.');
+        } finally { setRemovingAbsent(false); }
+      }},
+    ]);
+  };
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <FlatList
-        data={data.studyLog}
-        keyExtractor={(item, index) => `${item.date}-${index}`}
-        renderItem={({ item }) => (
+        data={rows}
+        keyExtractor={(item, index) => `${item.kind}-${item.date}-${index}`}
+        renderItem={({ item }) => item.kind === 'absent' ? (
+          <AbsentRow
+            date={item.date}
+            reason={item.reason}
+            removing={removingAbsent}
+            onRemove={() => removeAbsent(item.date)}
+          />
+        ) : (
           <LogRow
             item={item}
             canDelete={canSubmit}
@@ -108,8 +175,8 @@ export const TrackerScreen = () => {
               <View style={styles.divider} />
               <Summary icon="trending-up-outline" label="Average" value={format(stats.averageHours)} />
             </Card>
-            {canSubmit ? <LeaveAbsentCard /> : null}
-            <View style={styles.listHeader}><Text style={styles.listTitle}>Recent sessions</Text><Text style={styles.listCount}>{data.studyLog.length} entries</Text></View>
+            {canSubmit ? <LeaveAbsentCard onChanged={() => void loadAttendance()} /> : null}
+            <View style={styles.listHeader}><Text style={styles.listTitle}>Recent sessions</Text><Text style={styles.listCount}>{rows.length} entries</Text></View>
           </>
         }
         ListEmptyComponent={<EmptyState icon="book-outline" title="No study sessions yet" message="Log your first focused session and start building your consistency streak." />}
@@ -152,6 +219,11 @@ const styles = StyleSheet.create({
   hoursPill: { backgroundColor: colors.tealSoft, paddingHorizontal: 10, paddingVertical: 7, borderRadius: radius.pill },
   hours: { color: colors.teal, fontSize: 12, fontWeight: '900' },
   deleteBtn: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
+  absentCard: { backgroundColor: '#FEF2F2', borderColor: '#FECACA' },
+  absentTile: { backgroundColor: colors.redSoft || '#FEE2E2' },
+  absentTileText: { color: colors.red },
+  absentLabel: { fontSize: 14, fontWeight: '900', color: colors.red },
+  absentHint: { fontSize: 11, color: colors.muted, marginTop: 2 },
   footerSpace: { height: 40 },
   fab: { position: 'absolute', right: spacing.lg, bottom: 22, height: 54, borderRadius: 27, paddingHorizontal: spacing.xl, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.primary, shadowColor: colors.primaryDark, shadowOffset: { width: 0, height: 7 }, shadowOpacity: 0.28, shadowRadius: 12, elevation: 7 },
   fabText: { color: colors.surface, fontWeight: '900', fontSize: 14 },

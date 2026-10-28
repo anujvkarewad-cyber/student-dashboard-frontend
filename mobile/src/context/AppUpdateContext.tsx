@@ -23,7 +23,7 @@ import { AppUpdateOverlay } from '../components/AppUpdateOverlay';
  *
  * Earlier builds downloaded + installed fully silently, so when a download
  * stalled, the installer permission was missing, or the file was incomplete,
- * students saw nothing and reported "samajh nahi aata kya ho raha" / "stuck at
+ * students saw nothing and reported "no idea what is happening" / "stuck at
  * 100%". This version surfaces every stage:
  *
  *   checking -> downloading (live progress) -> ready (Install now) -> installing

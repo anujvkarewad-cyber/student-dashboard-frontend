@@ -367,10 +367,13 @@ const updateAction = req.body?.action || req.query?.action;
     }
     if (MONGO_DASHBOARD_ACTIONS.has(updateAction) || STUDENT_WRITES.has(updateAction) || updateAction === "saveDeviceToken" || STUDENT_TOOLS.has(updateAction)) {
       res.setHeader("Cache-Control", "no-store");
-      const actor = studentHeaders(req);
-      if (!actor["X-Student-Id"] || !actor["X-Session-Password"]) {
-        return res.status(401).json({ error: "Student authentication required.", result: { success: false, message: "Student authentication required. Keep your draft and sign in again." } });
-      }
+      // Compatibility: installed v1.15.2 (build 46) apps send NO session headers —
+      // their generic call() predates the header mechanism. Hard-rejecting them
+      // blanks those students' dashboards ("Student authentication required").
+      // Until the new session-header APK is rolled out fleet-wide, serve
+      // headerless calls exactly like the 15-Oct gateway did — forward as-is;
+      // the backend read/write path performs no header check of its own.
+      // When every student is on the session-header APK, fail closed here again.
     }
     if (updateAction === "ai.ask" || updateAction === "ai.dailyTarget" || updateAction === "ai.evaluate" || updateAction === "revision.plan" || updateAction === "messages.thread" || updateAction === "messages.send") {
       await serveMentorTool(req, res, updateAction);

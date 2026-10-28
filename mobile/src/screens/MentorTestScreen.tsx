@@ -348,7 +348,7 @@ export const MentorTestScreen = () => {
                       label="⬆️ Upload Answer Sheet"
                       icon="cloud-upload-outline"
                       loading={uploading}
-                      onPress={() => (Platform.OS === 'web' ? setUploadError('Upload se phone par available hai (preview mode).') : setPickerOpen((o) => !o))}
+                      onPress={() => (Platform.OS === 'web' ? setUploadError('Uploads are available in the phone app (preview mode here).') : setPickerOpen((o) => !o))}
                     />
                     {pickerOpen ? (
                       <View style={styles.pickerRow}>
@@ -420,7 +420,7 @@ export const MentorTestScreen = () => {
                 <Card style={styles.card}>
                   <View style={styles.lockedBox}>
                     <Ionicons name="lock-closed" size={18} color={colors.muted} />
-                    <Text style={styles.muted}>Answer sheet upload karne ke baad answer key, marking scheme aur marks submit khul jayega.</Text>
+                    <Text style={styles.muted}>After you upload the answer sheet, the answer key, marking scheme and marks submission open up.</Text>
                   </View>
                 </Card>
               )}

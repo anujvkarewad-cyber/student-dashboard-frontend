@@ -204,7 +204,7 @@ export const AddStudyLogScreen = ({ navigation }: Props) => {
           <FormInput label="Total study hours" value={hours} onChangeText={setHours} placeholder="0 if no study, e.g. 5.5 otherwise" keyboardType="decimal-pad" />
           <View style={styles.field}>
             <View style={styles.chips}>
-              <Chip label="Aaj padhai nahi hui (0 hrs)" selected={hours.trim() !== '' && Number(hours.replace(',', '.')) === 0 && planned === 'No'} onPress={() => {
+              <Chip label="No study today (0 hrs)" selected={hours.trim() !== '' && Number(hours.replace(',', '.')) === 0 && planned === 'No'} onPress={() => {
                 setHours('0');
                 setPlanned('No');
                 setSubjects([]);

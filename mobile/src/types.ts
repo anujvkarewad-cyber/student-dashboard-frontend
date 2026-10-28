@@ -78,7 +78,7 @@ export type StudyNote = {
   date?: string;
   subject?: string;
   category?: string;
-  /** Mentor ka chapter label ("Ch 2 — Audit Strategy") — folder banata hai. */
+  /** Mentor-set chapter label ("Ch 2 — Audit Strategy") — becomes a folder. */
   chapter?: string;
   fileId?: string;
   url?: string;

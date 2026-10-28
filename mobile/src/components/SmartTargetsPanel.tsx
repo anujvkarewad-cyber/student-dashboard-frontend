@@ -55,10 +55,10 @@ const DayChip = ({ d, isCurrent, isViewed, onPress }: { d: SmartDay; isCurrent: 
   const state = d.done ? 'done' : isCurrent ? 'current' : 'locked';
   const backup = isBackupDay(d);
   const label = state === 'done'
-    ? `Day ${d.day} complete — dikhao`
+    ? `Day ${d.day} complete`
     : state === 'current'
-      ? `Day ${d.day} — aaj ka target`
-      : `Day ${d.day} abhi locked hai`;
+      ? `Day ${d.day} — today's target`
+      : `Day ${d.day} is locked`;
   return (
     <Pressable
       accessibilityRole="button"
@@ -70,7 +70,7 @@ const DayChip = ({ d, isCurrent, isViewed, onPress }: { d: SmartDay; isCurrent: 
       {state === 'done' ? <Ionicons name="checkmark" size={11} color="#FFF" style={styles.dayChipIcon} /> : null}
       {state === 'locked' ? <Ionicons name="lock-closed" size={10} color={colors.muted} style={styles.dayChipIcon} /> : null}
       <Text style={[styles.dayChipNum, state !== 'locked' && { color: '#FFF' }]}>{d.day}</Text>
-      {state === 'current' ? <Text style={styles.dayChipCaption}>Aaj</Text> : null}
+      {state === 'current' ? <Text style={styles.dayChipCaption}>Today</Text> : null}
     </Pressable>
   );
 };
@@ -132,18 +132,18 @@ function PlanProgress({ progress: p, busy, run, study }: { progress: SmartProgre
     <Text style={styles.planMeta}>Started {p.startDate} · Deadline {p.deadline}</Text>
 
     {p.backupDaysUsed > 0 && (
-      <Nudge icon="information-circle" title={`${p.backupDaysUsed} backup day use ho gaye`}
-        text={`${p.backupDaysRemaining} of ${p.includedBackupDays} abhi bhi bache hain — plan shift hua hai, kuch khoa nahi hai.`} />
+      <Nudge icon="information-circle" title={`${p.backupDaysUsed} backup day(s) used`}
+        text={`${p.backupDaysRemaining} of ${p.includedBackupDays} are still left — the plan shifted, nothing was lost.`} />
     )}
     {!p.complete && current && !p.canWork && (
-      <Nudge icon="time" title={p.extensionDaysNeeded ? 'Extension chahiye' : 'Aaj ke liye band hai'}
+      <Nudge icon="time" title={p.extensionDaysNeeded ? 'Extension needed' : 'Closed for today'}
         text={p.extensionDaysNeeded
           ? `At least ${p.extensionDaysNeeded} extra day(s). Saved work is unchanged.`
           : `Next day opens on ${current.scheduledDate} IST. Your revisions below remain open.`} />
     )}
     {p.complete && (
       <Nudge tone="teal" icon="trophy" title="Plan complete"
-        text={`${p.completedDays} days kaam kiya. Early finish ya backup — dono jeet hai.`} />
+        text={`You worked ${p.completedDays} days in total. Early finish or backup — both are a win.`} />
     )}
 
     {p.days.length > 0 && !p.complete && <>
@@ -154,18 +154,18 @@ function PlanProgress({ progress: p, busy, run, study }: { progress: SmartProgre
       </ScrollView>
 
       {gateDay != null && (
-        <Nudge icon="lock-closed" title={`Day ${gateDay} abhi locked hai`}
-          text={`Pehle Day ${p.currentDay} complete karo — phir Day ${gateDay} khulega.`} />
+        <Nudge icon="lock-closed" title={`Day ${gateDay} is locked`}
+          text={`Finish Day ${p.currentDay} first — Day ${gateDay} unlocks only after that.`} />
       )}
 
       {selected && <>
         <Text style={styles.selectedTitle}>
-          {viewingPast ? `Day ${selected.day} · Ho gaya` : `Day ${selected.day} · Aaj ke targets`}
+          {viewingPast ? `Day ${selected.day} · Done` : `Day ${selected.day} · Today's targets`}
         </Text>
         {viewingPast && (
           <Nudge tone="teal" icon="checkmark-circle"
-            title={`${selected.tasks.filter(t => t.done).length}/${selected.tasks.length} ho gaye`}
-            text={isBackupDay(selected) ? 'Backup day use hua tha — yahi vajah se date shift hui.' : `Completed ${selected.completedOn ? selected.completedOn.slice(0, 10) : ''}`} />
+            title={`${selected.tasks.filter(t => t.done).length}/${selected.tasks.length} done`}
+            text={isBackupDay(selected) ? 'A backup day was used — that is why the date shifted.' : `Completed ${selected.completedOn ? selected.completedOn.slice(0, 10) : ''}`} />
         )}
         {selected.tasks.map(t => (
           <TaskRow key={t.id} task={t} actions={!t.done && !viewingPast && selected.day === p.currentDay ? <>
@@ -173,7 +173,7 @@ function PlanProgress({ progress: p, busy, run, study }: { progress: SmartProgre
             <PrimaryButton label="Mark complete" disabled={busy || !p.canWork} onPress={() => void run('complete', { planId: p.planId, taskId: t.id })} style={styles.miniBtn} />
           </> : undefined} />
         ))}
-        {viewingPast && <Text style={styles.readOnlyNote}>Ye din ho gaya — sirf dekhne ke liye.</Text>}
+        {viewingPast && <Text style={styles.readOnlyNote}>This day is done — view only.</Text>}
       </>}
     </>}
 
@@ -197,7 +197,7 @@ function PlanProgress({ progress: p, busy, run, study }: { progress: SmartProgre
       ) : (
         <Pressable accessibilityRole="button" onPress={() => setExtOpen(true)} style={styles.extToggle}>
           <Ionicons name="time-outline" size={14} color={colors.primary} />
-          <Text style={styles.extToggleText}>Time chahiye? Extension request bhejo</Text>
+          <Text style={styles.extToggleText}>Need more time? Send an extension request</Text>
         </Pressable>
       )
     )}
@@ -240,7 +240,6 @@ export const SmartTargetsPanel = () => {
     {data?.targetAccessError && <Card><Text style={{ color: colors.inkSoft }}>{data.targetAccessError} Saved plans are read-only until enrollment is verified. Your revisions remain accessible.</Text><Action label="Retry enrollment check" onPress={() => void load()} /></Card>}
     {data?.plans.map(p => <Card key={p.planId}>{p.progress ? <PlanProgress progress={p.progress} busy={busy} run={run} study={study} /> : <><Text style={styles.title}>{p.name}</Text><Text style={styles.line}>{p.totalDays} study days + {p.includedBackupDays} backup day(s). Day 1 begins when you start, not on the batch calendar.</Text><Action label={p.startAvailableOn > data.today ? `Available ${p.startAvailableOn}` : 'Start My Targets'} disabled={busy || p.startAvailableOn > data.today} onPress={() => void run('start', { planId: p.planId })} /></>}</Card>)}
     {busy && <ActivityIndicator accessibilityLabel="Saving target progress" />}
-    {data && <CloudRevisionList data={data.revisions} study={study} />}
     {data && data.history.length > 0 && <Card><Text style={styles.title}>Saved plan history (read-only)</Text>{data.history.map(h => <Text key={h.planId} style={styles.line}>{h.name}: {h.completedDays}/{h.totalDays} days · started {h.startDate}. Plan cancelled or audience changed; progress retained.</Text>)}</Card>}
   </View>;
 };

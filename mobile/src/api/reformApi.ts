@@ -96,6 +96,21 @@ export const fetchDailyTarget = (studentId: string) =>
 export const completeTargetTask = (studentId: string, taskId: string) =>
   mentorFetch<{ ok: boolean }>(`/api/targets/complete`, { method: 'POST', body: { studentId, taskId } });
 
+/** The whole published plan, day by day, so the app can show every published day. */
+export type PlanDayTask = { id: string; label: string; detail: string; kind: string; done: boolean };
+export type PlanDay = {
+  planId: string;
+  planName: string;
+  day: number | null;
+  date: string;
+  isToday: boolean;
+  tasks: PlanDayTask[];
+};
+export const fetchTargetPlanDays = (studentId: string) =>
+  mentorFetch<{ today: string; days: PlanDay[] }>(
+    `/api/ai/target-plan-days?studentId=${encodeURIComponent(studentId)}`,
+  );
+
 /** One earlier turn of the AI conversation, sent so follow-ups stay in context. */
 export type AiTurn = { role: 'user' | 'assistant'; text: string };
 
