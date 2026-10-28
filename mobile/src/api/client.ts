@@ -209,6 +209,8 @@ class ApiClient {
     const ready=await getSavedSession();
     if(epoch!==getSessionGeneration() || ready?.studentId!==actor.studentId || ready?.password!==actor.password) throw new Error('Student session changed. Keep your draft.');
     const support=capability.data as unknown as {protocol?:string;private?:boolean;maxBytes?:number};
+    if(capability.status!==200 || support.protocol!=='private-v1' || support.private!==true || support.maxBytes!==10*1024*1024) throw new Error('Private proof upload is unavailable. Keep your draft; no file was uploaded.');
+
       // file:// URIs that uploadAsync cannot stream must fail with student
       // guidance, not the raw native "uploadTaskStartAsync" rejection.
       const localFile = await FileSystem.getInfoAsync(input.fileUri);

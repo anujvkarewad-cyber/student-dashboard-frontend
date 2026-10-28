@@ -67,7 +67,7 @@ test('every EAS build profile requires OTA with an explicit channel', () => {
   assert.equal(eas.build.apk.env.EXPO_PUBLIC_APP_VERSION, undefined);
 });
 test('unvalidated or missing baseline blocks publication', () => {
-  assert.throws(() => assertApprovedRuntime(summary, require('../ota-baselines.json'), fixture), /No device-validated/);
+  assert.throws(() => assertApprovedRuntime(summary, { schemaVersion: 1, minimumNewBaselineVersionCode: 47, channels: { production: null } }, fixture), /No device-validated/);
   const data = ledger(); data.channels.production.deviceValidated = false;
   assert.throws(() => assertApprovedRuntime(summary, data, fixture), /No device-validated/);
 });

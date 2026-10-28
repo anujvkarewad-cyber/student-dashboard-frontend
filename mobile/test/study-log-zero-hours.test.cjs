@@ -186,7 +186,7 @@ for (const [name, harness] of [['Android', nativeHarness], ['Web', webHarness]])
 
 test('Android: explicit zero-hour chip selects No and clears study-only state', () => {
   const h = nativeHarness({ hours: '4', planned: 'Yes', subjects: ['Audit'], target: 'Yes', tomorrow: 'Study', proof: { name: 'old.jpg' } });
-  const chip = h.find(h.render(), (node) => node.type === 'Chip' && node.props.label === 'Aaj padhai nahi hui (0 hrs)');
+  const chip = h.find(h.render(), (node) => node.type === 'Chip' && node.props.label === 'No study today (0 hrs)');
   assert.ok(chip, 'Zero-hour shortcut is present'); chip.props.onPress();
   assert.equal(h.state[1], '0'); assert.equal(h.state[2], 'No'); assert.equal(h.state[9], null);
   assert.equal(h.state[5].length, 0); assert.equal(h.state[6], ''); assert.equal(h.state[7], '');
