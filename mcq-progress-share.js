@@ -23,12 +23,14 @@
   }
 
   function isOn(id) {
-    return localStorage.getItem(flagKey(id)) === "1";
+    // Default ON — if the student never made an explicit choice (no key),
+    // treat sharing as enabled. Only "0" turns it off.
+    return localStorage.getItem(flagKey(id)) !== "0";
   }
 
   function setLocal(id, on) {
     if (on) localStorage.setItem(flagKey(id), "1");
-    else localStorage.removeItem(flagKey(id));
+    else localStorage.setItem(flagKey(id), "0");
   }
 
   function readJson(key) {
