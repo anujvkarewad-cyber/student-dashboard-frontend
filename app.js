@@ -1127,18 +1127,31 @@ const APP_VERSION = "2.8.0";
           reader.onload = () => {
               if (!uploadCurrent()) return;
               const base64 = reader.result.split(',')[1];
-              const appsScriptUrl = "https://script.google.com/macros/s/AKfycbzyfWa8agayMB0XLjkbfhfj2MdIRElAiY2Wnd7-eQKd1zlMl099ky6Cif06TWydzr8D/exec";
-              fetch(appsScriptUrl, {
+              // Upload to the Python backend (replaces dead Apps Script URL).
+              // The gateway proxies /api/mentor/* to the FastAPI backend, so we
+              // use the same-origin path that mentor-host.js exposes.
+              const mentorBase = window.UMP_MENTOR_API_URL || "/api/mentor";
+              const uploadUrl = mentorBase.replace(/\/$/, "") + "/api/student-tests/upload";
+              fetch(uploadUrl, {
                 method: 'POST',
+                headers: {
+                  "Content-Type": "application/json",
+                  "X-Student-Id": state.student.studentId,
+                  "X-Session-Password": state.student.password
+                },
                 body: JSON.stringify({
-                  action: 'student.test.uploadSubmission',
-                  payload: { base64, mimeType: file.type, filename: file.name }
+                  studentId: state.student.studentId,
+                  password: state.student.password,
+                  testId: test.testId || test.id,
+                  base64: base64,
+                  mimeType: file.type,
+                  filename: file.name
                 })
               }).then(res => { if (!res.ok) throw new Error('Upload not confirmed. Keep the file.'); return res.json(); }).then(data => {
                  if (!uploadCurrent()) return;
-                 const result = data?.result;
-                 const url = typeof result === 'string' ? result : result?.url;
-                 if (!data || data.error || data.ok === false || data.success === false || result?.error || result?.ok === false || result?.success === false || typeof url !== 'string' || !url.trim()) throw new Error('Upload not confirmed. Keep the file.');
+                 if (!data || data.error || data.ok === false || data.success === false) throw new Error('Upload not confirmed. Keep the file.');
+                 const url = data?.url || (data?.result && (typeof data.result === 'string' ? data.result : data.result?.url));
+                 if (typeof url !== 'string' || !url.trim()) throw new Error('Upload not confirmed. Keep the file.');
                  state.answerUrl = url;
                  state.phase = 2; // Move to evaluation phase
                  render();
