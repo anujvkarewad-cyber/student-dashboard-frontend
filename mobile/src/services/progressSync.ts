@@ -35,16 +35,17 @@ const CONSENT_KEY = 'ump_mentor_share_progress_v1';
 export const getShareChoice = async (studentId: string): Promise<boolean> => {
   try {
     const raw = await AsyncStorage.getItem(`${CONSENT_KEY}:${studentId}`);
-    return raw === '1';
+    // Default ON — only "0" means the student explicitly turned sharing off.
+    return raw !== '0';
   } catch {
-    return false;
+    return true;
   }
 };
 
 export const storeShareChoice = async (studentId: string, on: boolean) => {
   try {
     if (on) await AsyncStorage.setItem(`${CONSENT_KEY}:${studentId}`, '1');
-    else await AsyncStorage.removeItem(`${CONSENT_KEY}:${studentId}`);
+    else await AsyncStorage.setItem(`${CONSENT_KEY}:${studentId}`, '0');
   } catch {
     /* best-effort local flag */
   }

@@ -24,7 +24,7 @@ export const ProgressSyncProvider = ({ children }: PropsWithChildren) => {
   const { history: dailyHistory } = useDailyMcq();
   const { history: practiceHistory } = useMcqPractice();
   const { questions: liveQuestions } = useMcqBank();
-  const [sharing, setSharingState] = useState(false);
+  const [sharing, setSharingState] = useState(true);
   const [loaded, setLoaded] = useState(false);
   const [status, setStatus] = useState<ProgressSyncStatus>('idle');
   const [lastSyncedAt, setLastSyncedAt] = useState<string>();
