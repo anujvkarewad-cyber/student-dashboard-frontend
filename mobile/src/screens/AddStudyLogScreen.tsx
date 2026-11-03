@@ -156,6 +156,11 @@ export const AddStudyLogScreen = ({ navigation }: Props) => {
     if (validationError) { setError(validationError); return; }
     setError('');
     setLoading(true);
+    // Snapshot the log first: if the acknowledgement is lost we read it back and
+    // tell the student what actually happened instead of "outcome unknown".
+    const sessionForVerify = await getSavedSession().catch(() => null);
+    let logBefore = '';
+    try { logBefore = JSON.stringify((await api.getStudyLog(sessionForVerify?.studentId ?? '')) ?? []); } catch { logBefore = ''; }
     try {
       let proofUrl = '';
       if (proof && planned !== 'No') {
@@ -186,6 +191,22 @@ export const AddStudyLogScreen = ({ navigation }: Props) => {
       if (draftOwner) ownDrafts.delete(draftOwner);
       Alert.alert('Study log saved', 'Your progress has been added successfully.', [{ text: 'Done', onPress: () => navigation.goBack() }]);
     } catch (e) {
+      const err = e as Error & { saveOutcomeUnknown?: boolean; sessionExpired?: boolean };
+      if (err.saveOutcomeUnknown && sessionForVerify?.studentId && logBefore) {
+        try {
+          const logAfter = JSON.stringify((await api.getStudyLog(sessionForVerify.studentId)) ?? []);
+          if (logAfter !== logBefore) {
+            setDraftAcknowledged(true);
+            if (draftOwner) ownDrafts.delete(draftOwner);
+            Alert.alert('Study log saved', 'Your progress has been added successfully.', [{ text: 'Done', onPress: () => navigation.goBack() }]);
+            return;
+          }
+          setError('Not saved yet — nothing was added. Your draft is kept, please try again.');
+        } catch {
+          setError('We could not confirm the save. Keep this draft and check Study tracker — do not submit twice.');
+        }
+        return;
+      }
       setError(e instanceof Error ? e.message : 'Could not save the study log.');
     } finally { setLoading(false); }
   };

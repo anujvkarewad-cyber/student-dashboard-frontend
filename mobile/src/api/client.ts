@@ -8,6 +8,7 @@ type ApiEnvelope<T> = { result?: T; error?: string };
 type NativeJsonResponse<T> = { status: number; data: ApiEnvelope<T> };
 export type ApiMode = 'mock' | 'live-readonly' | 'live';
 
+const AUTH_FLOW_ACTIONS = new Set(['validateLogin','validateStudent','forgotPassword','verifyOTP','resetPassword','changePassword']);
 const PRIVATE_ACTIONS = new Set(['getStats','getStudyLog','getWeeklyReports','getStudentMentorNotes','getStudentFeedback','getAnnouncements','getLeaderboard','notes.listForStudent','attendance.status','addStudyLog','deleteStudyLog','attendance.markAbsent','attendance.requestLeave','attendance.cancelLeave','feedback.read','saveDeviceToken','messages.thread','messages.send','ai.ask','ai.dailyTarget','ai.evaluate','revision.plan']);
 
 const MODE_STORAGE_KEY = 'ump_api_mode_v2';
@@ -114,7 +115,10 @@ class ApiClient {
 
     const protectedCall = PRIVATE_ACTIONS.has(action);
     const epoch = getSessionGeneration();
-    const saved = protectedCall ? await getSavedSession() : null;
+    // Present the session on every call: the server protects more actions than
+    // this list knows about, and a missing header surfaced as a bare
+    // "Request failed (401)." even with a perfectly valid session.
+    const saved = await getSavedSession();
     if (protectedCall && (!saved?.studentId || !saved.password)) throw new Error('Please sign in again.');
     if (saved && payload.studentId && String(payload.studentId).trim().toUpperCase() !== saved.studentId.trim().toUpperCase()) throw new Error('Student scope denied.');
     const actorHeaders: Record<string,string> = saved ? { 'X-Student-Id':saved.studentId, 'X-Session-Password':saved.password } : {};
@@ -127,24 +131,32 @@ class ApiClient {
       actorHeaders,
     );
 
-    if (protectedCall) {
+    if (saved) {
       const active = await getSavedSession();
       if (epoch !== getSessionGeneration() || active?.studentId !== saved?.studentId || active?.password !== saved?.password) throw new Error('Student session changed.');
-      if (status === 401 || status === 403) {
+      const authFlow = AUTH_FLOW_ACTIONS.has(action);
+      if ((status === 401 && !authFlow) || (status === 403 && protectedCall)) {
         await clearSavedSession();
-        throw new Error('Student session unavailable. Keep any draft and sign in again.');
+        const expired = new Error('Your session expired. Your draft is kept — sign in again to continue.');
+        (expired as Error & { sessionExpired?: boolean }).sessionExpired = true;
+        throw expired;
       }
     }
     if (action === 'addStudyLog') {
       const result = data?.result as ApiSuccess | undefined;
       if (status < 200 || status >= 300 || data?.error || result?.success !== true) {
-        throw new Error(result?.message || 'Save outcome is unknown. Keep this draft and check Study tracker before retrying.');
+        // Caller reads the log back to replace this with the truth.
+        const unknown = new Error(result?.message || 'Save outcome is unknown. Keep this draft and check Study tracker before retrying.');
+        (unknown as Error & { saveOutcomeUnknown?: boolean }).saveOutcomeUnknown = true;
+        throw unknown;
       }
       return data.result as T;
     }
 
     if (status < 200 || status >= 300) {
-      throw new Error(data.error || `Request failed (${status}).`);
+      // Prefer the server's own sentence (e.g. "Incorrect password.") over a code.
+      const detail = (data as { detail?: string; error?: string })?.detail;
+      throw new Error(detail || data.error || `Request failed (${status}).`);
     }
     if (data.error) throw new Error(data.error);
     return data.result as T;
