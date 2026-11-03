@@ -2,9 +2,8 @@
 (function () {
   "use strict";
 
-  // Live Python backend (FastAPI). The gateway proxies /api/mentor/* to this
-  // service; the student webapp can also call it directly for test endpoints.
-  var PYTHON_BACKEND = "https://ujjwal-pathak-app-zffwxlrufa-el.a.run.app";
+  var APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzyfWa8agayMB0XLjkbfhfj2MdIRElAiY2Wnd7-eQKd1zlMl099ky6Cif06TWydzr8D/exec";
+  var PYTHON_BACKEND = "https://ujjwal-pathak-app-566076646952.asia-south1.run.app";
 
   function session() {
     try {
@@ -101,9 +100,27 @@
       body: JSON.stringify(payload)
     }).then(r => r.json()).then(res => {
       if (res.detail || res.error) throw new Error(res.detail || res.error);
-      // The backend already wrote the attempt to analytics_test_history and
-      // student_mcq_attempts. The old Apps Script webhook push is removed —
-      // it pointed to a dead deployment and was unreliable for large payloads.
+      
+      // Also push to Google Sheet via Apps Script webhook
+      try {
+         fetch(APPS_SCRIPT_URL, {
+           method: 'POST',
+           body: JSON.stringify({
+             action: 'student.test.record',
+             payload: {
+                testId: testId,
+                title: res.title || testId,
+                studentId: current.studentId,
+                score: res.score,
+                total: res.total,
+                scorePct: res.scorePct,
+                remarks: res.remarks || remarks,
+                selfMarks: true,
+                answerUrl: answerUrl || ""
+             }
+           })
+         });
+      } catch (e) {}
       return res;
     });
   }

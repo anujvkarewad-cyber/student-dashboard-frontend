@@ -23,14 +23,12 @@
   }
 
   function isOn(id) {
-    // Default ON — if the student never made an explicit choice (no key),
-    // treat sharing as enabled. Only "0" turns it off.
-    return localStorage.getItem(flagKey(id)) !== "0";
+    return localStorage.getItem(flagKey(id)) === "1";
   }
 
   function setLocal(id, on) {
     if (on) localStorage.setItem(flagKey(id), "1");
-    else localStorage.setItem(flagKey(id), "0");
+    else localStorage.removeItem(flagKey(id));
   }
 
   function readJson(key) {
@@ -180,8 +178,8 @@
     btn.textContent = on ? "Turn off" : "Turn on";
     if (text) {
       text.textContent = on
-        ? "Sharing ON — mentor chapter summaries dekh sakte hain. Raw answers nahi jaate."
-        : "Mentor sirf chapter-level summary dekhenge — raw answers nahi.";
+        ? "Sharing ON — your mentor can see chapter summaries. Raw answers are never sent."
+        : "Your mentor only sees chapter-level summaries — never raw answers.";
     }
     if (card) card.style.border = on ? "1px solid #86EFAC" : "";
     if (!btn.dataset.wired) {

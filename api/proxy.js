@@ -89,7 +89,10 @@ function emptyReadResult(action) {
 async function mongoDashboardRead(action, req) {
   const payload = studyLogPayload(req);
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 4000);
+  // 4s was too tight for the shared backend: cold starts and Mongo bursts made
+  // ordinary dashboard reads die as 502s at busy hours (68/day by 28-Oct-2026).
+  // The backend now keeps one warm instance; 10s covers its p99.
+  const timer = setTimeout(() => controller.abort(), 10000);
   try {
     const dashRes = await fetch(`${MENTOR_API_URL}/api/student-dashboard/get`, {
       method: "POST",

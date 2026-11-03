@@ -54,6 +54,68 @@ test('Node requires returned identity, not success for another actor',async t=>{
 test('Worker actual private routes use current FastAPI auth, never anonymous Script auth',async t=>{const calls=mock(t);const up=await worker.fetch(new Request('https://gateway.invalid/api/proof-upload',{method:'PUT',headers,body:'png!'}),env);assert.equal(up.status,200);assert.equal((await up.json()).proofUrl,`/api/proof-file?fileId=${FILE}`);const down=await worker.fetch(new Request(`https://gateway.invalid/api/proof-file?fileId=${FILE}`,{headers}),env);assert.equal(down.status,200);assert.equal(await down.text(),'png!');assert.equal(calls.some(x=>x.url.includes('script.google')),false);});
 test('Worker unauthenticated or cross-actor retrieval does not reach Drive',async t=>{const calls=mock(t,'wrong-actor');const response=await worker.fetch(new Request(`https://gateway.invalid/api/proof-file?fileId=${FILE}`,{headers}),env);assert.equal(response.status,401);assert.equal(calls.some(x=>x.url.includes('googleapis')),false);});
 
-for(const mode of ['consumer-folder','readonly-folder'])test(`${mode}: no student bytes uploaded and no private capability advertised`,async t=>{const calls=mock(t,mode);await assert.rejects(upload);await assert.rejects(()=>handlePrivateProofCapabilities({method:'GET',headers,mentorApiUrl:env.MENTOR_ORIGIN,env}));assert.equal(calls.some(x=>x.url.includes('/upload/')),false);});
+test('readonly-folder: no student bytes uploaded and no private capability advertised',async t=>{const calls=mock(t,'readonly-folder');await assert.rejects(upload);await assert.rejects(()=>handlePrivateProofCapabilities({method:'GET',headers,mentorApiUrl:env.MENTOR_ORIGIN,env}));assert.equal(calls.some(x=>x.url.includes('/upload/')),false);});
+test('consumer-folder with a private ACL keeps the private flow (owner-account Drive is the real world)',async t=>{const calls=mock(t,'consumer-folder');const u=await upload();assert.equal(u.success,true);const cap=await handlePrivateProofCapabilities({method:'GET',headers,mentorApiUrl:env.MENTOR_ORIGIN,env});assert.equal(cap.status,200);assert.equal(cap.body.private,true);});
+test('Node upload falls back to the owner script when direct Drive write is quota-blocked, binds the proof and answers canonically',async t=>{
+ const calls=[];const original=globalThis.fetch;t.after(()=>{globalThis.fetch=original;});
+ globalThis.fetch=async(url,init={})=>{url=String(url);calls.push({url,init});
+  if(url.includes('/api/student-auth/login'))return Response.json({result:{success:true,studentId:OWNER}});
+  if(url==='https://oauth2.googleapis.com/token')return Response.json({access_token:'synthetic-only-token'});
+  if(url.includes('/upload/drive/'))return Response.json({error:{code:403,message:'Service Accounts do not have storage quota'}},{status:403});
+  if(url.startsWith('https://script.invalid')){const sent=JSON.parse(init.body);assert.equal(sent.action,'uploadProof');assert.equal(sent.payload.uploadKey,'synthetic');assert.equal(sent.payload.studentId,OWNER);return Response.json({success:true,fileId:FILE,proofUrl:'https://drive.google.com/untrusted'});}
+  if(init.method==='PATCH'&&url.includes(`/files/${FILE}?`))return Response.json({id:FILE,appProperties:{umpOwner:OWNER,umpPurpose:'study-proof',umpSchema:'private-v1'}});
+  if(url.includes(`/files/${FILE}?`))return Response.json({id:FILE,mimeType:'image/png',size:'4',trashed:false,appProperties:{umpOwner:OWNER,umpPurpose:'study-proof',umpSchema:'private-v1'}});
+  throw Error('Unexpected synthetic request');};
+ const res=await handleProofUpload({method:'PUT',headers,readBody:async()=>Buffer.from('png!'),mentorApiUrl:env.MENTOR_ORIGIN,env:{...env,APPS_SCRIPT_URL:'https://script.invalid',PROOF_UPLOAD_KEY:'synthetic'}});
+ assert.equal(res.status,200);assert.equal(res.body.success,true);assert.equal(res.body.proofUrl,`/api/proof-file?fileId=${FILE}`);
+ assert.ok(calls.some(x=>x.init.method==='PATCH'),'owner binding is written to the file');
+});
+test('Node private mode without a script endpoint never falls back to an unknown URL',async t=>{const calls=mock(t);const args={method:'PUT',headers,readBody:async()=>Buffer.from('png!'),mentorApiUrl:env.MENTOR_ORIGIN};assert.equal((await handleProofUpload({...args,env:{PROOF_PRIVATE_MODE:'1',APPS_SCRIPT_URL:'https://script.invalid',PROOF_UPLOAD_KEY:'synthetic'}})).status,503);assert.equal((await handleProofUpload({...args,headers:{...headers,'x-proof-protocol':''},env})).status,409);assert.equal(calls.length,0);});
+test('Node capability still reports the private surface when the direct destination check fails BUT the owner script is configured',async t=>{
+ const calls=[];const original=globalThis.fetch;t.after(()=>{globalThis.fetch=original;});
+ globalThis.fetch=async(url,init={})=>{url=String(url);calls.push(url);
+  if(url.includes('/api/student-auth/login'))return Response.json({result:{success:true,studentId:OWNER}});
+  if(url==='https://oauth2.googleapis.com/token')return Response.json({access_token:'synthetic'});
+  if(url.includes('/permissions'))return Response.json({permissions:[{type:'anyone',role:'reader'}]});
+  if(url.includes(`/files/${FOLDER}?`))return Response.json({id:FOLDER,mimeType:'application/vnd.google-apps.folder',capabilities:{canAddChildren:true},trashed:false});
+  throw Error('Unexpected synthetic request');};
+ const res=await handlePrivateProofCapabilities({method:'GET',headers,mentorApiUrl:env.MENTOR_ORIGIN,env:{...env,APPS_SCRIPT_URL:'https://script.invalid',PROOF_UPLOAD_KEY:'k'}});
+ assert.equal(res.status,200);assert.equal(res.body.protocol,'private-v1');assert.equal(res.body.private,true);
+});
+test('Node capability fails closed when the destination is broken AND no script endpoint exists',async t=>{
+ const original=globalThis.fetch;t.after(()=>{globalThis.fetch=original;});
+ globalThis.fetch=async(url)=>{url=String(url);
+  if(url.includes('/api/student-auth/login'))return Response.json({result:{success:true,studentId:OWNER}});
+  if(url==='https://oauth2.googleapis.com/token')return Response.json({access_token:'synthetic'});
+  if(url.includes('/permissions'))return Response.json({permissions:[{type:'anyone',role:'reader'}]});
+  if(url.includes(`/files/${FOLDER}?`))return Response.json({id:FOLDER,mimeType:'application/vnd.google-apps.folder',capabilities:{canAddChildren:true},trashed:false});
+  throw Error('Unexpected synthetic request');};
+ await assert.rejects(()=>handlePrivateProofCapabilities({method:'GET',headers,mentorApiUrl:env.MENTOR_ORIGIN,env}));
+});
 test('Node capability is authenticated and read-only, before any file bytes',async t=>{const calls=mock(t);const result=await handlePrivateProofCapabilities({method:'GET',headers,mentorApiUrl:env.MENTOR_ORIGIN,env});assert.equal(result.status,200);assert.equal(result.body.protocol,'private-v1');assert.equal(result.body.private,true);assert.equal(calls.some(x=>x.url.includes('/upload/')),false);assert.equal(calls.some(x=>x.url.includes('/permissions')&&x.init.method==='POST'),false);});
 test('Worker capability checks the same private destination without writing',async t=>{const calls=mock(t);const response=await worker.fetch(new Request('https://gateway.invalid/api/proof-capabilities',{headers}),env);assert.equal(response.status,200);assert.equal((await response.json()).private,true);assert.equal(calls.some(x=>x.url.includes('/upload/')),false);});
+
+test('Node legacy APK (no private protocol header) uploads through the owner script and receives its own link back',async t=>{
+ const calls=[];const original=globalThis.fetch;t.after(()=>{globalThis.fetch=original;});
+ globalThis.fetch=async(url,init={})=>{url=String(url);calls.push({url,init});
+  if(url.includes('/api/student-auth/login'))return Response.json({result:{success:true,studentId:OWNER}});
+  if(url.startsWith('https://script.invalid'))return Response.json({success:true,fileId:FILE,proofUrl:'https://drive.google.com/file/d/legacy_view'});
+  throw Error('Unexpected synthetic request: '+url);};
+ const legacyHeaders={...headers};delete legacyHeaders['x-proof-protocol'];
+ const res=await handleProofUpload({method:'PUT',headers:legacyHeaders,readBody:async()=>Buffer.from('png!'),mentorApiUrl:env.MENTOR_ORIGIN,env:{...env,APPS_SCRIPT_URL:'https://script.invalid',PROOF_UPLOAD_KEY:'k'}});
+ assert.equal(res.status,200);assert.equal(res.body.success,true);assert.equal(res.body.proofUrl,'https://drive.google.com/file/d/legacy_view');
+ assert.equal(calls.some(x=>x.url.includes('googleapis.com')),false,'legacy path never touches the quota-blocked Drive write APIs');
+});
+test('Node legacy APK without script link still succeeds with the canonical URL, and rejects when no script endpoint exists',async t=>{
+ const original=globalThis.fetch;t.after(()=>{globalThis.fetch=original;});
+ globalThis.fetch=async(url,init={})=>{url=String(url);
+  if(url.includes('/api/student-auth/login'))return Response.json({result:{success:true,studentId:OWNER}});
+  if(url.startsWith('https://script.invalid'))return Response.json({success:true,fileId:FILE});
+  throw Error('Unexpected synthetic request');};
+ const legacyHeaders={...headers};delete legacyHeaders['x-proof-protocol'];
+ const args={method:'PUT',headers:legacyHeaders,readBody:async()=>Buffer.from('png!'),mentorApiUrl:env.MENTOR_ORIGIN};
+ const ok=await handleProofUpload({...args,env:{...env,APPS_SCRIPT_URL:'https://script.invalid',PROOF_UPLOAD_KEY:'k'}});
+ assert.equal(ok.status,200);assert.equal(ok.body.proofUrl,`/api/proof-file?fileId=${FILE}`);
+ const denied=await handleProofUpload({...args,env:{PROOF_PRIVATE_MODE:'1'}});
+ assert.equal(denied.status,409);
+});

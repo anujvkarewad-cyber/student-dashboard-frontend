@@ -28,6 +28,9 @@ async function retireWebPush(actor) {
 }
 window.UMP_PRIVATE_EPOCH = () => privateGeneration;
 const savedActor = () => { try { return JSON.parse(localStorage.getItem('ump_student') || 'null'); } catch { return null; } };
+// These answer 401 while a student is signing in; clearing the session here would
+// destroy a draft for no reason.
+const AUTH_FLOW_ACTIONS = new Set(['validateLogin','validateStudent','forgotPassword','verifyOTP','resetPassword','changePassword']);
 function privateChanged() {
   const error = new Error('Student session changed. Keep any draft and sign in again.');
   error.privateSessionChanged = true;
@@ -55,7 +58,11 @@ async function callAPI(action, payload = {}) {
   }
   const protectedCall = PRIVATE_ACTIONS.has(action);
   const epoch = privateGeneration;
-  const actor = protectedCall ? savedActor() : null;
+  // Send the session headers on every proxied action, not only on the ones this
+  // file happens to list: the server protects more actions than the list knows
+  // about, and a missing header surfaced to students as a bare "Request failed
+  // (401)" with a perfectly valid session.
+  const actor = savedActor();
   if (protectedCall && (!actor?.studentId || !actor.password)) throw privateChanged();
   if (actor && payload.studentId && String(payload.studentId).trim().toUpperCase() !== actor.studentId.trim().toUpperCase()) throw privateChanged();
   const response = await fetch(APPS_SCRIPT_URL, {
@@ -69,14 +76,22 @@ async function callAPI(action, payload = {}) {
       payload
     })
   }).catch((error) => {
-    if (action === 'addStudyLog') throw new Error('Save outcome is unknown. Keep this draft and check Study tracker before retrying.');
+    if (action === 'addStudyLog') { const unknown = new Error('Save outcome is unknown. Keep this draft and check Study tracker before retrying.'); unknown.saveOutcomeUnknown = true; throw unknown; }
     throw error;
   });
 
-  if (protectedCall) {
+  if (actor) {
     const active = savedActor();
     if (epoch !== privateGeneration || active?.studentId !== actor.studentId || active?.password !== actor.password) throw privateChanged();
-    if (response.status === 401 || response.status === 403) {
+    if (response.status === 401 && !AUTH_FLOW_ACTIONS.has(action)) {
+      if (typeof window.UMP_PRESERVE_TRACKER_DRAFT === 'function') window.UMP_PRESERVE_TRACKER_DRAFT();
+      window.UMP_CLEAR_PRIVATE_SESSION();
+      if (typeof window.dispatchEvent === 'function') window.dispatchEvent(new Event('ump:private-invalidated'));
+      const expired = new Error('Your session expired. Your draft is kept — sign in again to continue.');
+      expired.sessionExpired = true;
+      throw expired;
+    }
+    if (response.status === 403 && PRIVATE_ACTIONS.has(action)) {
       if (typeof window.UMP_PRESERVE_TRACKER_DRAFT === 'function') window.UMP_PRESERVE_TRACKER_DRAFT();
       window.UMP_CLEAR_PRIVATE_SESSION();
       if (typeof window.dispatchEvent === 'function') window.dispatchEvent(new Event('ump:private-invalidated'));
@@ -88,17 +103,25 @@ async function callAPI(action, payload = {}) {
   let data;
   try { data = await response.json(); }
   catch (error) {
-    if (action === 'addStudyLog') throw new Error('Save outcome is unknown. Keep this draft and check Study tracker before retrying.');
+    if (action === 'addStudyLog') { const unknown = new Error('Save outcome is unknown. Keep this draft and check Study tracker before retrying.'); unknown.saveOutcomeUnknown = true; throw unknown; }
     throw error;
   }
   if (protectedCall) {
     const active = savedActor();
     if (epoch !== privateGeneration || active?.studentId !== actor.studentId || active?.password !== actor.password) throw privateChanged();
   }
-  if (protectedCall && action !== 'addStudyLog' && !response.ok) throw new Error('Private data could not refresh.');
+  if (action !== 'addStudyLog' && !response.ok) {
+    // Surface the server's own explanation (e.g. "Incorrect password.") instead of
+    // a bare status code the student cannot act on.
+    const detail = data && (data.detail || data.error || data.message);
+    const text = Array.isArray(detail) ? ((detail[0] && detail[0].msg) || 'Invalid request.') : detail;
+    const failed = new Error(text || (protectedCall ? 'Private data could not refresh.' : 'Request failed (' + response.status + ').'));
+    failed.status = response.status;
+    throw failed;
+  }
   if (action === 'addStudyLog') {
     if (!response.ok || !data || data.error || data.result?.success !== true) {
-      throw new Error(data?.result?.message || 'Save outcome is unknown. Keep this draft and check Study tracker before retrying.');
+      { const unknown = new Error(data?.result?.message || 'Save outcome is unknown. Keep this draft and check Study tracker before retrying.'); unknown.saveOutcomeUnknown = true; throw unknown; }
     }
     return data.result;
   }

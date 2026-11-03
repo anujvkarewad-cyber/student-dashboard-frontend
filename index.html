@@ -221,6 +221,16 @@
                 <span>Daily &amp; Practice MCQ</span>
             </a>
 
+            <a href="#written" class="nav-item" data-view="written" data-testid="nav-written">
+                <i class="fa-solid fa-pen-to-square"></i>
+                <span>Written</span>
+            </a>
+
+            <a href="#revision" class="nav-item" data-view="revision" data-testid="nav-revision">
+                <i class="fa-solid fa-rotate"></i>
+                <span>Revision</span>
+            </a>
+
             <a href="#performance" class="nav-item" data-view="performance" data-testid="nav-performance">
                 <i class="fa-solid fa-chart-line"></i>
                 <span>Performance</span>
@@ -559,11 +569,9 @@
 </section>
 
     <div class="card">
-      <div class="card-head"><h3>Today's target</h3><span class="muted">Tick it off once today’s target is finished.</span></div>
-      <div id="tutor-target" class="muted">Loading today's target...</div>
-
-      <button type="button" class="target-done" id="tutor-target-done" aria-pressed="false" data-testid="target-done"><span class="target-tick"><i class="fa-solid fa-check"></i></span><span class="target-done-label">Mark target as done</span></button>
-
+      <div class="card-head"><h3>Today's targets</h3><span class="muted" id="st-sub"></span></div>
+      <div id="st-days" class="st-days"></div>
+      <div id="st-body" class="muted">Loading targets...</div>
     </div>
 
     <div class="card" style="margin-top:16px;">
@@ -579,7 +587,7 @@
   <div class="view" data-testid="view-tests">
     <div class="card">
       <div class="card-head"><h3>Tests</h3><span class="muted">Same mentor tests as the Android app</span></div>
-      <p><a href="/workbook.html" class="btn-primary">Audit &amp; SM workbook practice — type or write</a></p>
+      <p id="workbook-link" hidden><a href="/workbook.html" class="btn-primary">Audit &amp; SM workbook practice — type or write</a></p>
       <div id="tests-list"></div>
       <div id="tests-player" style="margin-top:16px;"></div>
     </div>
@@ -588,8 +596,17 @@
 
 <template id="tpl-mcq">
   <div class="view" data-testid="view-mcq">
+    <div id="daily-challenge-root"></div>
     <div id="mcq-root"></div>
   </div>
+</template>
+
+<template id="tpl-written">
+  <div id="written-root"></div>
+</template>
+
+<template id="tpl-revision">
+  <div id="revision-root"></div>
 </template>
 
 <template id="tpl-performance">
@@ -707,7 +724,7 @@
         <div style="flex:1;min-width:200px;">
           <div style="font-weight:800;font-size:14px;">Share MCQ progress with mentor</div>
           <div id="share-progress-text" style="font-size:13px;color:#64748B;margin-top:4px;line-height:1.4;">
-            Mentor sirf chapter-level summary dekhenge — raw answers nahi.
+            Your mentor only sees chapter-level summaries — never your raw answers.
           </div>
         </div>
         <button id="share-progress-btn" class="btn-primary" type="button">Turn on</button>
@@ -757,6 +774,8 @@
   <div id="password-msg"></div>
 
 </div>
+
+<div id="reminders-root"></div>
 </template>
 <!-- ================= Forgot Password Modal ================= -->
 
@@ -967,7 +986,7 @@
                 <input type="number" id="tl-hours" placeholder="0 if no study, e.g. 2.5 otherwise" step="0.5" min="0" max="24" autocomplete="off" aria-describedby="tl-hours-help">
             </div>
             <div id="tl-hours-quick" style="margin-top:8px;">
-                <button type="button" class="btn btn-secondary" data-hours="0">Aaj padhai nahi hui (0 hrs)</button>
+                <button type="button" class="btn btn-secondary" data-hours="0">Didn't study today (0 hrs)</button>
             </div>
             <small id="tl-hours-help" class="muted" style="display:block;margin-top:8px;">0 hours is an honest tracker submission, not an Absent or Leave request. Choose a reason below; study proof is not needed.</small>
         </div>
@@ -1109,7 +1128,9 @@
   <script src="receipt-voice.js"></script>
 <script src="learning-tools.js"></script>
 <script src="web-tests.js"></script>
-<script src="app.js"></script>
+<script src="smart-targets-web.js"></script>
+<script src="app-extras.js"></script>
+    <script src="app.js"></script>
 <script>
 
 if ("serviceWorker" in navigator) {

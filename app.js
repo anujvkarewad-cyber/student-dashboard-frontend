@@ -66,6 +66,8 @@ const APP_VERSION = "2.8.0";
     tutor: "Tutor & Messages",
     tests: "Tests",
     mcq: "Daily & Practice MCQ",
+    written: "Written Answers",
+    revision: "Revision Planner",
     performance: "Performance",
     leaderboard: "Leaderboard",
     reports: "Weekly Reports",
@@ -498,6 +500,8 @@ const APP_VERSION = "2.8.0";
         tutor: renderTutor,
         tests: renderTests,
         mcq: renderMCQ,
+        written: renderWrittenView,
+        revision: renderRevisionView,
         performance: renderPerformance,
         leaderboard: renderLeaderboard,
         reports: renderReports,
@@ -804,20 +808,8 @@ const APP_VERSION = "2.8.0";
   function renderTutor() {
     const student = state.student;
     if (!student) return;
-    const target = $("#tutor-target");
     const thread = $("#tutor-thread");
-    callAPI("ai.dailyTarget", { studentId: student.studentId }).then((data) => {
-      const tasks = (data && data.tasks) || [];
-      if (data && data.locked) {
-        target.textContent = data.lockReason || "Today's target is locked until yesterday is complete.";
-        return;
-      }
-      if (!tasks.length) {
-        target.textContent = "No target is published for today yet.";
-        return;
-      }
-      target.innerHTML = tasks.map((task) => "<div style='padding:8px 0;border-bottom:1px solid #eef2f7;'><b>" + escapeHtml(task.label || task.title || task.task || "Task") + "</b><div class='muted'>" + escapeHtml(task.detail || task.subject || "") + "</div></div>").join("");
-    }).catch(() => { target.textContent = "Today's target could not be loaded. Please try again."; });
+    if (window.UMP_SMART_TARGETS) window.UMP_SMART_TARGETS.mount();
 
     const box = document.getElementById("announcement-list");
     if (box) {
@@ -856,16 +848,6 @@ const APP_VERSION = "2.8.0";
     };
     callAPI("revision.plan", { studentId: student.studentId }).then(paintPlan).catch(() => { if (revisionBox) revisionBox.textContent = "Revision dates could not be loaded."; });
 
-    // Today's target is a simple tick now: no receipt answer, no mark to save.
-    const doneTick = $("#tutor-target-done");
-    if (doneTick) {
-      doneTick.onclick = () => {
-        const on = doneTick.classList.toggle("is-done");
-        doneTick.setAttribute("aria-pressed", on ? "true" : "false");
-        const label = doneTick.querySelector(".target-done-label");
-        if (label) label.textContent = on ? "Target done" : "Mark target as done";
-      };
-    }
 
     const paintThread = (messages) => {
       if (!messages || !messages.length) {
@@ -887,6 +869,13 @@ const APP_VERSION = "2.8.0";
   }
 
   function renderTests() {
+    // Workbook practice is a tutorial/demo-only surface: visible to the demo
+    // account and master IDs, never to real students.
+    const wb = $("#workbook-link");
+    if (wb) {
+      const sid = String((state.student && state.student.studentId) || "").toUpperCase();
+      wb.hidden = !(sid === "UMP9900" || (state.student && state.student.master === true));
+    }
     const list = $("#tests-list");
     const player = $("#tests-player");
     if (!list) return;
@@ -936,7 +925,7 @@ const APP_VERSION = "2.8.0";
           startChannelWebTest(test, data, player);
         })
         .catch((error) => {
-          player.innerHTML = "<h3>" + escapeHtml(test.title) + "</h3><p class='muted'>" + escapeHtml(error.message || "Paper load nahi hua") + "</p>";
+          player.innerHTML = "<h3>" + escapeHtml(test.title) + "</h3><p class='muted'>" + escapeHtml(error.message || "The paper could not be loaded") + "</p>";
         });
       return;
     }
@@ -1127,31 +1116,18 @@ const APP_VERSION = "2.8.0";
           reader.onload = () => {
               if (!uploadCurrent()) return;
               const base64 = reader.result.split(',')[1];
-              // Upload to the Python backend (replaces dead Apps Script URL).
-              // The gateway proxies /api/mentor/* to the FastAPI backend, so we
-              // use the same-origin path that mentor-host.js exposes.
-              const mentorBase = window.UMP_MENTOR_API_URL || "/api/mentor";
-              const uploadUrl = mentorBase.replace(/\/$/, "") + "/api/student-tests/upload";
-              fetch(uploadUrl, {
+              const appsScriptUrl = "https://script.google.com/macros/s/AKfycbzyfWa8agayMB0XLjkbfhfj2MdIRElAiY2Wnd7-eQKd1zlMl099ky6Cif06TWydzr8D/exec";
+              fetch(appsScriptUrl, {
                 method: 'POST',
-                headers: {
-                  "Content-Type": "application/json",
-                  "X-Student-Id": state.student.studentId,
-                  "X-Session-Password": state.student.password
-                },
                 body: JSON.stringify({
-                  studentId: state.student.studentId,
-                  password: state.student.password,
-                  testId: test.testId || test.id,
-                  base64: base64,
-                  mimeType: file.type,
-                  filename: file.name
+                  action: 'student.test.uploadSubmission',
+                  payload: { base64, mimeType: file.type, filename: file.name }
                 })
               }).then(res => { if (!res.ok) throw new Error('Upload not confirmed. Keep the file.'); return res.json(); }).then(data => {
                  if (!uploadCurrent()) return;
-                 if (!data || data.error || data.ok === false || data.success === false) throw new Error('Upload not confirmed. Keep the file.');
-                 const url = data?.url || (data?.result && (typeof data.result === 'string' ? data.result : data.result?.url));
-                 if (typeof url !== 'string' || !url.trim()) throw new Error('Upload not confirmed. Keep the file.');
+                 const result = data?.result;
+                 const url = typeof result === 'string' ? result : result?.url;
+                 if (!data || data.error || data.ok === false || data.success === false || result?.error || result?.ok === false || result?.success === false || typeof url !== 'string' || !url.trim()) throw new Error('Upload not confirmed. Keep the file.');
                  state.answerUrl = url;
                  state.phase = 2; // Move to evaluation phase
                  render();
@@ -1180,7 +1156,7 @@ const APP_VERSION = "2.8.0";
     const questions = (data && data.questions) || [];
     const startedAt = Date.now();
     if (!questions.length) {
-      player.innerHTML = "<h3>" + escapeHtml(test.title) + "</h3><p class='muted'>Is test me abhi koi question publish nahi hua.</p>";
+      player.innerHTML = "<h3>" + escapeHtml(test.title) + "</h3><p class='muted'>No questions have been published for this test yet.</p>";
       return;
     }
     player.innerHTML = "<h3>" + escapeHtml(meta.title || test.title) + "</h3>"
@@ -1197,7 +1173,7 @@ const APP_VERSION = "2.8.0";
         if (picked) { answers[q.id] = picked.value; answered += 1; }
       });
       if (!answered) {
-        $("#web-test-result").innerHTML = "<p class='muted'>Kam se kam ek question ka jawab chuno.</p>";
+        $("#web-test-result").innerHTML = "<p class='muted'>Please answer at least one question first.</p>";
         return;
       }
       const button = $("#submit-web-test");
@@ -1206,11 +1182,11 @@ const APP_VERSION = "2.8.0";
       window.UMP_TEST_CHANNEL.submit(test.id, answers, (Date.now() - startedAt) / 1000)
         .then((result) => {
           const lines = (result.review || []).map((item, index) => {
-            const shown = item.selected == null ? "koi option nahi chuna" : (item.options || [])[item.selected];
+            const shown = item.selected == null ? "no option selected" : (item.options || [])[item.selected];
             const right = (item.options || [])[item.answer];
             return "<div style='margin-top:10px;'><b>" + (index + 1) + ". " + escapeHtml(item.prompt) + "</b>"
               + "<div style='color:" + (item.correct ? "#16a34a" : "#dc2626") + ";font-weight:600;'>" + (item.correct ? "Sahi" : "Galat") + "</div>"
-              + "<div class='muted'>Aapka jawab: " + escapeHtml(String(shown == null ? "—" : shown)) + " · Sahi jawab: " + escapeHtml(String(right == null ? "—" : right)) + "</div>"
+              + "<div class='muted'>Your answer: " + escapeHtml(String(shown == null ? "—" : shown)) + " · Correct answer: " + escapeHtml(String(right == null ? "—" : right)) + "</div>"
               + (item.explanation ? "<div class='muted'>" + escapeHtml(item.explanation) + "</div>" : "")
               + "</div>";
           });
@@ -1222,18 +1198,30 @@ const APP_VERSION = "2.8.0";
         .catch((error) => {
           button.disabled = false;
           button.textContent = "Submit";
-          $("#web-test-result").innerHTML = "<p class='muted'>" + escapeHtml(error.message || "Submit nahi hua — dobara try karo.") + "</p>";
+          $("#web-test-result").innerHTML = "<p class='muted'>" + escapeHtml(error.message || "Submission failed — please try again.") + "</p>";
         });
     };
   }
 
   function renderMCQ() {
+    const dcHost = $("#daily-challenge-root");
+    if (dcHost && window.UMP_EXTRAS) window.UMP_EXTRAS.renderDailyChallenge(dcHost, state.student);
     const root = $("#mcq-root");
     if (!root || !window.UMP_LEARNING_TOOLS) {
       if (root) root.innerHTML = "<div class='card'>MCQ Zone could not be loaded. Please refresh once.</div>";
       return;
     }
     window.UMP_LEARNING_TOOLS.renderMCQ(root, state.student);
+  }
+
+  function renderWrittenView() {
+    const root = $("#written-root");
+    if (root && window.UMP_EXTRAS) window.UMP_EXTRAS.renderWritten(root);
+  }
+
+  function renderRevisionView() {
+    const root = $("#revision-root");
+    if (root && window.UMP_EXTRAS) window.UMP_EXTRAS.renderRevision(root);
   }
 
   // ---------- Performance ----------
@@ -1592,6 +1580,8 @@ const APP_VERSION = "2.8.0";
   // ---------- Profile ----------
   function renderProfile() {
     const s = state.student, st = state.stats;
+    const remRoot = $("#reminders-root");
+    if (remRoot && window.UMP_EXTRAS) window.UMP_EXTRAS.renderReminders(remRoot, s);
     const initials = (s.studentName || "S").split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
     $("#profile-avatar").textContent = initials;
     $("#profile-name").textContent = s.studentName;
@@ -2193,12 +2183,12 @@ const APP_VERSION = "2.8.0";
     // 9 Oct 2026: ek-ek field ka apna message — taaki student ko turant pata chale
     // kya chhoot raha hai (aur wo field screen par highlight ho jaye).
     if (!date) {
-      setModalError(tlError, "Study Date khali hai — upar calendar par tap karke date chuno.");
+      setModalError(tlError, "No study date selected — tap a date on the calendar above.");
       highlightFieldError(tlDate);
       return;
     }
     if (!hoursRaw) {
-      setModalError(tlError, "Total Study Hours likho — aaj padhai nahi hui toh 0 likho ya 0 hrs option chuno.");
+      setModalError(tlError, "Enter today's total study hours — if you did not study today, enter 0 or use the 0 hrs option.");
       highlightFieldError(tlHours);
       return;
     }
@@ -2208,12 +2198,12 @@ const APP_VERSION = "2.8.0";
       return;
     }
     if (hours === 0 && planned !== "No") {
-      setModalError(tlError, "0 hours ke liye 'plan ke hisaab se padha?' mein No chuno aur reason batao.");
+      setModalError(tlError, 'For 0 hours, select No for "Did you follow today\'s plan?" and give a reason.');
       highlightFieldError(tlPlannedGroup);
       return;
     }
     if (!planned) {
-      setModalError(tlError, "Ye batana zaroori hai — aaj plan ke hisaab se padha? Yes / No / Maybe me se ek chuno.");
+      setModalError(tlError, "This is required: did you follow today's plan? Pick one of Yes / No / Maybe.");
       highlightFieldError(tlPlannedGroup);
       return;
     }
@@ -2267,6 +2257,10 @@ const APP_VERSION = "2.8.0";
     clearModalError(tlError);
 
     const studentId = state.student.studentId;
+    // Snapshot before the write: if the acknowledgement is lost we can still tell
+    // the student the truth by reading the log back, instead of handing them an
+    // "outcome unknown" dead end.
+    const logBefore = JSON.stringify(Array.isArray(state.log) ? state.log : []);
 
     try {
       proofFile = planned === "No" ? null : await readProofFile();
@@ -2311,6 +2305,31 @@ const APP_VERSION = "2.8.0";
       closeTrackerModal();
       renderTracker();
     } catch (err) {
+      if (err && err.saveOutcomeUnknown) {
+        // The server may have committed the write even though the reply never
+        // arrived. Read the log back once and report what actually happened.
+        try {
+          const [stats, log] = await Promise.all([api.getStats(studentId), api.getStudyLog(studentId)]);
+          const logNow = JSON.stringify(Array.isArray(log) ? log : []);
+          if (state.student?.studentId === studentId && Array.isArray(log) && logNow !== logBefore) {
+            state.stats = stats; state.log = log;
+            if (typeof ownTrackerDrafts !== 'undefined') ownTrackerDrafts.delete(studentId);
+            restoredTrackerProof = null;
+            closeTrackerModal();
+            renderTracker();
+            showToast("fa-circle-check", "Saved", "Your tracker is up to date.");
+            return;
+          }
+          setModalError(tlError, "Not saved yet — nothing was added. Your draft is kept, please try again.");
+        } catch {
+          setModalError(tlError, "Saved or not, we could not confirm. Keep this draft and check Study tracker — do not submit twice.");
+        }
+        return;
+      }
+      if (err && err.sessionExpired) {
+        setModalError(tlError, err.message || "Your session expired. Sign in again to continue.");
+        return;
+      }
       setModalError(tlError, err.message || "Something went wrong. Please try again.");
     } finally {
       tlSubmitBtn.disabled = false;
