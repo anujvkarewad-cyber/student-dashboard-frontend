@@ -90,6 +90,8 @@ export const MentorTestScreen = () => {
   const [answerUrl, setAnswerUrl] = useState('');
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
+  const [uploadSeconds, setUploadSeconds] = useState(0);
+  const [uploadSize, setUploadSize] = useState('');
   const [pickerOpen, setPickerOpen] = useState(false);
 
   const [evaluated, setEvaluated] = useState<{ score?: number; total?: number } | null>(null);
@@ -105,6 +107,13 @@ export const MentorTestScreen = () => {
   const viewerReady = useRef(false);
 
   const [answers, setAnswers] = useState<Record<string, string>>({});
+
+  // Elapsed-seconds ticker so students can tell a slow upload is still alive.
+  useEffect(() => {
+    if (!uploading) { setUploadSeconds(0); return; }
+    const t = setInterval(() => setUploadSeconds((n) => n + 1), 1000);
+    return () => clearInterval(t);
+  }, [uploading]);
 
   useEffect(() => {
     let alive = true;
@@ -208,6 +217,7 @@ export const MentorTestScreen = () => {
         setUploadError('File is larger than 10 MB. Photograph fewer pages or compress the PDF, then try again.');
         return;
       }
+      setUploadSize(`${(size / (1024 * 1024)).toFixed(1)} MB`);
       setUploading(true);
       const base64 = await LegacyFileSystem.readAsStringAsync(uri, { encoding: LegacyFileSystem.EncodingType.Base64 });
       const url = await uploadAnswerSheet({ base64, mimeType: mime, filename: name });
@@ -379,7 +389,14 @@ export const MentorTestScreen = () => {
                     {uploading ? (
                       <View style={styles.progressRow}>
                         <ActivityIndicator color={colors.primary} />
-                        <Text style={styles.progressText}>Uploading… 5–30 seconds on mobile network.</Text>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.progressText}>
+                            Uploading… {uploadSeconds}s{uploadSize ? ` (${uploadSize})` : ''}
+                          </Text>
+                          <Text style={styles.progressHint}>
+                            Large PDFs can take 30–120s on mobile data — please keep this screen open. If it fails, the original file is kept and you can retry (Wi-Fi is best for multi-MB PDFs).
+                          </Text>
+                        </View>
                       </View>
                     ) : null}
                     {uploadError ? <Text style={styles.errorText}>{uploadError}</Text> : null}
@@ -566,7 +583,8 @@ const styles = StyleSheet.create({
   okText: { color: colors.teal, fontSize: 11, fontWeight: '800', flex: 1 },
   lockedBox: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.canvas, borderRadius: radius.md, padding: spacing.md },
   progressRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.sm },
-  progressText: { color: colors.inkSoft, fontSize: 10, flex: 1 },
+  progressText: { color: colors.inkSoft, fontSize: 10 },
+  progressHint: { color: colors.inkSoft, fontSize: 9, marginTop: 3, opacity: 0.85 },
   errorText: { color: colors.red, fontSize: 10, marginTop: spacing.sm },
   label: { color: colors.ink, fontSize: 11, fontWeight: '800', marginBottom: 4 },
   input: { backgroundColor: colors.canvas, borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, color: colors.ink, fontSize: 13, marginBottom: spacing.md, borderWidth: 1, borderColor: colors.border },

@@ -13,6 +13,7 @@ const APPS_SCRIPT_URL =
   'https://script.google.com/macros/s/AKfycbzyfWa8agayMB0XLjkbfhfj2MdIRElAiY2Wnd7-eQKd1zlMl099ky6Cif06TWydzr8D/exec';
 
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // Apps Script times out above this (web parity)
+export const UPLOAD_TIMEOUT_MS = 120 * 1000; // Bound the Apps Script round-trip (base64 -> Drive).
 
 export type MentorTest = {
   id: string;
@@ -204,9 +205,25 @@ export async function uploadAnswerSheet(opts: {
   if (!await stillOwner()) throw new Error('Session changed. Keep the original file.');
   // This preserves the existing Script wire contract, NOT proof of Script-side
   // authentication/private ACLs. Those require the authoritative source.
-  const res = await fetch(APPS_SCRIPT_URL, {
-    method: 'POST', body: JSON.stringify({ action: 'student.test.uploadSubmission', payload: opts }),
-  });
+  // Apps Script converts the base64 payload server-side and can be slow on
+  // mobile networks; bound the wait so a stalled connection surfaces as an
+  // actionable error instead of an endless spinner (previously: forever).
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch(APPS_SCRIPT_URL, {
+      method: 'POST', body: JSON.stringify({ action: 'student.test.uploadSubmission', payload: opts }),
+      signal: controller.signal,
+    });
+  } catch (e) {
+    if (controller.signal.aborted) {
+      throw new Error('Upload timed out after 2 minutes. Check your connection, keep the original file, then try again — Wi-Fi is more reliable for multi-MB PDFs.');
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
   const data = await res.json().catch(() => null);
   if (!await stillOwner()) throw new Error('Session changed. Keep the original file.');
   const result = data?.result;
