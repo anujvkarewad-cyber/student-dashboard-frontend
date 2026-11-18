@@ -100,6 +100,15 @@ export const TestsScreen = () => {
                   <View style={[styles.statusChip, { backgroundColor: st.tone + '22' }]}>
                     <Text style={[styles.statusText, { color: st.tone }]}>{st.label}</Text>
                   </View>
+                  {t.mentorRemark ? (
+                    <View style={styles.mentorRemarkBox}>
+                      <View style={styles.mentorRemarkHeading}>
+                        <Ionicons name="chatbubble-ellipses" size={13} color={colors.primary} />
+                        <Text style={styles.mentorRemarkLabel}>Mentor's remark</Text>
+                      </View>
+                      <Text style={styles.mentorRemarkText} numberOfLines={3}>{t.mentorRemark}</Text>
+                    </View>
+                  ) : null}
                 </Card>
               </Pressable>
             );
@@ -147,6 +156,10 @@ const styles = StyleSheet.create({
   testMeta: { color: colors.muted, fontSize: 10, marginTop: 2 },
   statusChip: { alignSelf: 'flex-start', borderRadius: radius.sm, paddingHorizontal: spacing.sm, paddingVertical: 3, marginTop: spacing.sm },
   statusText: { fontSize: 9, fontWeight: '800' },
+  mentorRemarkBox: { marginTop: spacing.md, borderRadius: radius.sm, backgroundColor: colors.primarySoft, padding: spacing.md },
+  mentorRemarkHeading: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  mentorRemarkLabel: { color: colors.primary, fontSize: 10, fontWeight: '800' },
+  mentorRemarkText: { color: colors.ink, fontSize: 11, lineHeight: 16, marginTop: spacing.xs },
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.lg, marginBottom: spacing.md },
   iconBox: { width: 42, height: 42, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
   rowTitle: { color: colors.ink, fontSize: 13, fontWeight: '800' },

@@ -287,6 +287,16 @@ export const MentorTestScreen = () => {
             </Text>
           </View>
 
+          {meta?.mentorRemark ? (
+            <Card style={styles.mentorRemarkCard}>
+              <View style={styles.mentorRemarkHeading}>
+                <Ionicons name="chatbubble-ellipses" size={16} color={colors.primary} />
+                <Text style={styles.mentorRemarkTitle}>Mentor's remark</Text>
+              </View>
+              <Text style={styles.mentorRemarkText}>{meta.mentorRemark}</Text>
+            </Card>
+          ) : null}
+
           {error ? <ErrorBanner message={error} /> : null}
 
           {loading ? (
@@ -541,6 +551,10 @@ const styles = StyleSheet.create({
   title: { color: colors.ink, fontSize: 20, fontWeight: '900' },
   subtitle: { color: colors.muted, fontSize: 11, marginTop: 2 },
   card: { padding: spacing.lg, marginBottom: spacing.md },
+  mentorRemarkCard: { padding: spacing.lg, marginBottom: spacing.md, backgroundColor: colors.primarySoft },
+  mentorRemarkHeading: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  mentorRemarkTitle: { color: colors.primary, fontSize: 12, fontWeight: '900' },
+  mentorRemarkText: { color: colors.ink, fontSize: 12, lineHeight: 18, marginTop: spacing.sm },
   muted: { color: colors.muted, fontSize: 11, lineHeight: 16, marginBottom: spacing.sm },
   instructions: { color: colors.inkSoft, fontSize: 11, lineHeight: 16, marginTop: spacing.sm },
   duoRow: { flexDirection: 'row', gap: spacing.sm },
