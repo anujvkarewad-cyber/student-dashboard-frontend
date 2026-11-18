@@ -31,6 +31,7 @@ export type MentorTest = {
   lastTotal: number | null;
   maxMarks: number | null;
   instructions: string;
+  mentorRemark?: string;
 };
 
 export type PaperMeta = {
@@ -47,6 +48,7 @@ export type PaperMeta = {
   markingSchemeUrl: string | null;
   markingSchemeText: string;
   instructions: string;
+  mentorRemark?: string;
   questions: McqQuestion[];
 };
 
@@ -103,6 +105,7 @@ export async function listMentorTests(): Promise<MentorTest[]> {
     lastTotal: typeof t.lastTotal === 'number' ? t.lastTotal : null,
     maxMarks: typeof t.maxMarks === 'number' ? t.maxMarks : null,
     instructions: t.instructions ? String(t.instructions) : '',
+    mentorRemark: t.mentorRemark ? String(t.mentorRemark) : '',
   }));
 }
 
@@ -153,6 +156,7 @@ export async function getPaperMeta(testId: string): Promise<PaperMeta> {
     markingSchemeUrl: meta.markingSchemeUrl ? String(meta.markingSchemeUrl) : null,
     markingSchemeText: meta.markingScheme ? String(meta.markingScheme) : '',
     instructions: meta.instructions ? String(meta.instructions) : '',
+    mentorRemark: meta.mentorRemark ? String(meta.mentorRemark) : '',
     questions: Array.isArray(data?.questions)
       ? data.questions.map((q: any): McqQuestion => ({
           id: String(q.id || ''),

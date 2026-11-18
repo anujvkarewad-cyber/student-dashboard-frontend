@@ -36,6 +36,7 @@
       lastScore: item.lastScore,
       lastTotal: item.lastTotal,
       instructions: item.instructions || "",
+      mentorRemark: String(item.mentorRemark || ""),
       questions: [],
     };
   }

@@ -1,4 +1,4 @@
-const APP_VERSION = "2.8.0";
+const APP_VERSION = "2.8.1";
 
 (function () {
   "use strict";
@@ -868,6 +868,12 @@ const APP_VERSION = "2.8.0";
     };
   }
 
+  function renderMentorRemark(value) {
+    const remark = String(value || "").trim();
+    if (!remark) return "";
+    return "<div class='mentor-test-remark' style='border-left:3px solid #3157d5;background:#eff6ff;padding:10px 12px;border-radius:6px;font-size:13px;line-height:1.5;'><b>Mentor’s remark</b><div>" + escapeHtml(remark) + "</div></div>";
+  }
+
   function renderTests() {
     // Workbook practice is a tutorial/demo-only surface: visible to the demo
     // account and master IDs, never to real students.
@@ -893,7 +899,10 @@ const APP_VERSION = "2.8.0";
         if (test.status === "closed") bits.push("closed");
         if (test.attempted && test.lastScore != null) bits.push(test.lastScore + "/" + test.lastTotal);
         const label = test.title + (bits.length ? " · " + bits.join(" · ") : "");
-        return "<button type='button' class='btn-primary sm' data-test='" + escapeHtml(test.id) + "' style='margin:0 8px 8px 0;'>" + escapeHtml(label) + "</button>";
+        return "<div class='student-test-item' style='margin:0 0 10px;'>"
+          + "<button type='button' class='btn-primary sm' data-test='" + escapeHtml(test.id) + "' style='margin:0 8px 8px 0;'>" + escapeHtml(label) + "</button>"
+          + renderMentorRemark(test.mentorRemark)
+          + "</div>";
       }).join("");
       list.querySelectorAll("[data-test]").forEach((btn) => {
         btn.onclick = () => startWebTest(tests.find((item) => item.id === btn.dataset.test), player);
@@ -952,6 +961,7 @@ const APP_VERSION = "2.8.0";
   function startPaperTest(test, data, player) {
     const meta = (data && data.test) || {};
     const maxMarks = Number(meta.maxMarks || test.maxMarks || 0);
+    const mentorRemarkHtml = renderMentorRemark(meta.mentorRemark || test.mentorRemark);
     const escapeHtml = (unsafe) => String(unsafe).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
 
     let state = {
@@ -967,6 +977,7 @@ const APP_VERSION = "2.8.0";
               <h2 style="color: #166534; margin-bottom:10px;">✅ Test Evaluated</h2>
               <h3 style="margin-bottom:10px;">${escapeHtml(meta.title || test.title)}</h3>
               <div style="font-size: 20px; margin-bottom: 10px;">Marks: <b style="color: #047857;">${test.lastScore} / ${maxMarks || test.lastTotal || "?"}</b></div>
+              ${mentorRemarkHtml}
               <p class="muted">Your mentor has received your answer sheet and self-evaluation.</p>
             </div>
           `;
@@ -978,7 +989,7 @@ const APP_VERSION = "2.8.0";
             <div class="card" style="padding:20px; border-top: 4px solid #3b82f6;">
               <h3 style="margin-bottom:5px;">${escapeHtml(meta.title || test.title)}</h3>
               <p style="color:#2563eb; font-weight:bold; margin-bottom:15px;">✅ Answer Uploaded Successfully!</p>
-              
+              ${mentorRemarkHtml}
               <div style="background: #f1f5f9; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
                 <div style="font-weight:bold; margin-bottom:8px; font-size:16px;">Step 3: Self-Evaluation</div>
                 <p class="muted" style="margin-bottom:12px; font-size:13px;">Open the answer sheet below, check your uploaded answers, and enter your marks.</p>
@@ -1058,6 +1069,7 @@ const APP_VERSION = "2.8.0";
           <div style="margin-bottom:20px;">
             <h3 style="margin-bottom:5px;">${escapeHtml(meta.title || test.title)}</h3>
             <div class="muted" style="font-size:14px;">${escapeHtml(meta.subject || "")} • ${maxMarks ? maxMarks + " marks" : "Paper Test"} • ${meta.durationMinutes ? meta.durationMinutes + " mins" : ""}</div>
+            ${mentorRemarkHtml}
           </div>
 
           <div style="background: #f8fafc; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
@@ -1154,6 +1166,7 @@ const APP_VERSION = "2.8.0";
   function startChannelWebTest(test, data, player) {
     const meta = (data && data.test) || {};
     const questions = (data && data.questions) || [];
+    const mentorRemarkHtml = renderMentorRemark(meta.mentorRemark || test.mentorRemark);
     const startedAt = Date.now();
     if (!questions.length) {
       player.innerHTML = "<h3>" + escapeHtml(test.title) + "</h3><p class='muted'>No questions have been published for this test yet.</p>";
@@ -1161,6 +1174,7 @@ const APP_VERSION = "2.8.0";
     }
     player.innerHTML = "<h3>" + escapeHtml(meta.title || test.title) + "</h3>"
       + "<p class='muted'>" + escapeHtml(meta.subject || test.subject || "") + (meta.durationMinutes ? " · " + meta.durationMinutes + " min" : "") + " · " + questions.length + " questions · " + escapeHtml(String(meta.maxMarks || test.maxMarks || questions.length)) + " marks</p>"
+      + mentorRemarkHtml
       + (meta.instructions ? "<p class='muted'>" + escapeHtml(meta.instructions) + "</p>" : "")
       + questions.map((q, index) => "<div style='margin:14px 0;'><b>" + (index + 1) + ". " + escapeHtml(q.prompt) + "</b>" + (q.options || []).map((opt) => "<label style='display:block;margin-top:6px;'><input type='radio' name='" + escapeHtml(q.id) + "' value='" + escapeHtml(opt.id) + "'/> " + escapeHtml(opt.id) + ". " + escapeHtml(opt.text) + "</label>").join("") + "</div>").join("")
       + "<button type='button' class='btn-primary sm' id='submit-web-test'>Submit</button><div id='web-test-result' style='margin-top:12px;'></div>";
