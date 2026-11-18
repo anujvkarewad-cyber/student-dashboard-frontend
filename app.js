@@ -1,4 +1,4 @@
-const APP_VERSION = "2.8.1";
+const APP_VERSION = "2.8.2";
 
 (function () {
   "use strict";
@@ -219,19 +219,25 @@ const APP_VERSION = "2.8.1";
     let actor;
     try { actor = JSON.parse(localStorage.getItem('ump_student') || 'null'); } catch { actor = null; }
     if (!actor?.studentId || !actor.password) { lockPrivateDashboard(); return; }
-    window.UMP_CLEAR_PRIVATE_SESSION(false);
-    const epoch = window.UMP_PRIVATE_EPOCH();
-    lockPrivateDashboard();
+    // Non-destructive revalidation: losing focus (file pickers, cameras,
+    // alt-tab) must not wipe the in-memory UI, kill uploads in flight or
+    // discard tracker drafts. Re-check with the server in the background and
+    // lock only on a definitive refusal (wrong password / removed / blocked /
+    // expired cohort). Network failure keeps the current view untouched.
     try {
       const result = await api.validateLogin(actor.studentId, actor.password);
       const current = JSON.parse(localStorage.getItem('ump_student') || 'null');
-      if (epoch !== window.UMP_PRIVATE_EPOCH() || current?.studentId !== actor.studentId || current?.password !== actor.password) return;
+      if (current?.studentId !== actor.studentId || current?.password !== actor.password) return;
       if (result?.success === true) {
         localStorage.setItem('ump_student', JSON.stringify({ studentId: result.studentId || actor.studentId, password: actor.password }));
-        await enterApp(result);
+        return; // session still valid — leave view, state and drafts untouched
       }
-      else if (['wrong_password','not_found','removed','access_blocked','group_closed'].includes(result?.code)) window.UMP_CLEAR_PRIVATE_SESSION();
-    } catch { /* Credentials remain retryable; private server data stays locked. */ }
+      if (['wrong_password','not_found','removed','access_blocked','group_closed'].includes(result?.code)) {
+        lockPrivateDashboard();
+        window.UMP_CLEAR_PRIVATE_SESSION();
+      }
+      // Unknown/malformed response: keep the session; do not destroy state.
+    } catch { /* Network error: keep the current view; do not wipe private data. */ }
   });
 
   async function enterApp(student) {
