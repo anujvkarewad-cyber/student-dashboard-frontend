@@ -1,4 +1,4 @@
-const APP_VERSION = "2.8.2";
+const APP_VERSION = "2.8.3";
 
 (function () {
   "use strict";
@@ -1091,7 +1091,13 @@ const APP_VERSION = "2.8.2";
             <input type="file" id="answer-file" accept="image/*,application/pdf" style="display:block; width:100%; margin-bottom:15px; padding:10px; border:1px solid #e2e8f0; border-radius:5px; background:white;" />
             
             <button id="upload-btn" class="btn-primary" style="width:100%; padding:12px; font-size:16px;">📤 Upload Answer Sheet</button>
-            <div id="upload-progress" style="margin-top:10px; color:#3b82f6; font-weight:bold; display:none; text-align:center;">Uploading... please wait (up to 30s)</div>
+            <div id="upload-progress" style="margin-top:12px; display:none;">
+              <div style="height:12px; background:#e2e8f0; border-radius:999px; overflow:hidden;">
+                <div class="upload-progress-fill" style="height:100%; width:0%; background:#3b82f6; border-radius:999px; transition:width .2s linear;"></div>
+              </div>
+              <div class="upload-progress-text" style="margin-top:8px; color:#3b82f6; font-weight:bold; font-size:14px; text-align:center;">Starting upload…</div>
+              <div style="margin-top:4px; color:#64748b; font-size:11px; text-align:center;">Large PDFs can take 30–120s on mobile data — keep this screen open.</div>
+            </div>
             <div id="upload-err" style="margin-top:10px; color:red; text-align:center; font-size:14px;"></div>
           </div>
         </div>
@@ -1129,32 +1135,60 @@ const APP_VERSION = "2.8.2";
           progDiv.style.display = "block";
           
           const uploadCurrent = privateFence();
-          if (!state.student?.studentId) return;
+          if (!state.student?.studentId) { btn.style.display = "block"; progDiv.style.display = "none"; errDiv.textContent = "Your session expired. Please log in again."; return; }
           const reader = new FileReader();
           reader.onload = () => {
               if (!uploadCurrent()) return;
               const base64 = reader.result.split(',')[1];
               const appsScriptUrl = "https://script.google.com/macros/s/AKfycbzyfWa8agayMB0XLjkbfhfj2MdIRElAiY2Wnd7-eQKd1zlMl099ky6Cif06TWydzr8D/exec";
-              fetch(appsScriptUrl, {
-                method: 'POST',
-                body: JSON.stringify({
-                  action: 'student.test.uploadSubmission',
-                  payload: { base64, mimeType: file.type, filename: file.name }
-                })
-              }).then(res => { if (!res.ok) throw new Error('Upload not confirmed. Keep the file.'); return res.json(); }).then(data => {
-                 if (!uploadCurrent()) return;
-                 const result = data?.result;
-                 const url = typeof result === 'string' ? result : result?.url;
-                 if (!data || data.error || data.ok === false || data.success === false || result?.error || result?.ok === false || result?.success === false || typeof url !== 'string' || !url.trim()) throw new Error('Upload not confirmed. Keep the file.');
-                 state.answerUrl = url;
-                 state.phase = 2; // Move to evaluation phase
-                 render();
-              }).catch(err => {
-                 if (!uploadCurrent()) return;
-                 btn.style.display = "block";
-                 progDiv.style.display = "none";
-                 errDiv.textContent = "Upload failed: " + err.message;
+              const payload = JSON.stringify({
+                action: 'student.test.uploadSubmission',
+                payload: { base64, mimeType: file.type, filename: file.name }
               });
+              const fillEl = typeof progDiv.querySelector === 'function' ? progDiv.querySelector('.upload-progress-fill') : null;
+              const textEl = typeof progDiv.querySelector === 'function' ? progDiv.querySelector('.upload-progress-text') : null;
+              const totalMb = (payload.length / 1048576).toFixed(1);
+              const showFailure = (msg) => {
+                btn.style.display = "block";
+                progDiv.style.display = "none";
+                errDiv.textContent = "Upload failed: " + msg;
+              };
+              const xhr = new XMLHttpRequest();
+              xhr.open('POST', appsScriptUrl, true);
+              xhr.timeout = 120000;
+              xhr.upload.onprogress = (e) => {
+                if (!uploadCurrent()) return;
+                if (e && e.lengthComputable && e.total > 0) {
+                  const pct = Math.min(99, Math.round((e.loaded / e.total) * 100));
+                  if (fillEl) fillEl.style.width = pct + '%';
+                  if (textEl) textEl.textContent = 'Uploading… ' + pct + '% (~' + totalMb + ' MB)';
+                } else if (textEl) {
+                  textEl.textContent = 'Uploading…';
+                }
+              };
+              xhr.ontimeout = () => {
+                if (!uploadCurrent()) return;
+                showFailure('Timed out after 2 minutes. Check your connection — the file is kept; try again (Wi-Fi recommended).');
+              };
+              xhr.onerror = () => {
+                if (!uploadCurrent()) return;
+                showFailure('Network error. Check your connection and try again — the file is kept.');
+              };
+              xhr.onload = () => {
+                if (!uploadCurrent()) return;
+                let data = null;
+                try { data = JSON.parse(xhr.responseText); } catch { data = null; }
+                const result = data?.result;
+                const url = typeof result === 'string' ? result : result?.url;
+                const okHttp = xhr.status >= 200 && xhr.status < 300;
+                if (!okHttp || !data || data.error || data.ok === false || data.success === false || result?.error || result?.ok === false || result?.success === false || typeof url !== 'string' || !url.trim()) { showFailure('Upload could not be confirmed. Keep the original file and try again.'); return; }
+                if (fillEl) fillEl.style.width = '100%';
+                if (textEl) textEl.textContent = 'Upload complete ✓';
+                state.answerUrl = url;
+                state.phase = 2; // Move to evaluation phase
+                render();
+              };
+              xhr.send(payload);
           };
           reader.onerror = () => {
              btn.style.display = "block";
