@@ -1,4 +1,4 @@
-const APP_VERSION = "2.8.4";
+const APP_VERSION = "2.8.5";
 
 (function () {
   "use strict";
@@ -1136,74 +1136,72 @@ const APP_VERSION = "2.8.4";
           
           const uploadCurrent = privateFence();
           // NB: inside startPaperTest, `state` is the LOCAL paper-test object
-          // ({ answerUrl, isUploading, phase }), never the app state — checking
-          // state.student here always failed and silently blocked every upload.
-          // Guard with the stored session credential + fence instead.
+          // ({ answerUrl, isUploading, phase }), never the app state. Guard with
+          // the stored session credential + fence instead.
+          // Uploads ride the same-origin /api/answer-upload relay (session
+          // verified server-side, relayed to the Drive writer): browsers can no
+          // longer be blocked by network/extension rules on Google endpoints,
+          // and the wire carries raw bytes (~30% lighter than base64).
           if (!localStorage.getItem('ump_student') || !uploadCurrent()) { btn.style.display = "block"; progDiv.style.display = "none"; errDiv.textContent = "Your session expired. Please log in again."; return; }
-          const reader = new FileReader();
-          reader.onload = () => {
-              if (!uploadCurrent()) return;
-              const base64 = reader.result.split(',')[1];
-              const appsScriptUrl = "https://script.google.com/macros/s/AKfycbzyfWa8agayMB0XLjkbfhfj2MdIRElAiY2Wnd7-eQKd1zlMl099ky6Cif06TWydzr8D/exec";
-              const payload = JSON.stringify({
-                action: 'student.test.uploadSubmission',
-                payload: { base64, mimeType: file.type, filename: file.name }
-              });
-              const fillEl = typeof progDiv.querySelector === 'function' ? progDiv.querySelector('.upload-progress-fill') : null;
-              const textEl = typeof progDiv.querySelector === 'function' ? progDiv.querySelector('.upload-progress-text') : null;
-              const totalMb = (payload.length / 1048576).toFixed(1);
-              const showFailure = (msg) => {
-                btn.style.display = "block";
-                progDiv.style.display = "none";
-                errDiv.textContent = "Upload failed: " + msg;
-              };
-              const xhr = new XMLHttpRequest();
-              xhr.open('POST', appsScriptUrl, true);
-              xhr.timeout = 120000;
-              xhr.upload.onprogress = (e) => {
-                if (!uploadCurrent()) return;
-                if (e && e.lengthComputable && e.total > 0) {
-                  const pct = Math.min(99, Math.round((e.loaded / e.total) * 100));
-                  if (fillEl) fillEl.style.width = pct + '%';
-                  if (textEl) textEl.textContent = 'Uploading… ' + pct + '% (~' + totalMb + ' MB)';
-                } else if (textEl) {
-                  textEl.textContent = 'Uploading…';
-                }
-              };
-              xhr.ontimeout = () => {
-                if (!uploadCurrent()) return;
-                showFailure('Timed out after 2 minutes. Check your connection — the file is kept; try again (Wi-Fi recommended).');
-              };
-              xhr.onerror = () => {
-                if (!uploadCurrent()) return;
-                showFailure('Network error. Check your connection and try again — the file is kept.');
-              };
-              xhr.onload = () => {
-                if (!uploadCurrent()) return;
-                let data = null;
-                try { data = JSON.parse(xhr.responseText); } catch { data = null; }
-                const result = data?.result;
-                const url = typeof result === 'string' ? result : result?.url;
-                const okHttp = xhr.status >= 200 && xhr.status < 300;
-                if (!okHttp || !data || data.error || data.ok === false || data.success === false || result?.error || result?.ok === false || result?.success === false || typeof url !== 'string' || !url.trim()) { showFailure('Upload could not be confirmed. Keep the original file and try again.'); return; }
-                if (fillEl) fillEl.style.width = '100%';
-                if (textEl) textEl.textContent = 'Upload complete ✓';
-                state.answerUrl = url;
-                state.phase = 2; // Move to evaluation phase
-                render();
-              };
-              xhr.send(payload);
-          };
-          reader.onerror = () => {
-             btn.style.display = "block";
-             progDiv.style.display = "none";
-             errDiv.textContent = "Could not read file locally.";
-          };
-          reader.readAsDataURL(file);
+          startAnswerUpload({ file, btn, progDiv, errDiv, uploadCurrent, onDone: (url) => { if (!uploadCurrent()) return; state.answerUrl = url; state.phase = 2; render(); } });
       };
     }
 
     render();
+  }
+
+  // Answer-sheet upload transport — same-origin relay (/api/answer-upload),
+  // raw bytes, progress events, hard timeout. The server re-checks the
+  // session, relays to the owner Apps Script and returns the Drive URL.
+  function startAnswerUpload({ file, btn, progDiv, errDiv, uploadCurrent, onDone }) {
+    const fillEl = typeof progDiv.querySelector === 'function' ? progDiv.querySelector('.upload-progress-fill') : null;
+    const textEl = typeof progDiv.querySelector === 'function' ? progDiv.querySelector('.upload-progress-text') : null;
+    const totalMb = (file.size / 1048576).toFixed(1);
+    const showFailure = (msg) => {
+      btn.style.display = 'block';
+      progDiv.style.display = 'none';
+      errDiv.textContent = 'Upload failed: ' + msg;
+    };
+    let actor = null;
+    try { actor = JSON.parse(localStorage.getItem('ump_student') || 'null'); } catch { actor = null; }
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', '/api/answer-upload', true);
+    xhr.setRequestHeader('X-Student-Id', actor?.studentId || '');
+    xhr.setRequestHeader('X-Session-Password', actor?.password || '');
+    xhr.setRequestHeader('X-File-Name', encodeURIComponent(file.name || 'answer'));
+    xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+    xhr.timeout = 120000;
+    xhr.upload.onprogress = (e) => {
+      if (!uploadCurrent()) return;
+      if (e && e.lengthComputable && e.total > 0) {
+        const pct = Math.min(99, Math.round((e.loaded / e.total) * 100));
+        if (fillEl) fillEl.style.width = pct + '%';
+        if (textEl) textEl.textContent = 'Uploading… ' + pct + '% (' + totalMb + ' MB)';
+      } else if (textEl) {
+        textEl.textContent = 'Uploading…';
+      }
+    };
+    xhr.ontimeout = () => {
+      if (!uploadCurrent()) return;
+      showFailure('Timed out after 2 minutes. Check your connection — the file is kept; try again (Wi-Fi recommended).');
+    };
+    xhr.onerror = () => {
+      if (!uploadCurrent()) return;
+      showFailure('Network error. Check your connection and try again — the file is kept.');
+    };
+    xhr.onload = () => {
+      if (!uploadCurrent()) return;
+      let data = null;
+      try { data = JSON.parse(xhr.responseText); } catch { data = null; }
+      const result = data?.result;
+      const url = typeof result === 'string' ? result : result?.url;
+      const okHttp = xhr.status >= 200 && xhr.status < 300;
+      if (!okHttp || !data || data.error || data.ok === false || data.success === false || result?.error || result?.ok === false || result?.success === false || typeof url !== 'string' || !url.trim()) { showFailure('Upload could not be confirmed. Keep the original file and try again.'); return; }
+      if (fillEl) fillEl.style.width = '100%';
+      if (textEl) textEl.textContent = 'Upload complete ✓';
+      onDone(url.trim());
+    };
+    xhr.send(file);
   }
 
   // Server-graded runner: submit par score + per-question review server se aata hai.

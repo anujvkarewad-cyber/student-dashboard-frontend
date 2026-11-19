@@ -28,6 +28,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { handleAndroidDownload, streamAndroidApk } from "./lib/android-download.js";
 import { handleProofUpload, handlePrivateProofRead, handlePrivateProofCapabilities } from "./lib/proof-upload.js";
+import { handleAnswerUpload } from "./lib/answer-upload.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -398,6 +399,31 @@ async function handleMentor(req, res, url) {
 }
 
 /* ------------------------------------------------------------------ *
+ * /api/answer-upload — mentor-test answer sheet to Drive via Apps Script
+ * Same-origin relay so student browsers never depend on Google endpoints.
+ * ------------------------------------------------------------------ */
+
+async function handleAnswerUploadRoute(req, res) {
+  try {
+    const { status, body } = await handleAnswerUpload({
+      method: req.method,
+      headers: req.headers,
+      readBody: (limit) => readBody(req, limit),
+      mentorApiUrl: MENTOR_API_URL,
+      env: process.env,
+    });
+    sendJson(res, status, body);
+  } catch (err) {
+    if (err && err.statusCode === 413) {
+      sendJson(res, 413, { error: "Answer sheet must be 10 MB or smaller" });
+      return;
+    }
+    console.error("[answer] upload failed.");
+    sendJson(res, 502, { error: "Upload could not be confirmed. Keep your answer sheet and check before retrying." });
+  }
+}
+
+/* ------------------------------------------------------------------ *
  * /api/proof-upload — study proof to Google Drive (ported from the worker)
  * ------------------------------------------------------------------ */
 
@@ -547,6 +573,10 @@ const server = http.createServer(async (req, res) => {
     }
     if (pathname === "/api/proof-upload") {
       await handleProofUploadRoute(req, res);
+      return;
+    }
+    if (pathname === "/api/answer-upload") {
+      await handleAnswerUploadRoute(req, res);
       return;
     }
 
