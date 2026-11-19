@@ -1,4 +1,4 @@
-const APP_VERSION = "2.8.3";
+const APP_VERSION = "2.8.4";
 
 (function () {
   "use strict";
@@ -1135,7 +1135,11 @@ const APP_VERSION = "2.8.3";
           progDiv.style.display = "block";
           
           const uploadCurrent = privateFence();
-          if (!state.student?.studentId) { btn.style.display = "block"; progDiv.style.display = "none"; errDiv.textContent = "Your session expired. Please log in again."; return; }
+          // NB: inside startPaperTest, `state` is the LOCAL paper-test object
+          // ({ answerUrl, isUploading, phase }), never the app state — checking
+          // state.student here always failed and silently blocked every upload.
+          // Guard with the stored session credential + fence instead.
+          if (!localStorage.getItem('ump_student') || !uploadCurrent()) { btn.style.display = "block"; progDiv.style.display = "none"; errDiv.textContent = "Your session expired. Please log in again."; return; }
           const reader = new FileReader();
           reader.onload = () => {
               if (!uploadCurrent()) return;

@@ -43,7 +43,7 @@ if (messaging) {
 }
 
 // ---------- PWA cache ----------
-const CACHE_VERSION = "2.8.3"; // Answer-sheet upload progress bar
+const CACHE_VERSION = "2.8.4"; // Real answer-sheet upload guard
 const CACHE_NAME = `upm-static-${CACHE_VERSION}`;
 const STATIC_FILES = ["/", "/style.css", "/manifest.json", "/learning-data.js", "/live-bank-loader.js", "/mcq-cloud-sync.js", "/learning-tools.js", "/icon/icon-192.png", "/icon/icon-512.png"];
 
