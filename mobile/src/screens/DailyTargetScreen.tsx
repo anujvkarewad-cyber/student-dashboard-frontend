@@ -58,6 +58,12 @@ export const DailyTargetScreen = () => {
   // Persisted locally so a restart does not re-lock days that were already earned.
   const [unlockedUpTo, setUnlockedUpTo] = useState<number>(0);
   const [gateDay, setGateDay] = useState<number | null>(null);
+  // True until the first plan read settles. Without it the screen painted the
+  // fallback (CalendarPlanCard + the local 3-step list) for a moment and then
+  // swapped to the real plan card - the student saw two different screens on
+  // every open and it looked like the app was showing the wrong day
+  // (22-Nov-2026).
+  const [planLoading, setPlanLoading] = useState<boolean>(true);
 
   const readLocal = useCallback(async (key: string): Promise<LocalTargetMap> => {
     try {
@@ -69,11 +75,13 @@ export const DailyTargetScreen = () => {
   // Re-pull the mentor target every time the screen is focused (not just on
   // mount) so a target published or edited mid-day shows up immediately.
   useFocusEffect(useCallback(() => {
+    setPlanLoading(true);
     (async () => {
       if (student) {
         const remote = await fetchDailyTarget(student.studentId);
         if (remote) {
           void fetchTargetPlanDays(student.studentId).then(async (plan) => {
+            setPlanLoading(false);
             if (plan) {
               // Fold in this device's ticks before the first paint, so a tick made
               // before the backend learned about plan dates is not lost on open.
@@ -106,6 +114,7 @@ export const DailyTargetScreen = () => {
           return;
         }
         setPlanDays([]);
+        setPlanLoading(false);
       }
       const y = await readLocal(yesterday);
       setBehind(!['mcq', 'tracker', 'revise'].every((k) => y[k]));
@@ -234,6 +243,9 @@ export const DailyTargetScreen = () => {
   // highlighted; a future day stays locked until the day before it is complete.
   // Today and past days always stay open — today is the only place ticks happen.
   const hasPlan = backendLive && planDays.length > 0;
+  // While the first read is in flight show nothing rather than the fallback, so
+  // the screen never flashes a different (wrong-looking) layout before the plan.
+  const showFallback = !planLoading && !hasPlan;
   // A published plan only owns ticking while it actually covers today. Once the
   // plan has ended (or has not started) there is no plan day marked isToday, so
   // the plan card falls back to a read-only past day and the local checklist is
@@ -296,15 +308,25 @@ export const DailyTargetScreen = () => {
 
   return (
     <ScrollView contentContainerStyle={styles.content}>
-      <SmartTargetsPanel hideCalendarPlan={hasPlan} />
-      {!hasPlan ? (
+      {/* Hide the secondary calendar card while the real plan is loading OR live,
+          so the student only ever sees one plan card - the day-wise one. */}
+      <SmartTargetsPanel hideCalendarPlan={planLoading || hasPlan} />
+      {planLoading ? (
+        <Card style={styles.planCard}>
+          <View style={styles.skeletonTitle} />
+          <View style={styles.skeletonRow} />
+          <View style={styles.skeletonRow} />
+          <View style={[styles.skeletonRow, { width: '62%' }]} />
+        </Card>
+      ) : null}
+      {showFallback ? (
         <Text style={{ fontWeight: "700", marginTop: 16 }}>Calendar targets & daily checklist</Text>
       ) : null}
       {/* When a published plan is active, the plan card below already shows the
           real date, day and checklist. This local-tasks summary would show a
           second, different count (local 0/4 next to the plan's 0/3), so it is
           hidden for plan users and kept for the offline fallback. */}
-      {!hasPlan ? (
+      {showFallback ? (
         <Card style={styles.head}>
           <Text style={styles.headDate}>{new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}</Text>
           <Text style={styles.headSub}>{backendLive ? 'Set by your mentor. The revision line is only a reminder.' : 'Opens at 12:00 AM daily — finish it whenever you sit down'}</Text>
@@ -343,7 +365,7 @@ export const DailyTargetScreen = () => {
           (or not started) showed BOTH this list and the plan card - two different
           checklists on one screen, which is what made "the selected day" look
           wrong (found 22-Nov-2026). */}
-      {!hasPlan ? tasks.map((task) => (
+      {showFallback ? tasks.map((task) => (
         <Pressable key={task.id} onPress={() => toggleTask(task)}>
           <Card style={styles.taskCard}>
             <View style={[styles.check, task.done && styles.checkDone]}>
@@ -529,4 +551,6 @@ const styles = StyleSheet.create({
   gateTitle: { fontSize: 13.5, fontWeight: '900', color: colors.ink },
   gateText: { fontSize: 12, color: colors.inkSoft, marginTop: 3, lineHeight: 17 },
   unlockBtn: { marginTop: 6 },
+  skeletonTitle: { height: 14, width: '58%', borderRadius: 6, backgroundColor: colors.canvas, marginBottom: 12 },
+  skeletonRow: { height: 12, width: '86%', borderRadius: 6, backgroundColor: colors.canvas, marginBottom: 10 },
 });
