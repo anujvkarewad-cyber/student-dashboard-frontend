@@ -93,8 +93,24 @@ export const fetchDailyTarget = (studentId: string) =>
     `/api/ai/daily-target?studentId=${encodeURIComponent(studentId)}`,
   );
 
-export const completeTargetTask = (studentId: string, taskId: string) =>
-  mentorFetch<{ ok: boolean }>(`/api/targets/complete`, { method: 'POST', body: { studentId, taskId } });
+/**
+ * Tick one task.
+ *
+ * `date` is the plan day the task belongs to. Leaving it out keeps the original
+ * behaviour (the server stamps today), which is what the offline single-list
+ * screen still relies on. `done: false` un-ticks - the server only ever upserted
+ * before, so an undo used to do nothing on the plan side.
+ */
+export const completeTargetTask = (
+  studentId: string,
+  taskId: string,
+  date?: string,
+  done: boolean = true,
+) =>
+  mentorFetch<{ ok: boolean }>(`/api/targets/complete`, {
+    method: 'POST',
+    body: { studentId, taskId, ...(date ? { date } : {}), ...(done ? {} : { done: false }) },
+  });
 
 /** The whole published plan, day by day, so the app can show every published day. */
 export type PlanDayTask = { id: string; label: string; detail: string; kind: string; done: boolean };

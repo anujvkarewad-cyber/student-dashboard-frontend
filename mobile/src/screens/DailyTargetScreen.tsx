@@ -76,7 +76,21 @@ export const DailyTargetScreen = () => {
           void fetchTargetPlanDays(student.studentId).then((plan) => {
             if (plan) {
               setPlanDays(plan.days);
-              setSelectedDay((prev) => prev || (plan.days.find((d) => d.isToday)?.date ?? plan.today));
+              // Pick the opening day from the PLAN's own days. The old code fell
+              // back to plan.today, which is the calendar date - so once the plan
+              // ended (or had not started) selectedDay pointed at a date no plan
+              // day owns, selectedIndex became -1 and the screen sat on an empty
+              // selection with a permanently disabled unlock button (22-Nov-2026).
+              setSelectedDay((prev) => {
+                if (prev && plan.days.some((d) => d.date === prev)) return prev;
+                const today = plan.days.find((d) => d.isToday);
+                if (today) return today.date;
+                // The plan is over (or has not started): open the FIRST day that
+                // was never finished, so a student catching up starts where the
+                // work actually stopped instead of on the last calendar day.
+                const unfinished = plan.days.find((d) => !(d.tasks.length > 0 && d.tasks.every((t) => t.done)));
+                return (unfinished ?? [...plan.days].reverse().find((d) => d.date <= plan.today) ?? plan.days[0])?.date ?? '';
+              });
             }
           });
           setBackendLive(true);
@@ -97,6 +111,13 @@ export const DailyTargetScreen = () => {
     })();
   }, [readLocal, student, today, yesterday]));
 
+  /** Re-read the plan so `done` flags come back from the server, not from hope. */
+  const reloadPlan = useCallback(async () => {
+    if (!student) return;
+    const plan = await fetchTargetPlanDays(student.studentId).catch(() => null);
+    if (plan?.days?.length) setPlanDays(plan.days);
+  }, [student]);
+
   /** Persisted unlock pointer, keyed by the plan so a new plan starts fresh. */
   const unlockKey = planDays.length ? `ump_unlock_${planDays[0].planId}` : '';
   const persistUnlock = useCallback(async (upTo: number) => {
@@ -115,12 +136,51 @@ export const DailyTargetScreen = () => {
       const saved = Number(raw ?? 0);
       if (!live) return;
       if (Number.isFinite(saved) && saved >= 1) { setUnlockedUpTo(saved); return; }
+      // Same rule as the opening day: the first day that is not finished. Falling
+      // back to the calendar (today / last past day) opened the plan on Day 20 for
+      // a student who never started Day 1 (found 22-Nov-2026).
+      const isDone = (d: PlanDay) => d.tasks.length > 0 && d.tasks.every((t) => t.done);
       const todayIdx = planDays.findIndex((d) => d.isToday);
+      const firstOpenIdx = planDays.findIndex((d) => !isDone(d));
       const lastPastIdx = planDays.reduce((acc, d, i) => (d.date <= today ? i : acc), -1);
-      setUnlockedUpTo(Math.max(1, (todayIdx >= 0 ? todayIdx : lastPastIdx) + 1));
+      const pickIdx = todayIdx >= 0 ? todayIdx : firstOpenIdx >= 0 ? firstOpenIdx : lastPastIdx;
+      setUnlockedUpTo(Math.max(1, pickIdx + 1));
     })();
     return () => { live = false; };
   }, [unlockKey, planDays, today]);
+
+  /**
+   * Tick one task.
+   *
+   * `planDate` is the date of the plan day the task belongs to. The offline
+   * fallback (no published plan) leaves it out and keeps the old behaviour of
+   * writing under today's key. When a plan IS active the tick must be stored
+   * against the day the student has open - storing it under today was why the
+   * selected day never filled up (found 22-Nov-2026).
+   */
+  const togglePlanTask = async (planDate: string, task: { id: string; done: boolean }) => {
+    const nextDone = !task.done;
+    if (backendLive && student) {
+      await completeTargetTask(student.studentId, task.id, planDate, nextDone);
+    }
+    setPlanDays((prev) =>
+      prev.map((d) =>
+        d.date === planDate
+          ? { ...d, tasks: d.tasks.map((t) => (t.id === task.id ? { ...t, done: nextDone } : t)) }
+          : d,
+      ),
+    );
+    // Mirror the tick locally so it survives a reload while the network settles.
+    const map = await readLocal(planDate);
+
+    map[task.id] = nextDone;
+    const localDay = planDays.find((d) => d.date === planDate);
+    const allDone = Boolean(localDay?.tasks.every((t) => (t.id === task.id ? nextDone : t.done)));
+    if (allDone) map.__completedAt = map.__completedAt || Date.now();
+    else if (map.__completedAt) delete map.__completedAt;
+    await AsyncStorage.setItem(`ump_target_${planDate}`, JSON.stringify(map)).catch(() => undefined);
+    void reloadPlan();
+  };
 
   const toggleTask = async (task: DailyTarget) => {
     const nextDone = !task.done;
@@ -153,23 +213,36 @@ export const DailyTargetScreen = () => {
   // plan has ended (or has not started) there is no plan day marked isToday, so
   // the plan card falls back to a read-only past day and the local checklist is
   // hidden - leaving the student with no way to tick anything at all.
-  const planCoversToday = hasPlan && planDays.some((d) => d.isToday);
   const isPlanDayDone = (d: PlanDay) =>
     d.tasks.length > 0 && d.tasks.every((t) => t.done);
-  // A day is unlocked when its 1-based position is inside the earned pointer.
-  // Days are earned one at a time: finish every task, press the unlock button.
+  // Exactly ONE day is open at a time: the one the student has earned. Finished
+  // days to its left stay readable, everything to its right is locked. The old
+  // rule (`index + 1 > unlockedUpTo`) left every earlier day open as well, so
+  // selecting Day 3 while Day 2 was still unfinished offered to unlock Day 4 and
+  // silently skipped a day (found 22-Nov-2026).
   const isDayLocked = (index: number) => index + 1 > unlockedUpTo;
+  const isDayReadOnly = (index: number) => index + 1 < unlockedUpTo;
 
-  /** Tasks of the selected day as the plan reports them, plus local ticks. */
   const selectedIndex = planDays.findIndex((d) => d.date === selectedDay);
   const selectedPlanDay = selectedIndex >= 0 ? planDays[selectedIndex] : null;
 
+  // The day the student is actually working on - the pointer, resolved to a real
+  // plan day. Everything the unpicked-day UI promises is measured against this,
+  // never against whatever chip happens to be highlighted.
+  const currentIndex = Math.min(Math.max(unlockedUpTo, 1), Math.max(planDays.length, 1)) - 1;
+  const currentPlanDay = planDays[currentIndex] ?? null;
+
   /** True when the selected plan day has every task done. */
-  const selectedDayComplete = (() => {
-    if (!selectedPlanDay) return false;
-    if (selectedPlanDay.isToday) return tasks.length > 0 && doneCount === tasks.length;
-    return isPlanDayDone(selectedPlanDay);
-  })();
+  const selectedDayComplete = Boolean(
+    selectedPlanDay && selectedPlanDay.tasks.length > 0 && selectedPlanDay.tasks.every((t) => t.done),
+  );
+  /** The one day that accepts ticks: the earned pointer, and only while it is viewed. */
+  const isSelectedCurrent = selectedIndex >= 0 && selectedIndex === currentIndex;
+  const isDayOpen = Boolean(isSelectedCurrent && !isDayLocked(selectedIndex));
+  const readOnly = !isDayOpen;
+  const currentDayComplete = Boolean(
+    currentPlanDay && currentPlanDay.tasks.length > 0 && currentPlanDay.tasks.every((t) => t.done),
+  );
 
   /** Open a day from the strip. Locked days explain themselves instead of jumping. */
   const openPlanDay = (index: number) => {
@@ -180,10 +253,16 @@ export const DailyTargetScreen = () => {
     setSelectedDay(d.date);
   };
 
-  /** Earn the next day. Only allowed once every task on the current day is done. */
+  /**
+   * Earn the next day.
+   *
+   * Deliberately driven by the CURRENT day, not by the selected chip: the button
+   * only ever advances one step. Ticking everything on the current day is the
+   * only way forward, so a finished earlier day can never skip an unfinished one.
+   */
   const unlockNextDay = async () => {
-    if (selectedIndex < 0 || !selectedDayComplete) return;
-    const next = selectedIndex + 2; // 1-based index of the following day
+    if (!currentPlanDay || !currentDayComplete) return;
+    const next = currentIndex + 2; // 1-based position of the following day
     if (next > planDays.length) return;
     setGateDay(null);
     await persistUnlock(next);
@@ -234,7 +313,12 @@ export const DailyTargetScreen = () => {
 
       {/* When a plan is active, today's checklist renders below in the plan card —
           it is not repeated here (owner-approved: tasks appear in exactly one place). */}
-      {!planCoversToday ? tasks.map((task) => (
+      {/* The local 3-step list belongs to the NO-PLAN fallback only. It used to be
+          gated on `!planCoversToday`, which meant a published plan that had ended
+          (or not started) showed BOTH this list and the plan card - two different
+          checklists on one screen, which is what made "the selected day" look
+          wrong (found 22-Nov-2026). */}
+      {!hasPlan ? tasks.map((task) => (
         <Pressable key={task.id} onPress={() => toggleTask(task)}>
           <Card style={styles.taskCard}>
             <View style={[styles.check, task.done && styles.checkDone]}>
@@ -257,11 +341,12 @@ export const DailyTargetScreen = () => {
             {planDays.map((d, i) => {
               const active = d.date === selectedDay;
               const locked = isDayLocked(i);
+              const finished = isDayReadOnly(i);
               return (
                 <Pressable key={`${d.planId}|${d.day}|${d.date}`} onPress={() => openPlanDay(i)}>
                   <View style={[styles.planDayChip, active && styles.planDayChipOn, (d.isToday && !active) && styles.planDayChipToday, locked && styles.planDayChipLocked, !locked && isPlanDayDone(d) && !active && styles.planDayChipDone]}>
                     <Text style={[styles.planDayNum, active && styles.planDayNumOn]}>
-                      {locked ? '🔒 ' : isPlanDayDone(d) ? '✓ ' : ''}{d.day != null ? `Day ${d.day}` : '—'}
+                      {locked ? '🔒 ' : finished || isPlanDayDone(d) ? '✓ ' : '● '}{d.day != null ? `Day ${d.day}` : '—'}
                     </Text>
                     <Text style={[styles.planDayDate, active && styles.planDayDateOn]}>
                       {new Date(d.date + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
@@ -277,7 +362,9 @@ export const DailyTargetScreen = () => {
                 Day {planDays[gateDay]?.day ?? gateDay + 1} is locked
               </Text>
               <Text style={styles.gateText}>
-                Finish Day {planDays[unlockedUpTo - 1]?.day ?? unlockedUpTo} first — this day unlocks only after every task on it is complete.
+                {currentPlanDay
+                  ? `Finish Day ${currentPlanDay.day ?? currentIndex + 1} first — this day unlocks only after every task on it is complete.`
+                  : 'This day unlocks once the earlier days are complete.'}
               </Text>
             </Card>
           )}
@@ -301,66 +388,68 @@ export const DailyTargetScreen = () => {
             const day = selectedPlanDay || planDays.find((d) => d.isToday) || planDays[0];
             if (!day) return null;
             const label = day.day != null ? `Day ${day.day}` : 'This day';
-            const isPast = day.date < today;
             return (
               <Card style={styles.planCard}>
                 <Text style={styles.planCardTitle}>
                   {label} · {new Date(day.date + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}
                   {day.isToday ? ' · today' : day.date > today ? ' · unlocked · upcoming' : ''}
                 </Text>
-                {/* Today card = the real checklist (ticking happens here). Other days are read-only. */}
-                {day.isToday
-                  ? tasks.map((task) => (
-                      <Pressable key={task.id} onPress={() => toggleTask(task)}>
-                        <View style={styles.planTaskRow}>
-                          <View style={[styles.check, task.done && styles.checkDone]}>
-                            {task.done ? <Ionicons name="checkmark" size={15} color="#fff" /> : null}
-                          </View>
-                          <View style={{ flex: 1 }}>
-                            <Text style={[styles.planTaskLabel, task.done && styles.taskLabelDone]}>{task.label}</Text>
-                            {task.detail ? <Text style={styles.taskDetail}>{task.detail}</Text> : null}
-                          </View>
-                          {task.kind === 'mcq' ? <PrimaryButton label="Open" variant="secondary" onPress={() => navigation.navigate('DailyMcq')} style={styles.mini} /> : null}
-                          {task.kind === 'tracker' ? <PrimaryButton label="Log" variant="secondary" onPress={() => navigation.navigate('AddStudyLog')} style={styles.mini} /> : null}
-                        </View>
-                      </Pressable>
-                    ))
-                  : day.tasks.map((t) => (
-                      <View key={t.id} style={styles.planTaskRow}>
-                        <View style={{ flex: 1 }}>
-                          <Text style={[styles.planTaskLabel, isPast && t.done && styles.taskLabelDone]}>{t.label}</Text>
-                          {t.detail ? <Text style={styles.taskDetail}>{t.detail}</Text> : null}
-                        </View>
+                {/* The checklist is always the SELECTED day's own tasks.
+                    It used to be `day.isToday ? tasks : day.tasks`, so every
+                    unlocked day rendered today's checklist under another day's
+                    date - the heading said "Day 5" and the rows were today's
+                    (found 22-Nov-2026). Ticking is allowed only on the one open
+                    day; finished days stay visible but read-only. */}
+                {day.tasks.map((t) => {
+                  const tappable = isDayOpen && !readOnly;
+                  const row = (
+                    <View style={styles.planTaskRow}>
+                      <View style={[styles.check, t.done && styles.checkDone]}>
+                        {t.done ? <Ionicons name="checkmark" size={15} color="#fff" /> : null}
                       </View>
-                    ))}
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.planTaskLabel, t.done && styles.taskLabelDone]}>{t.label}</Text>
+                        {t.detail ? <Text style={styles.taskDetail}>{t.detail}</Text> : null}
+                      </View>
+                      {tappable && t.kind === 'mcq' ? <PrimaryButton label="Open" variant="secondary" onPress={() => navigation.navigate('DailyMcq')} style={styles.mini} /> : null}
+                      {tappable && t.kind === 'tracker' ? <PrimaryButton label="Log" variant="secondary" onPress={() => navigation.navigate('AddStudyLog')} style={styles.mini} /> : null}
+                    </View>
+                  );
+                  return tappable
+                    ? <Pressable key={t.id} onPress={() => void togglePlanTask(day.date, t)}>{row}</Pressable>
+                    : <View key={t.id}>{row}</View>;
+                })}
               </Card>
             );
           })()}
           <Text style={styles.planHint}>
-            {selectedPlanDay && isDayLocked(selectedIndex)
-              ? 'This day is locked — finish the day you are on first.'
-              : selectedDayComplete
-                ? 'Every task on this day is complete.'
-                : selectedPlanDay
-                  ? `${selectedPlanDay.tasks.filter((t) => t.done).length}/${selectedPlanDay.tasks.length} tasks done — finish them all to earn the next day.`
-                  : ''}
+            {!selectedPlanDay
+              ? ''
+              : isDayLocked(selectedIndex)
+                ? 'This day is locked — finish the day you are on first.'
+                : readOnly
+                  ? 'This day is done — view only. Ticking happens on the day you have open.'
+                  : selectedDayComplete
+                    ? 'Every task on this day is complete.'
+                    : `${selectedPlanDay.tasks.filter((t) => t.done).length}/${selectedPlanDay.tasks.length} tasks done — finish them all to earn the next day.`}
           </Text>
 
-          {/* One day at a time: the next day is earned by finishing this one.
-              The button stays visible but disabled until the checklist is clear. */}
-          {selectedPlanDay && !isDayLocked(selectedIndex) && selectedIndex + 1 < planDays.length ? (
+          {/* One day at a time. The button is driven by the open day, never by
+              whichever chip is highlighted, and it stays visible-but-disabled
+              until that checklist is clear. */}
+          {currentPlanDay && currentIndex + 1 < planDays.length ? (
             <PrimaryButton
               label={
-                selectedDayComplete
-                  ? `Unlock Day ${planDays[selectedIndex + 1].day ?? selectedIndex + 2}`
-                  : `Unlock Day ${planDays[selectedIndex + 1].day ?? selectedIndex + 2} — finish ${selectedPlanDay.tasks.filter((t) => !t.done).length} task(s) first`
+                currentDayComplete
+                  ? `Unlock Day ${planDays[currentIndex + 1].day ?? currentIndex + 2}`
+                  : `Unlock Day ${planDays[currentIndex + 1].day ?? currentIndex + 2} — finish ${currentPlanDay.tasks.filter((t) => !t.done).length} task(s) first`
               }
-              disabled={!selectedDayComplete}
+              disabled={!currentDayComplete}
               onPress={() => void unlockNextDay()}
               style={styles.unlockBtn}
             />
           ) : null}
-          {selectedPlanDay && !isDayLocked(selectedIndex) && selectedIndex + 1 >= planDays.length ? (
+          {currentPlanDay && currentIndex + 1 >= planDays.length ? (
             <Text style={styles.planHint}>That was the last day of the plan.</Text>
           ) : null}
         </View>
