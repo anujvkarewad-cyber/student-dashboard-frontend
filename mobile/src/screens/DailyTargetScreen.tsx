@@ -120,6 +120,11 @@ export const DailyTargetScreen = () => {
   // highlighted; a future day stays locked until the day before it is complete.
   // Today and past days always stay open — today is the only place ticks happen.
   const hasPlan = backendLive && planDays.length > 0;
+  // A published plan only owns ticking while it actually covers today. Once the
+  // plan has ended (or has not started) there is no plan day marked isToday, so
+  // the plan card falls back to a read-only past day and the local checklist is
+  // hidden - leaving the student with no way to tick anything at all.
+  const planCoversToday = hasPlan && planDays.some((d) => d.isToday);
   const isPlanDayDone = (d: PlanDay) =>
     d.tasks.length > 0 && d.tasks.every((t) => t.done);
   const isDayLocked = (index: number) => {
@@ -179,7 +184,7 @@ export const DailyTargetScreen = () => {
 
       {/* When a plan is active, today's checklist renders below in the plan card —
           it is not repeated here (owner-approved: tasks appear in exactly one place). */}
-      {!hasPlan ? tasks.map((task) => (
+      {!planCoversToday ? tasks.map((task) => (
         <Pressable key={task.id} onPress={() => toggleTask(task)}>
           <Card style={styles.taskCard}>
             <View style={[styles.check, task.done && styles.checkDone]}>
