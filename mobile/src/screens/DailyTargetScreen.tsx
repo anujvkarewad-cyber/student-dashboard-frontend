@@ -142,7 +142,7 @@ export const DailyTargetScreen = () => {
 
   return (
     <ScrollView contentContainerStyle={styles.content}>
-      <SmartTargetsPanel />
+      <SmartTargetsPanel hideCalendarPlan={hasPlan} />
       {!hasPlan ? (
         <Text style={{ fontWeight: "700", marginTop: 16 }}>Calendar targets & daily checklist</Text>
       ) : null}

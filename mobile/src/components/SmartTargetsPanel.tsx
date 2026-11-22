@@ -334,7 +334,9 @@ const CalendarPlanCard = () => {
   );
 };
 
-export const SmartTargetsPanel = () => {
+/** hideCalendarPlan lets the Daily Target screen own the single plan card
+ *  (header + ticks) instead of showing a second, read-only copy of it. */
+export const SmartTargetsPanel = ({ hideCalendarPlan = false }: { hideCalendarPlan?: boolean } = {}) => {
   const { data, error, busy, load, run } = useSmartDashboard();
   const { study, studyError } = useStudyLink();
   return <View style={{ gap: 12 }}>
@@ -343,7 +345,7 @@ export const SmartTargetsPanel = () => {
     {data?.targetAccessError && <Card><Text style={{ color: colors.inkSoft }}>{data.targetAccessError} Saved plans are read-only until enrollment is verified. Your revisions remain accessible.</Text><Action label="Retry enrollment check" onPress={() => void load()} /></Card>}
     {data?.plans.map(p => <Card key={p.planId}>{p.progress ? <PlanProgress progress={p.progress} busy={busy} run={run} study={study} /> : <><Text style={styles.title}>{p.name}</Text><Text style={styles.line}>{p.totalDays} study days + {p.includedBackupDays} backup day(s). Day 1 begins when you start, not on the batch calendar.</Text><Action label={p.startAvailableOn > data.today ? `Available ${p.startAvailableOn}` : 'Start My Targets'} disabled={busy || p.startAvailableOn > data.today} onPress={() => void run('start', { planId: p.planId })} /></>}</Card>)}
     {/* Mentor-published calendar plans: the ones that actually exist for every batch. */}
-    <CalendarPlanCard />
+    {hideCalendarPlan ? null : <CalendarPlanCard />}
     {busy && <ActivityIndicator accessibilityLabel="Saving target progress" />}
     {data && data.history.length > 0 && <Card><Text style={styles.title}>Saved plan history (read-only)</Text>{data.history.map(h => <Text key={h.planId} style={styles.line}>{h.name}: {h.completedDays}/{h.totalDays} days · started {h.startDate}. Plan cancelled or audience changed; progress retained.</Text>)}</Card>}
   </View>;
