@@ -2,7 +2,7 @@ import { SmartTargetsPanel } from '../components/SmartTargetsPanel';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { fetchDailyTarget, completeTargetTask, fetchTargetPlanDays, type DailyTarget, type PlanDay } from '../api/reformApi';
@@ -54,6 +54,10 @@ export const DailyTargetScreen = () => {
   // Every published plan day, so the whole mentor plan is visible at a glance.
   const [planDays, setPlanDays] = useState<PlanDay[]>([]);
   const [selectedDay, setSelectedDay] = useState<string>('');
+  // Day the student is currently allowed to work on (1-based, within planDays).
+  // Persisted locally so a restart does not re-lock days that were already earned.
+  const [unlockedUpTo, setUnlockedUpTo] = useState<number>(0);
+  const [gateDay, setGateDay] = useState<number | null>(null);
 
   const readLocal = useCallback(async (key: string): Promise<LocalTargetMap> => {
     try {
@@ -93,6 +97,31 @@ export const DailyTargetScreen = () => {
     })();
   }, [readLocal, student, today, yesterday]));
 
+  /** Persisted unlock pointer, keyed by the plan so a new plan starts fresh. */
+  const unlockKey = planDays.length ? `ump_unlock_${planDays[0].planId}` : '';
+  const persistUnlock = useCallback(async (upTo: number) => {
+    setUnlockedUpTo(upTo);
+    if (!unlockKey) return;
+    await AsyncStorage.setItem(unlockKey, String(upTo)).catch(() => undefined);
+  }, [unlockKey]);
+
+  // Restore the unlocked pointer whenever the plan changes. A fresh plan opens on
+  // the day the backend marks as today, otherwise on the last day that has passed.
+  useEffect(() => {
+    if (!unlockKey) { setUnlockedUpTo(0); return; }
+    let live = true;
+    (async () => {
+      const raw = await AsyncStorage.getItem(unlockKey).catch(() => null);
+      const saved = Number(raw ?? 0);
+      if (!live) return;
+      if (Number.isFinite(saved) && saved >= 1) { setUnlockedUpTo(saved); return; }
+      const todayIdx = planDays.findIndex((d) => d.isToday);
+      const lastPastIdx = planDays.reduce((acc, d, i) => (d.date <= today ? i : acc), -1);
+      setUnlockedUpTo(Math.max(1, (todayIdx >= 0 ? todayIdx : lastPastIdx) + 1));
+    })();
+    return () => { live = false; };
+  }, [unlockKey, planDays, today]);
+
   const toggleTask = async (task: DailyTarget) => {
     const nextDone = !task.done;
     if (backendLive && student) {
@@ -127,18 +156,39 @@ export const DailyTargetScreen = () => {
   const planCoversToday = hasPlan && planDays.some((d) => d.isToday);
   const isPlanDayDone = (d: PlanDay) =>
     d.tasks.length > 0 && d.tasks.every((t) => t.done);
-  const isDayLocked = (index: number) => {
-    const d = planDays[index];
-    if (!d) return true;
-    if (d.isToday || d.date <= today) return false;
-    const prev = planDays[index - 1];
-    if (!prev) return false;
-    return !(prev.isToday
-      ? (tasks.length > 0 && doneCount === tasks.length)
-      : isPlanDayDone(prev));
-  };
+  // A day is unlocked when its 1-based position is inside the earned pointer.
+  // Days are earned one at a time: finish every task, press the unlock button.
+  const isDayLocked = (index: number) => index + 1 > unlockedUpTo;
+
+  /** Tasks of the selected day as the plan reports them, plus local ticks. */
   const selectedIndex = planDays.findIndex((d) => d.date === selectedDay);
   const selectedPlanDay = selectedIndex >= 0 ? planDays[selectedIndex] : null;
+
+  /** True when the selected plan day has every task done. */
+  const selectedDayComplete = (() => {
+    if (!selectedPlanDay) return false;
+    if (selectedPlanDay.isToday) return tasks.length > 0 && doneCount === tasks.length;
+    return isPlanDayDone(selectedPlanDay);
+  })();
+
+  /** Open a day from the strip. Locked days explain themselves instead of jumping. */
+  const openPlanDay = (index: number) => {
+    const d = planDays[index];
+    if (!d) return;
+    if (isDayLocked(index)) { setGateDay(index); return; }
+    setGateDay(null);
+    setSelectedDay(d.date);
+  };
+
+  /** Earn the next day. Only allowed once every task on the current day is done. */
+  const unlockNextDay = async () => {
+    if (selectedIndex < 0 || !selectedDayComplete) return;
+    const next = selectedIndex + 2; // 1-based index of the following day
+    if (next > planDays.length) return;
+    setGateDay(null);
+    await persistUnlock(next);
+    setSelectedDay(planDays[next - 1].date);
+  };
 
   return (
     <ScrollView contentContainerStyle={styles.content}>
@@ -208,10 +258,10 @@ export const DailyTargetScreen = () => {
               const active = d.date === selectedDay;
               const locked = isDayLocked(i);
               return (
-                <Pressable key={`${d.planId}|${d.day}|${d.date}`} onPress={() => { if (!locked) setSelectedDay(d.date); }}>
-                  <View style={[styles.planDayChip, active && styles.planDayChipOn, (d.isToday && !active) && styles.planDayChipToday, locked && styles.planDayChipLocked]}>
+                <Pressable key={`${d.planId}|${d.day}|${d.date}`} onPress={() => openPlanDay(i)}>
+                  <View style={[styles.planDayChip, active && styles.planDayChipOn, (d.isToday && !active) && styles.planDayChipToday, locked && styles.planDayChipLocked, !locked && isPlanDayDone(d) && !active && styles.planDayChipDone]}>
                     <Text style={[styles.planDayNum, active && styles.planDayNumOn]}>
-                      {locked ? '🔒 ' : ''}{d.day != null ? `Day ${d.day}` : '—'}
+                      {locked ? '🔒 ' : isPlanDayDone(d) ? '✓ ' : ''}{d.day != null ? `Day ${d.day}` : '—'}
                     </Text>
                     <Text style={[styles.planDayDate, active && styles.planDayDateOn]}>
                       {new Date(d.date + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
@@ -221,6 +271,16 @@ export const DailyTargetScreen = () => {
               );
             })}
           </ScrollView>
+          {gateDay != null && (
+            <Card style={[styles.planCard, styles.gateCard]}>
+              <Text style={styles.gateTitle}>
+                Day {planDays[gateDay]?.day ?? gateDay + 1} is locked
+              </Text>
+              <Text style={styles.gateText}>
+                Finish Day {planDays[unlockedUpTo - 1]?.day ?? unlockedUpTo} first — this day unlocks only after every task on it is complete.
+              </Text>
+            </Card>
+          )}
           {(() => {
             if (selectedIndex >= 0 && isDayLocked(selectedIndex)) {
               const prev = planDays[selectedIndex - 1];
@@ -278,13 +338,31 @@ export const DailyTargetScreen = () => {
           })()}
           <Text style={styles.planHint}>
             {selectedPlanDay && isDayLocked(selectedIndex)
-              ? 'Locked days open once the previous day is complete.'
-              : selectedPlanDay?.isToday
-                ? "Tick today's tasks here — the next day unlocks as soon as all are complete."
-                : selectedPlanDay && selectedPlanDay.date > today
-                  ? "This day is unlocked (its previous day is complete) — ticking always happens on today's card."
-                  : 'This day has passed — view only.'}
+              ? 'This day is locked — finish the day you are on first.'
+              : selectedDayComplete
+                ? 'Every task on this day is complete.'
+                : selectedPlanDay
+                  ? `${selectedPlanDay.tasks.filter((t) => t.done).length}/${selectedPlanDay.tasks.length} tasks done — finish them all to earn the next day.`
+                  : ''}
           </Text>
+
+          {/* One day at a time: the next day is earned by finishing this one.
+              The button stays visible but disabled until the checklist is clear. */}
+          {selectedPlanDay && !isDayLocked(selectedIndex) && selectedIndex + 1 < planDays.length ? (
+            <PrimaryButton
+              label={
+                selectedDayComplete
+                  ? `Unlock Day ${planDays[selectedIndex + 1].day ?? selectedIndex + 2}`
+                  : `Unlock Day ${planDays[selectedIndex + 1].day ?? selectedIndex + 2} — finish ${selectedPlanDay.tasks.filter((t) => !t.done).length} task(s) first`
+              }
+              disabled={!selectedDayComplete}
+              onPress={() => void unlockNextDay()}
+              style={styles.unlockBtn}
+            />
+          ) : null}
+          {selectedPlanDay && !isDayLocked(selectedIndex) && selectedIndex + 1 >= planDays.length ? (
+            <Text style={styles.planHint}>That was the last day of the plan.</Text>
+          ) : null}
         </View>
       ) : null}
     </ScrollView>
@@ -332,4 +410,9 @@ const styles = StyleSheet.create({
   planLockTitle: { fontSize: 13.5, fontWeight: '900', color: colors.ink, textAlign: 'center', marginTop: 6 },
   planLockText: { fontSize: 12, color: colors.muted, textAlign: 'center', marginTop: 4, lineHeight: 18 },
   planHint: { fontSize: 11, color: colors.muted },
+  planDayChipDone: { backgroundColor: colors.tealSoft, borderColor: colors.success },
+  gateCard: { backgroundColor: colors.amberSoft, borderColor: colors.amber },
+  gateTitle: { fontSize: 13.5, fontWeight: '900', color: colors.ink },
+  gateText: { fontSize: 12, color: colors.inkSoft, marginTop: 3, lineHeight: 17 },
+  unlockBtn: { marginTop: 6 },
 });
