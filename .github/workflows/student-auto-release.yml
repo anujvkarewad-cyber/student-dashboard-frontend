@@ -84,7 +84,8 @@ jobs:
           token: ${{ secrets.EXPO_TOKEN }}
       - name: Check approved runtime using the actual production EAS environment
         working-directory: mobile
-        run: eas env:exec --environment production 'node tools/ota-preflight.cjs --publish'
+        # eas-cli 25.2.0 takes the environment as a positional argument; --environment is 26+ only.
+        run: eas env:exec production 'node tools/ota-preflight.cjs --publish'
       - uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
@@ -98,7 +99,7 @@ jobs:
         working-directory: mobile
         env:
           UPM_OTA_PUBLISH_ENABLED: '1'
-        run: eas env:exec --environment production 'node tools/publish-ota.cjs'
+        run: eas env:exec production 'node tools/publish-ota.cjs'
       - name: Record release checkpoint
         if: always()
         run: |
