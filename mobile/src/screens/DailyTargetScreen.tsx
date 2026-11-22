@@ -141,12 +141,18 @@ export const DailyTargetScreen = () => {
       {!hasPlan ? (
         <Text style={{ fontWeight: "700", marginTop: 16 }}>Calendar targets & daily checklist</Text>
       ) : null}
-      <Card style={styles.head}>
-        <Text style={styles.headDate}>{new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}</Text>
-        <Text style={styles.headSub}>{backendLive ? 'Set by your mentor. The revision line is only a reminder.' : 'Opens at 12:00 AM daily — finish it whenever you sit down'}</Text>
-        <View style={styles.progressBar}><View style={[styles.progressFill, { width: `${tasks.length ? (doneCount / tasks.length) * 100 : 0}%` }]} /></View>
-        <Text style={styles.progressLabel}>{doneCount}/{tasks.length} complete</Text>
-      </Card>
+      {/* When a published plan is active, the plan card below already shows the
+          real date, day and checklist. This local-tasks summary would show a
+          second, different count (local 0/4 next to the plan's 0/3), so it is
+          hidden for plan users and kept for the offline fallback. */}
+      {!hasPlan ? (
+        <Card style={styles.head}>
+          <Text style={styles.headDate}>{new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}</Text>
+          <Text style={styles.headSub}>{backendLive ? 'Set by your mentor. The revision line is only a reminder.' : 'Opens at 12:00 AM daily — finish it whenever you sit down'}</Text>
+          <View style={styles.progressBar}><View style={[styles.progressFill, { width: `${tasks.length ? (doneCount / tasks.length) * 100 : 0}%` }]} /></View>
+          <Text style={styles.progressLabel}>{doneCount}/{tasks.length} complete</Text>
+        </Card>
+      ) : null}
 
       {completedAt ? (
         <Card style={styles.openCard}>
