@@ -19,6 +19,10 @@ on:
         description: 'Branch, tag or SHA to release (blank = the branch you dispatched from)'
         required: false
         default: ''
+      skip_web_deploy:
+        description: 'Type skip-web to ship OTA only.'
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -92,6 +96,7 @@ jobs:
           service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
       - uses: google-github-actions/setup-gcloud@v2
       - name: Deploy student web candidate, verify, then promote (preserve environment)
+        if: github.event.inputs.skip_web_deploy != 'skip-web'
         env:
           UPM_WEB_DEPLOY_ENABLED: '1'
         run: bash scripts/auto-deploy-student-web.sh
