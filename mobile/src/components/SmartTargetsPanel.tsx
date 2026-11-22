@@ -6,6 +6,7 @@ import { Card, PrimaryButton } from './ui';
 import { useAuth } from '../context/AuthContext';
 import { useFocusTimer } from '../context/FocusTimerContext';
 import { smartTargetRequest, type SmartDashboard, type SmartProgress, type SmartDay, type SmartBinding, type CloudChapter } from '../services/smartTargets';
+import { fetchTargetPlanDays, type PlanDay } from '../api/reformApi';
 import { colors, radius, spacing } from '../theme';
 
 const Action = ({ label, onPress, disabled = false }: { label: string; onPress: () => void; disabled?: boolean }) => (
@@ -231,6 +232,108 @@ function useStudyLink() {
   return { study, studyError };
 }
 
+/**
+ * Mentor-published (calendar) plans, as a day strip.
+ *
+ * The "Smart Targets" dashboard above only ever loads plans published in
+ * `personal` mode, and every live plan is published in `calendar` mode - so this
+ * panel was blank for every student even though the mentor had a full day-wise
+ * plan for their batch. Those plans live on /api/ai/target-plan-days, the same
+ * endpoint DailyTargetScreen uses, so both screens always agree.
+ *
+ * Read-only here on purpose: ticking is owned by DailyTargetScreen, which knows
+ * today's task list and posts to /api/targets/complete. This card's job is to
+ * make the plan (and its sequential unlock) visible instead of silent.
+ */
+const CalendarPlanCard = () => {
+  const navigation = useNavigation<any>();
+  const [days, setDays] = useState<PlanDay[] | null>(null);
+  const [error, setError] = useState('');
+  const { student } = useAuth();
+
+  const load = useCallback(async () => {
+    if (!student?.studentId) return;
+    const plan = await fetchTargetPlanDays(student.studentId);
+    if (!plan) { setDays([]); return; }
+    setDays(plan.days || []);
+    setError('');
+  }, [student?.studentId]);
+
+  useFocusEffect(useCallback(() => {
+    setError('');
+    void load().catch((e) => setError(e instanceof Error ? e.message : 'Could not load your plan.'));
+  }, [load]));
+
+  if (error) return <Card><Text style={{ color: colors.red }}>{error}</Text><Action label="Reload mentor plan" onPress={() => void load()} /></Card>;
+  if (!days) return <Card><ActivityIndicator accessibilityLabel="Loading mentor plan" /></Card>;
+  if (!days.length) return null;   // no published plan: say nothing rather than show an empty shell
+
+  const todayIso = new Date(Date.now() + 19800000).toISOString().slice(0, 10);
+  const isDayDone = (d: PlanDay) => d.tasks.length > 0 && d.tasks.every((t) => t.done);
+  const doneCount = days.filter(isDayDone).length;
+  const current = days.find((d) => d.isToday) || days.find((d) => d.date >= todayIso) || days[days.length - 1];
+
+  // Sequential gate: a future day stays locked until every task of the day
+  // before it is complete. Today and past days always open.
+  const lockedIndexes = new Set<number>();
+  days.forEach((d, i) => {
+    if (d.isToday || d.date <= todayIso) return;
+    const prev = days[i - 1];
+    if (prev && !isDayDone(prev)) lockedIndexes.add(i);
+  });
+
+  return (
+    <Card>
+      <Text style={styles.title}>{current.planName || 'Mentor plan'}</Text>
+      <Text style={styles.planSub}>
+        {doneCount} of {days.length} days complete · day-wise plan for your batch
+      </Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={[styles.dayRow, { paddingTop: 4 }]}>
+        {days.map((d, i) => {
+          const done = isDayDone(d);
+          const locked = lockedIndexes.has(i);
+          const isCurrent = d.date === current.date;
+          return (
+            <View key={`${d.planId}|${d.day}|${d.date}`}
+              style={[styles.dayChip,
+                done && styles.dayChipDone,
+                isCurrent && !done && styles.dayChipCurrent,
+                locked && { opacity: 0.45 }]}>
+              {locked ? <Ionicons name="lock-closed" size={10} color={colors.muted} style={styles.dayChipIcon} /> : null}
+              {done ? <Ionicons name="checkmark" size={11} color="#FFF" style={styles.dayChipIcon} /> : null}
+              <Text style={[styles.dayChipNum, (done || isCurrent) && { color: '#FFF' }]}>
+                {d.day != null ? d.day : '—'}
+              </Text>
+              <Text style={[styles.dayChipCaption, { color: done || isCurrent ? '#FFF' : colors.muted }]}>
+                {d.isToday ? 'Today' : new Date(d.date + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+              </Text>
+            </View>
+          );
+        })}
+      </ScrollView>
+      {current.tasks.length ? (
+        <View style={{ marginTop: 2 }}>
+          <Text style={styles.line}>
+            {current.isToday ? "Today's checklist" : `Day ${current.day} checklist`} · {current.tasks.filter((t) => t.done).length}/{current.tasks.length} done
+          </Text>
+          {current.tasks.map((t) => (
+            <View key={t.id} style={styles.dayRow}>
+              <View style={[styles.check, t.done && { backgroundColor: colors.success, borderColor: colors.success }]}>
+                {t.done ? <Ionicons name="checkmark" size={14} color="#FFF" /> : null}
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.line, t.done && { textDecorationLine: 'line-through', color: colors.muted }]}>{t.label}</Text>
+                {t.detail ? <Text style={styles.planMeta}>{t.detail}</Text> : null}
+              </View>
+            </View>
+          ))}
+        </View>
+      ) : null}
+      <Action label="Open today's target to tick tasks" onPress={() => navigation.navigate('DailyTarget')} />
+    </Card>
+  );
+};
+
 export const SmartTargetsPanel = () => {
   const { data, error, busy, load, run } = useSmartDashboard();
   const { study, studyError } = useStudyLink();
@@ -239,6 +342,8 @@ export const SmartTargetsPanel = () => {
     {!data && !error && <ActivityIndicator accessibilityLabel="Loading personal targets" />}
     {data?.targetAccessError && <Card><Text style={{ color: colors.inkSoft }}>{data.targetAccessError} Saved plans are read-only until enrollment is verified. Your revisions remain accessible.</Text><Action label="Retry enrollment check" onPress={() => void load()} /></Card>}
     {data?.plans.map(p => <Card key={p.planId}>{p.progress ? <PlanProgress progress={p.progress} busy={busy} run={run} study={study} /> : <><Text style={styles.title}>{p.name}</Text><Text style={styles.line}>{p.totalDays} study days + {p.includedBackupDays} backup day(s). Day 1 begins when you start, not on the batch calendar.</Text><Action label={p.startAvailableOn > data.today ? `Available ${p.startAvailableOn}` : 'Start My Targets'} disabled={busy || p.startAvailableOn > data.today} onPress={() => void run('start', { planId: p.planId })} /></>}</Card>)}
+    {/* Mentor-published calendar plans: the ones that actually exist for every batch. */}
+    <CalendarPlanCard />
     {busy && <ActivityIndicator accessibilityLabel="Saving target progress" />}
     {data && data.history.length > 0 && <Card><Text style={styles.title}>Saved plan history (read-only)</Text>{data.history.map(h => <Text key={h.planId} style={styles.line}>{h.name}: {h.completedDays}/{h.totalDays} days · started {h.startDate}. Plan cancelled or audience changed; progress retained.</Text>)}</Card>}
   </View>;

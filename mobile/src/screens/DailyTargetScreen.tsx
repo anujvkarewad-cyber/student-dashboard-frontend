@@ -11,7 +11,16 @@ import { useAuth } from '../context/AuthContext';
 import type { RootStackParamList } from '../navigation/types';
 import { colors, radius, spacing } from '../theme';
 
-const dateKey = (d: Date) => d.toISOString().slice(0, 10);
+/**
+ * Calendar day in IST, never UTC.
+ *
+ * The backend resolves "today" with Asia/Kolkata, but `toISOString()` renders a
+ * UTC day. Between 00:00 and 05:30 IST the two disagree by one date, so the app
+ * marked today's published day as `isToday === false` and showed "This day has
+ * passed — view only" instead of the checklist (found 09-Nov-2026).
+ */
+const IST_OFFSET_MS = 19800000; // +05:30
+const dateKey = (d: Date) => new Date(d.getTime() + IST_OFFSET_MS).toISOString().slice(0, 10);
 
 /** Task ticks are booleans; `__completedAt` stores the finishing timestamp. */
 type LocalTargetMap = Record<string, boolean | number | undefined>;
