@@ -7,6 +7,18 @@ on:
     workflows: [CI]
     types: [completed]
     branches: [main]
+  # Manual release for the case where CI is red for reasons unrelated to the
+  # change being shipped. Guarded below so it cannot skip the other checks.
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type release-with-red-ci to confirm you accept shipping with a failing CI run'
+        required: true
+        default: ''
+      ref:
+        description: 'Branch, tag or SHA to release (blank = the branch you dispatched from)'
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -19,10 +31,14 @@ jobs:
   release:
     if: >-
       vars.UPM_AUTO_RELEASE_ENABLED == 'true' &&
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'push' &&
-      github.event.workflow_run.head_branch == 'main' &&
-      github.event.workflow_run.head_repository.full_name == github.repository
+      ((github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_branch == 'main' &&
+        github.event.workflow_run.head_repository.full_name == github.repository) ||
+       (github.event_name == 'workflow_dispatch' &&
+        github.event.inputs.confirm == 'release-with-red-ci' &&
+        github.ref == 'refs/heads/main'))
     environment: student-production
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -30,7 +46,7 @@ jobs:
       contents: read
       id-token: write
     env:
-      UPM_RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+      UPM_RELEASE_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
       UPM_OTA_ENABLED: '1'
       UPM_OTA_CHANNEL: production
       EAS_PROJECT_ID: ${{ vars.EAS_PROJECT_ID }}
@@ -43,7 +59,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.event.inputs.ref || github.ref }}
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
