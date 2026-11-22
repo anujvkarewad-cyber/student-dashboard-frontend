@@ -73,9 +73,17 @@ export const DailyTargetScreen = () => {
       if (student) {
         const remote = await fetchDailyTarget(student.studentId);
         if (remote) {
-          void fetchTargetPlanDays(student.studentId).then((plan) => {
+          void fetchTargetPlanDays(student.studentId).then(async (plan) => {
             if (plan) {
-              setPlanDays(plan.days);
+              // Fold in this device's ticks before the first paint, so a tick made
+              // before the backend learned about plan dates is not lost on open.
+              const merged = await Promise.all(
+                plan.days.map(async (d) => {
+                  const local = await readLocal(d.date);
+                  return { ...d, tasks: d.tasks.map((t) => (t.done ? t : { ...t, done: local[t.id] === true })) };
+                }),
+              );
+              setPlanDays(merged);
               // Pick the opening day from the PLAN's own days. The old code fell
               // back to plan.today, which is the calendar date - so once the plan
               // ended (or had not started) selectedDay pointed at a date no plan
@@ -111,12 +119,29 @@ export const DailyTargetScreen = () => {
     })();
   }, [readLocal, student, today, yesterday]));
 
-  /** Re-read the plan so `done` flags come back from the server, not from hope. */
+  /**
+   * Re-read the plan and fold in the ticks this device has made.
+   *
+   * The server is the source of truth for `done`, but it only knows about ticks
+   * once the tick endpoint understands plan dates. Until that deploy lands, a
+   * plain reload snapped every tick back to unticked because the server row was
+   * written under today's date instead of the plan day (found 22-Nov-2026). The
+   * merge means the screen is correct either way: server wins when it does have
+   * the tick, the local mirror keeps it visible when it does not.
+   */
   const reloadPlan = useCallback(async () => {
     if (!student) return;
     const plan = await fetchTargetPlanDays(student.studentId).catch(() => null);
-    if (plan?.days?.length) setPlanDays(plan.days);
-  }, [student]);
+    if (!plan?.days?.length) return;
+    const merged = await Promise.all(
+      plan.days.map(async (d) => {
+        const local = await readLocal(d.date);
+        const ticks = d.tasks.map((t) => (t.done ? t : { ...t, done: local[t.id] === true }));
+        return { ...d, tasks: ticks };
+      }),
+    );
+    setPlanDays(merged);
+  }, [student, readLocal]);
 
   /** Persisted unlock pointer, keyed by the plan so a new plan starts fresh. */
   const unlockKey = planDays.length ? `ump_unlock_${planDays[0].planId}` : '';
