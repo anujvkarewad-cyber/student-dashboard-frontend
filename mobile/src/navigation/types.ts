@@ -40,4 +40,21 @@ export type RootStackParamList = {
   Messages: undefined;
   Reminders: undefined;
   ChangePassword: undefined;
+  // v1.17.0 — scheduled live quizzes (daily, group-wise)
+  LiveQuizLobby: {
+    testId: string;
+    title: string;
+    subject?: string | null;
+    group?: string | null;
+    windowStart: string;
+    windowEnd: string;
+    durationMinutes: number;
+    questionCount: number;
+    joiningCount?: number;
+    /** Server clock at list time, used to correct device skew. */
+    serverNow?: number;
+  };
+  LiveQuizPlayer: { testId: string };
+  LiveQuizResult: { testId: string };
+  LiveQuizReview: { testId: string };
 };

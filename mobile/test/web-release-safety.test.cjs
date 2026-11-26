@@ -6,6 +6,21 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const root = path.resolve(__dirname, '../..');
 
+// This file drives the real release shell script through a bash PATH override, so it needs a POSIX
+// shell. On a machine without bash (a stock Windows checkout) every assertion here is unsatisfiable:
+// spawnSync reports no status, which would make the "must refuse" cases pass for the wrong reason and
+// the "must promote" cases fail. Skip loudly instead. CI runs this file on ubuntu-latest
+// (.github/workflows/ci.yml -> mobile job -> npm test), where the guard is inert and all 8 assertions run.
+const BASH_OK = (() => {
+  try { return spawnSync('bash', ['--version'], { timeout: 5000, windowsHide: true }).status === 0; }
+  catch { return false; }
+})();
+function skipWithoutShell(t) {
+  if (BASH_OK) return false;
+  t.skip('needs bash to run the shell release script; enforced by the ubuntu CI job, not this machine');
+  return true;
+}
+
 // The real release shell script runs here with fake git/gcloud/curl commands.
 // No credentials are supplied and no request, build or deployment can occur.
 function simulate(mode = 'success', overrides = {}) {
@@ -50,31 +65,39 @@ else if(!args.includes('-o')) console.log('<html>mock</html>');
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 }
 
-test('web automation is inert without the explicit release switch', () => {
+test('web automation is inert without the explicit release switch', (t) => {
+  if (skipWithoutShell(t)) return;
   const r = simulate('success', { UPM_WEB_DEPLOY_ENABLED: '' }); assert.notEqual(r.status, 0); assert.equal(r.calls.length, 0);
 });
-test('web automation refuses to touch the mentor backend', () => {
+test('web automation refuses to touch the mentor backend', (t) => {
+  if (skipWithoutShell(t)) return;
   const r = simulate('success', { GCP_WEB_SERVICE: 'ujjwal-pathak-app' }); assert.notEqual(r.status, 0); assert.equal(r.calls.length, 0);
 });
-test('failed Cloud Build cannot change live traffic', () => {
+test('failed Cloud Build cannot change live traffic', (t) => {
+  if (skipWithoutShell(t)) return;
   const r = simulate('build-fails'); assert.notEqual(r.status, 0); assert.equal(r.traffic.length, 0);
 });
-test('failed candidate health check cannot change live traffic', () => {
+test('failed candidate health check cannot change live traffic', (t) => {
+  if (skipWithoutShell(t)) return;
   const r = simulate('candidate-fails'); assert.notEqual(r.status, 0); assert.equal(r.traffic.length, 0);
 });
-test('wrong served JS blocks promotion even if health passes', () => {
+test('wrong served JS blocks promotion even if health passes', (t) => {
+  if (skipWithoutShell(t)) return;
   const r = simulate('wrong-bundle'); assert.notEqual(r.status, 0); assert.equal(r.traffic.length, 0);
 });
-test('a superseded commit is not promoted after a long build', () => {
+test('a superseded commit is not promoted after a long build', (t) => {
+  if (skipWithoutShell(t)) return;
   const r = simulate('stale'); assert.notEqual(r.status, 0); assert.equal(r.traffic.length, 0);
 });
-test('successful candidate is promoted exactly once', () => {
+test('successful candidate is promoted exactly once', (t) => {
+  if (skipWithoutShell(t)) return;
   const r = simulate(); assert.equal(r.status, 0, r.stderr); assert.equal(r.traffic.length, 1);
   assert.ok(r.traffic[0].includes('candidate-revision=100'));
   const deploy = r.calls.find((args) => args.includes('deploy'));
   assert.ok(deploy.includes('--no-traffic')); assert.ok(!deploy.some((v) => /env-vars|secrets|allow-unauthenticated/.test(v)));
 });
-test('post-promotion failure restores the previous split, not an assumed 100% revision', () => {
+test('post-promotion failure restores the previous split, not an assumed 100% revision', (t) => {
+  if (skipWithoutShell(t)) return;
   const r = simulate('production-fails'); assert.notEqual(r.status, 0); assert.equal(r.traffic.length, 2);
   assert.ok(r.traffic[0].includes('candidate-revision=100')); assert.ok(r.traffic[1].includes('old-a=60,old-b=40'));
 });

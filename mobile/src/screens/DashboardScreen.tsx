@@ -225,6 +225,20 @@ export const DashboardScreen = () => {
           <View style={[styles.dailyArrow, allMcqComplete && styles.dailyArrowDone]}><Ionicons name="arrow-forward" size={18} color={allMcqComplete ? colors.success : colors.primary} /></View>
         </Pressable>
 
+        {/* Daily Live Quiz — announcement only (2026-11-26).
+            The lobby/player/result UI is final but the test-taking backend is
+            not built, so Home shows one inert banner and nothing else: a title
+            and a COMING SOON chip. No lobby preview, no countdown, no numbers,
+            no start time, English copy only (owner's standing rule). A plain
+            View (not Pressable) because there is no screen to open yet. Replace
+            this whole block with the approved <LiveQuizLobby> entry on launch. */}
+        <View style={styles.liveQuizSoon}>
+          <View style={styles.liveQuizSoonAccent} />
+          <View style={styles.liveQuizSoonIcon}><Ionicons name="time-outline" size={22} color={colors.amber} /></View>
+          <Text style={styles.liveQuizSoonTitle}>Daily Live Quiz</Text>
+          <View style={styles.liveQuizSoonStatus}><Text style={styles.liveQuizSoonStatusText}>COMING SOON</Text></View>
+        </View>
+
         <SmartTargetHomeSummary />
         <SectionHeader title="Quick actions" />
         <Card style={styles.actionsCard}>
@@ -390,6 +404,12 @@ const styles = StyleSheet.create({
   metricValue: { color: colors.ink, fontSize: 22, fontWeight: '900', letterSpacing: -0.5 },
   metricLabel: { color: colors.muted, fontSize: 12, marginTop: 2, fontWeight: '600' },
   dailyChallenge: { minHeight: 104, flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.md, paddingHorizontal: spacing.lg, borderRadius: radius.lg, overflow: 'hidden', marginBottom: spacing.xxl, backgroundColor: '#F0F2FF', borderWidth: 1, borderColor: '#DDE3FF', shadowColor: colors.shadow, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.08, shadowRadius: 14, elevation: 3 },
+  liveQuizSoon: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, minHeight: 76, paddingVertical: spacing.md, paddingHorizontal: spacing.lg, borderRadius: radius.lg, overflow: 'hidden', marginBottom: spacing.xxl, backgroundColor: colors.amberSoft, borderWidth: 1, borderColor: '#F3DFAE' },
+  liveQuizSoonAccent: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 5, backgroundColor: colors.amber },
+  liveQuizSoonIcon: { width: 44, height: 44, borderRadius: 15, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
+  liveQuizSoonTitle: { flex: 1, minWidth: 0, color: colors.ink, fontSize: 13, lineHeight: 18, fontWeight: '900' },
+  liveQuizSoonStatus: { borderRadius: radius.pill, backgroundColor: colors.surface, paddingHorizontal: 7, paddingVertical: 4 },
+  liveQuizSoonStatusText: { color: '#8A5A00', fontSize: 6, fontWeight: '900', letterSpacing: 0.7 },
   dailyChallengeDone: { backgroundColor: '#EBF9F5', borderColor: '#CCEFE5' },
   dailyChallengePressed: { opacity: 0.8, transform: [{ scale: 0.995 }] },
   dailyAccent: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 5, backgroundColor: colors.primary },

@@ -15,10 +15,6 @@ on:
         description: 'Type release-with-red-ci to confirm you accept shipping with a failing CI run'
         required: true
         default: ''
-      ref:
-        description: 'Branch, tag or SHA to release (blank = the branch you dispatched from)'
-        required: false
-        default: ''
       skip_web_deploy:
         description: 'Type skip-web to ship OTA only.'
         required: false
@@ -62,8 +58,15 @@ jobs:
       GCP_WEB_SERVICE: ${{ vars.GCP_WEB_SERVICE }}
     steps:
       - uses: actions/checkout@v4
+        # Always the exact commit the CI run verified. For a manual dispatch
+        # workflow_run.head_sha is empty, so actions/checkout falls back to the
+        # commit this workflow was dispatched from - which is also what
+        # UPM_RELEASE_SHA below (and the origin/main comparison in the identity
+        # step, plus tools/publish-ota.cjs) requires. There is deliberately no
+        # "release this other ref" input: a release must never deploy a tree
+        # that was not the one verified.
         with:
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.event.inputs.ref || github.ref }}
+          ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
